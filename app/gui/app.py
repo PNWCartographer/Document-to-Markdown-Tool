@@ -2,6 +2,8 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
+from .tooltip import Tooltip
+import config.settings as _cfg_mod
 
 SCREENS = ["Home", "Settings", "Conversion", "Results"]
 
@@ -32,6 +34,53 @@ _FONT_NAV      = ("Segoe UI", 12)
 _FONT_NAV_ACT  = ("Segoe UI", 12, "bold")
 _FONT_SMALL    = ("Segoe UI", 11)
 _FONT_BTN      = ("Segoe UI", 13, "bold")
+_FONT_SECTION  = ("Segoe UI", 10, "bold")
+
+_TIPS = {
+    "conversion_mode": (
+        "Controls how the tool reads and converts your document. Standard mode works for most "
+        "documents. OCR mode is needed for scanned documents or images where the text cannot be "
+        "selected. Using OCR on a document that already has selectable text may reduce quality."
+    ),
+    "preserve_images": (
+        "Extracts images, diagrams, and drawings from the source document and saves them in an "
+        "assets folder next to your Markdown file. The Markdown output will include links to these "
+        "images. Turn this off if you only need the text content."
+    ),
+    "preserve_page_numbers": (
+        "Inserts a page marker at each page boundary in the Markdown output. This lets you "
+        "cross-reference the Markdown file against the original document by page number. "
+        "Recommended for textbooks, manuals, and any document where page references matter."
+    ),
+    "rebuild_toc": (
+        "If your document has a table of contents, this option extracts it and places a navigable "
+        "version at the top of the Markdown output. Each entry links directly to the correct page "
+        "in the document. Only available when a table of contents or heading structure is detected."
+    ),
+    "ocr_language": (
+        "Sets the language the OCR engine uses when reading text from scanned pages or images. "
+        "Choose the language that matches your document. Using the wrong language may produce "
+        "garbled or incorrect text. This setting only affects files that require OCR processing."
+    ),
+    "overwrite_existing": (
+        "If a Markdown file with the same name already exists in the output folder, this option "
+        "replaces it. If turned off, the tool will skip files that already exist and leave the "
+        "originals unchanged. Turn this on carefully if you want to re-convert files you have "
+        "already edited."
+    ),
+    "output_subfolder": (
+        "Creates a separate folder for each converted document inside your output location. Each "
+        "folder contains the Markdown file, extracted assets, a confidence report, and a conversion "
+        "log. Turning this off places all output files directly in the output folder, which can "
+        "become difficult to manage with multiple documents."
+    ),
+    "low_confidence_action": (
+        "Controls what happens when the tool is not confident about a conversion result, such as "
+        "unclear OCR text or a table that could not be read cleanly. 'Ask me' will pause and show "
+        "you a choice. 'Keep and flag' will include the uncertain content and mark it for review. "
+        "'Skip' will leave it out entirely."
+    ),
+}
 
 
 class App:
@@ -51,6 +100,16 @@ class App:
         self._selected_files: list[str] = []
         self._file_aliases:   dict[str, str] = {}   # path → custom output name
         self._output_path: str = ""
+
+        # Settings state
+        self._cfg = _cfg_mod.load()
+        self._setting_vars:        dict = {}
+        self._settings_section_hdrs: list[tk.Label]  = []
+        self._settings_dividers:     list[tk.Frame]  = []
+        self._settings_info_labels:  list[tk.Label]  = []
+        self._settings_name_labels:  list[tk.Label]  = []
+        self._settings_checkboxes:   list[tk.Widget] = []
+        self._settings_dropdowns:    list[tk.Widget] = []
 
         self._build_layout()
         self._apply_theme()
@@ -320,8 +379,124 @@ class App:
             "Configure conversion mode, OCR language, image handling, and output options.",
         )
 
-        self._ph_settings, self._ph_settings_lbl = self._placeholder(
-            f, "Settings controls will appear here.", row=2, height=260)
+        # ── Build tk.Vars from loaded config ─────────────────
+        self._setting_vars = {
+            "conversion_mode":       tk.StringVar(value=self._cfg["conversion_mode"]),
+            "preserve_images":       tk.BooleanVar(value=self._cfg["preserve_images"]),
+            "preserve_page_numbers": tk.BooleanVar(value=self._cfg["preserve_page_numbers"]),
+            "rebuild_toc":           tk.BooleanVar(value=self._cfg["rebuild_toc"]),
+            "ocr_language":          tk.StringVar(value=self._cfg["ocr_language"]),
+            "overwrite_existing":    tk.BooleanVar(value=self._cfg["overwrite_existing"]),
+            "output_subfolder":      tk.BooleanVar(value=self._cfg["output_subfolder"]),
+            "low_confidence_action": tk.StringVar(value=self._cfg["low_confidence_action"]),
+        }
+        for var in self._setting_vars.values():
+            var.trace_add("write", self._on_setting_changed)
+
+        # ── Content frame ─────────────────────────────────────
+        self._settings_content = tk.Frame(f)
+        self._settings_content.grid(row=2, column=0, sticky="nsew", padx=32, pady=(0, 24))
+        self._settings_content.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
+        # Section: Conversion
+        row = self._settings_add_section(self._settings_content, "Conversion", row, first=True)
+        row = self._settings_add_dropdown(
+            self._settings_content, "conversion_mode", "Conversion Mode",
+            ["Standard", "OCR", "Auto-detect"],
+            _TIPS["conversion_mode"], row,
+        )
+
+        # Section: Content Handling
+        row = self._settings_add_section(self._settings_content, "Content Handling", row)
+        row = self._settings_add_checkbox(
+            self._settings_content, "preserve_images", "Preserve Images",
+            _TIPS["preserve_images"], row,
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "preserve_page_numbers", "Preserve Page Numbers",
+            _TIPS["preserve_page_numbers"], row,
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "rebuild_toc", "Rebuild Table of Contents",
+            _TIPS["rebuild_toc"], row,
+        )
+
+        # Section: OCR
+        row = self._settings_add_section(self._settings_content, "OCR", row)
+        row = self._settings_add_dropdown(
+            self._settings_content, "ocr_language", "OCR Language",
+            ["English", "French", "German", "Spanish", "Italian", "Portuguese",
+             "Dutch", "Auto-detect"],
+            _TIPS["ocr_language"], row,
+        )
+
+        # Section: Output
+        row = self._settings_add_section(self._settings_content, "Output", row)
+        row = self._settings_add_checkbox(
+            self._settings_content, "overwrite_existing", "Overwrite Existing Files",
+            _TIPS["overwrite_existing"], row,
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "output_subfolder", "Output Subfolder Structure",
+            _TIPS["output_subfolder"], row,
+        )
+        row = self._settings_add_dropdown(
+            self._settings_content, "low_confidence_action", "Handle Low Confidence Results",
+            ["Ask me", "Keep and flag", "Skip"],
+            _TIPS["low_confidence_action"], row,
+        )
+
+    def _settings_add_section(self, parent, title: str, row: int, first=False) -> int:
+        top_pad = 8 if first else 18
+        lbl = tk.Label(parent, text=title.upper(), font=_FONT_SECTION, anchor="w")
+        lbl.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(top_pad, 2))
+        sep = tk.Frame(parent, height=1)
+        sep.grid(row=row + 1, column=0, columnspan=3, sticky="ew", pady=(0, 2))
+        self._settings_section_hdrs.append(lbl)
+        self._settings_dividers.append(sep)
+        return row + 2
+
+    def _settings_add_checkbox(self, parent, key, label, tip, row) -> int:
+        info = tk.Label(parent, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
+        info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
+        Tooltip(info, tip, lambda: self._t)
+
+        lbl = tk.Label(parent, text=label, font=_FONT_SMALL, anchor="w")
+        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=4)
+
+        var = self._setting_vars[key]
+        cb = tk.Checkbutton(parent, variable=var, bd=0, highlightthickness=0, cursor="hand2")
+        cb.grid(row=row, column=2, sticky="e", pady=4)
+
+        self._settings_info_labels.append(info)
+        self._settings_name_labels.append(lbl)
+        self._settings_checkboxes.append(cb)
+        return row + 1
+
+    def _settings_add_dropdown(self, parent, key, label, options, tip, row) -> int:
+        info = tk.Label(parent, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
+        info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
+        Tooltip(info, tip, lambda: self._t)
+
+        lbl = tk.Label(parent, text=label, font=_FONT_SMALL, anchor="w")
+        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=4)
+
+        var = self._setting_vars[key]
+        menu = tk.OptionMenu(parent, var, *options)
+        menu.config(bd=0, relief="flat", highlightthickness=1, pady=3, padx=8, cursor="hand2")
+        menu.grid(row=row, column=2, sticky="e", pady=3)
+
+        self._settings_info_labels.append(info)
+        self._settings_name_labels.append(lbl)
+        self._settings_dropdowns.append(menu)
+        return row + 1
+
+    def _on_setting_changed(self, *_):
+        for key, var in self._setting_vars.items():
+            self._cfg[key] = var.get()
+        _cfg_mod.save(self._cfg)
 
     def _build_conversion(self):
         f = self._new_screen("Conversion")
@@ -657,9 +832,8 @@ class App:
         self._out_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._lbl_output_path.config(bg=t["bg"], fg=t["text_secondary"])
 
-        # ── Remaining placeholder boxes ──────────────────────
+        # ── Placeholder boxes (Conversion and Results only) ──
         for box, lbl in [
-            (self._ph_settings, self._ph_settings_lbl),
             (self._ph_conv,     self._ph_conv_lbl),
             (self._ph_results,  self._ph_results_lbl),
         ]:
@@ -674,6 +848,45 @@ class App:
             activeforeground=t["text_on_accent"],
             disabledforeground=t["text_on_accent"],
         )
+
+        # ── Settings-specific widgets ────────────────────────
+        # _style_screen_labels already walked the settings content frame and set
+        # all Labels to content_bg/text and all Frames to content_bg. Override
+        # the widgets that need non-default colors.
+        self._settings_content.config(bg=t["content_bg"])
+
+        for lbl in self._settings_section_hdrs:
+            lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        for sep in self._settings_dividers:
+            sep.config(bg=t["border"])
+
+        for lbl in self._settings_info_labels:
+            lbl.config(bg=t["content_bg"], fg=t["accent"])
+
+        for cb in self._settings_checkboxes:
+            cb.config(
+                bg=t["content_bg"],
+                fg=t["text"],
+                activebackground=t["content_bg"],
+                activeforeground=t["text"],
+                selectcolor=t["bg"],
+            )
+
+        for menu in self._settings_dropdowns:
+            menu.config(
+                bg=t["sidebar_bg"],
+                fg=t["text"],
+                activebackground=t["nav_hover_bg"],
+                activeforeground=t["text"],
+                highlightbackground=t["border"],
+            )
+            menu["menu"].config(
+                bg=t["sidebar_bg"],
+                fg=t["text"],
+                activebackground=t["accent"],
+                activeforeground=t["text_on_accent"],
+            )
 
         self._refresh_nav()
 

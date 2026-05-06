@@ -1,0 +1,33 @@
+import json
+import os
+
+_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
+
+DEFAULTS: dict = {
+    "conversion_mode":       "Standard",
+    "preserve_images":       True,
+    "preserve_page_numbers": False,
+    "rebuild_toc":           False,
+    "ocr_language":          "English",
+    "overwrite_existing":    False,
+    "output_subfolder":      True,
+    "low_confidence_action": "Ask me",
+}
+
+
+def load() -> dict:
+    if os.path.isfile(_PATH):
+        try:
+            with open(_PATH, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            out = dict(DEFAULTS)
+            out.update({k: v for k, v in data.items() if k in DEFAULTS})
+            return out
+        except Exception:
+            pass
+    return dict(DEFAULTS)
+
+
+def save(cfg: dict) -> None:
+    with open(_PATH, "w", encoding="utf-8") as fh:
+        json.dump({k: cfg[k] for k in DEFAULTS if k in cfg}, fh, indent=2)
