@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# User settings (auto-generated at runtime)
+config/settings.json
+
+# Output and logs (user-generated content)
+output/
+logs/
+
+# V1 reference source (not part of the new project)
+v1_source/
+
+# Claude Code local overrides (machine-specific paths)
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
