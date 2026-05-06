@@ -1,0 +1,57 @@
+# Document to Markdown Converter Tool
+# Full dependency list — install with: pip install -r requirements.txt
+#
+# First-run note: docling and paddleocr download AI models on first use (~1-2 GB total).
+# Models are cached locally in ~/.cache after download. All processing is offline after that.
+
+# ---------------------------------------------------------------------------
+# Primary document conversion engine
+# ---------------------------------------------------------------------------
+docling>=2.0.0                  # PDF, DOCX, XLSX, images — AI-powered layout analysis
+
+# ---------------------------------------------------------------------------
+# PDF support (fast fallback + image extraction)
+# ---------------------------------------------------------------------------
+pymupdf>=1.24.0                 # fitz — fast PDF text/image extraction, AGPL-3.0 (local use ok)
+pymupdf4llm>=0.0.17             # thin Markdown wrapper over pymupdf
+
+# ---------------------------------------------------------------------------
+# PDF table extraction
+# ---------------------------------------------------------------------------
+pdfplumber>=0.11.0              # complex/ambiguous PDF table extraction
+camelot-py[cv]>=0.11.0         # bordered/lattice PDF table extraction (requires opencv)
+
+# ---------------------------------------------------------------------------
+# DOCX conversion
+# ---------------------------------------------------------------------------
+python-docx>=1.1.0              # DOCX structural reading and DOM access
+mammoth>=1.8.0                  # DOCX → clean semantic Markdown/HTML
+
+# ---------------------------------------------------------------------------
+# Excel / spreadsheet
+# ---------------------------------------------------------------------------
+openpyxl>=3.1.0                 # .xlsx reading and structure preservation
+xlrd>=2.0.1                     # legacy .xls (Excel 97-2003) reading
+
+# ---------------------------------------------------------------------------
+# Data / CSV handling
+# ---------------------------------------------------------------------------
+pandas>=2.2.0                   # CSV, datasets, table building
+
+# ---------------------------------------------------------------------------
+# OCR — primary
+# ---------------------------------------------------------------------------
+paddlepaddle>=2.6.0             # PaddlePaddle framework (PaddleOCR dependency)
+paddleocr>=2.8.0                # deep learning OCR, no external binary needed
+
+# ---------------------------------------------------------------------------
+# OCR — fallback (requires Tesseract binary installed separately)
+# See: https://github.com/UB-Mannheim/tesseract/wiki
+# ---------------------------------------------------------------------------
+pytesseract>=0.3.13
+
+# ---------------------------------------------------------------------------
+# Image processing
+# ---------------------------------------------------------------------------
+Pillow>=10.3.0                  # image open/save/crop/convert
+opencv-python>=4.10.0           # deskew, contrast, edge cleanup before OCR

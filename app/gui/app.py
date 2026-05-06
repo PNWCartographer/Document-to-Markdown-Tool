@@ -5,6 +5,7 @@ from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
 from .tooltip import Tooltip
 import config.settings as _cfg_mod
+import engine.converter as _converter_mod
 
 SCREENS = ["Home", "Settings", "Conversion", "Results"]
 
@@ -120,6 +121,10 @@ class App:
         self._settings_name_labels:  list[tk.Label]  = []
         self._settings_checkboxes:   list[tk.Widget] = []
         self._settings_dropdowns:    list[tk.Widget] = []
+
+        # Engine state
+        self._active_job: "Optional[_converter_mod.ConversionJob]" = None
+        self._last_output_root: str = ""
 
         self._build_layout()
         self._apply_theme()
@@ -896,18 +901,26 @@ class App:
         self._btn_start.config(state="normal" if ready else "disabled")
 
     def _on_open_output_folder(self):
-        messagebox.showinfo(
-            "No Output Available",
-            "No conversion output is available yet.\n\n"
-            "Complete a conversion to open the output folder.",
-        )
+        path = self._last_output_root
+        if not path or not os.path.isdir(path):
+            messagebox.showinfo(
+                "No Output Available",
+                "No conversion output is available yet.\n\n"
+                "Complete a conversion to open the output folder.",
+            )
+            return
+        import subprocess
+        subprocess.Popen(f'explorer "{path}"')
 
     def _on_cancel_conversion(self):
-        messagebox.showinfo(
-            "No Active Conversion",
-            "No conversion is currently running.\n\n"
-            "Cancel will stop an in-progress conversion once the engine is wired in.",
-        )
+        if self._active_job and self._active_job.is_running():
+            self._active_job.cancel()
+            self._log_write("Cancellation requested — waiting for current file to finish…")
+        else:
+            messagebox.showinfo(
+                "No Active Conversion",
+                "No conversion is currently running.",
+            )
 
     def _log_write(self, text: str):
         self._conv_log.config(state="normal")
@@ -936,6 +949,90 @@ class App:
     def _on_start(self):
         self._reset_conversion_screen()
         self._show("Conversion")
+        self._last_output_root = self._output_path
+
+        self._active_job = _converter_mod.ConversionJob(
+            files=self._selected_files,
+            aliases=self._file_aliases,
+            output_root=self._output_path,
+            cfg=self._cfg,
+            root=self.root,
+            on_log=self._log_write,
+            on_file_progress=self._set_file_progress,
+            on_overall_progress=self._set_overall_progress,
+            on_file_start=self._on_file_start,
+            on_stage=self._on_stage_update,
+            on_done=self._on_conversion_done,
+        )
+        self._active_job.start()
+
+    def _set_file_progress(self, fraction: float) -> None:
+        self._conv_file_bar_inner.place(relwidth=max(0.0, min(1.0, fraction)))
+
+    def _set_overall_progress(self, fraction: float) -> None:
+        self._conv_overall_bar_inner.place(relwidth=max(0.0, min(1.0, fraction)))
+
+    def _on_file_start(self, filename: str, idx: int, total: int) -> None:
+        self._conv_file_name_lbl.config(text=filename)
+        self._conv_overall_count_lbl.config(text=f"{idx} of {total} file{'s' if total != 1 else ''}")
+
+    def _on_stage_update(self, stage: str) -> None:
+        self._conv_stage_lbl.config(text=stage)
+
+    def _on_conversion_done(self, result: "_converter_mod.BatchResult") -> None:
+        # Final bar states
+        self._conv_overall_bar_inner.place(relwidth=1.0)
+        self._conv_file_bar_inner.place(relwidth=1.0)
+        total = result.total
+        self._conv_overall_count_lbl.config(text=f"{result.completed} of {total} file{'s' if total != 1 else ''}")
+        self._conv_file_name_lbl.config(text="Conversion complete" if not result.cancelled else "Cancelled")
+        self._conv_stage_lbl.config(text="")
+        self._log_write("")
+        self._log_write(result.status_text)
+
+        # Populate Results screen
+        self._populate_results(result)
+        self._show("Results")
+
+    def _populate_results(self, result: "_converter_mod.BatchResult") -> None:
+        t = self._t
+        bc = result.batch_confidence
+
+        # Status banner
+        self._results_status_lbl.config(text=result.status_text)
+        if result.failed > 0:
+            self._results_status_frame.config(highlightbackground=t.get("warn", t["border"]))
+        else:
+            self._results_status_frame.config(highlightbackground=t["border"])
+
+        # Output path
+        self._results_out_path_lbl.config(text=f"Output location: {result.output_root}")
+        self._last_output_root = result.output_root
+
+        # Confidence labels — order matches _CONF_AREAS
+        scores = [
+            bc.overall,
+            bc.text_extraction,
+            bc.table_structure,
+            bc.image_extraction,
+            bc.image_placement,
+            bc.document_order,
+        ]
+        for lbl, score in zip(self._results_conf_level_lbls, scores):
+            lbl.config(text=score)
+
+        # Warnings panel
+        all_warnings = []
+        for cr in result.all_confidence:
+            for w in cr.warnings:
+                all_warnings.append(f"• {w}")
+        self._results_warn_text.config(state="normal")
+        self._results_warn_text.delete("1.0", tk.END)
+        if all_warnings:
+            self._results_warn_text.insert(tk.END, "\n".join(all_warnings))
+        else:
+            self._results_warn_text.insert(tk.END, "No warnings.")
+        self._results_warn_text.config(state="disabled")
 
     def _on_listbox_select(self, _event=None):
         sel = self._file_listbox.curselection()
