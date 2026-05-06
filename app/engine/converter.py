@@ -109,9 +109,8 @@ class ConversionJob:
         completed = 0
         failed = 0
 
-        # App-level logger
-        app_log_dir = os.path.join(self._output_root, "logs")
-        app_logger = AppLogger(app_log_dir)
+        # App-level logger — writes to %APPDATA%\DocToMarkdown\app.log
+        app_logger = AppLogger()
         app_logger.info(f"Batch started | files={total}")
 
         for idx, source_file in enumerate(self._files):
@@ -129,12 +128,12 @@ class ConversionJob:
             self._gui(self._on_log, f"── [{idx + 1}/{total}] {filename}")
 
             # Determine output dir
-            out_dir = output_dir_for(source_file, self._output_root, alias)
+            use_subfolder = self._cfg.get("output_subfolder", True)
+            out_dir = output_dir_for(source_file, self._output_root, alias, use_subfolder)
 
             # Per-file logger
             logger = ConversionLogger(
                 source_file=source_file,
-                output_dir=out_dir,
                 gui_callback=lambda line: self._gui(self._on_log, line),
             )
             logger.start()
@@ -147,15 +146,16 @@ class ConversionJob:
                 write_markdown(
                     output,
                     output_root=self._output_root,
+                    use_subfolder=use_subfolder,
                     include_confidence_summary=True,
                     include_page_numbers=self._cfg.get("preserve_page_numbers", False),
                     rebuild_toc=self._cfg.get("rebuild_toc", False),
                     overwrite=self._cfg.get("overwrite_existing", False),
                 )
 
-                # Write confidence report
+                # Write confidence report to %APPDATA%\DocToMarkdown\
                 if output.confidence:
-                    write_confidence_report(output.confidence, out_dir)
+                    write_confidence_report(output.confidence)
                     results.append(output.confidence)
 
                 logger.end()

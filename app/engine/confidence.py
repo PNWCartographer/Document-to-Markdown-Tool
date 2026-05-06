@@ -104,15 +104,23 @@ class ConfidenceResult:
         return f"> Conversion confidence: {self.overall}.{review}"
 
 
-def write_confidence_report(result: ConfidenceResult, output_dir: str) -> str:
+def write_confidence_report(result: ConfidenceResult) -> str:
     """
-    Write confidence_report.txt to output_dir.
+    Append this file's confidence report to the dated log in
+    %APPDATA%/DocToMarkdown/confidence_YYYY-MM-DD.log.
     Returns the path written.
     """
-    os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "confidence_report.txt")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(result.to_report_text())
+    from .logger import appdata_dir
+    import datetime
+    log_dir = appdata_dir()
+    date_str = datetime.date.today().strftime("%Y-%m-%d")
+    path = os.path.join(log_dir, f"confidence_{date_str}.log")
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(result.to_report_text())
+            fh.write("\n")
+    except OSError:
+        pass
     return path
 
 

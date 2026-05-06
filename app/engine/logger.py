@@ -1,27 +1,51 @@
 """
-Per-file conversion logger.
+Unified application logger.
 
-Writes a timestamped conversion_log.txt alongside each output .md file.
-Also maintains an in-memory list of entries so the GUI log panel can be
-populated without reading the file back from disk.
+All logging — app-level events and per-file conversion detail — writes to a
+single file at %APPDATA%/DocToMarkdown/app.log so output folders stay clean.
+
+ConversionLogger collects entries during a single file conversion and feeds
+them to the GUI log panel live via gui_callback. It also appends each entry
+to the shared app log on flush().
 """
 
 import datetime
 import os
 from typing import Callable, Optional
 
+# ---------------------------------------------------------------------------
+# Shared app-data directory and log path
+# ---------------------------------------------------------------------------
+
+_APPDATA_DIR = os.path.join(
+    os.environ.get("APPDATA", os.path.expanduser("~")),
+    "DocToMarkdown",
+)
+APP_LOG_PATH = os.path.join(_APPDATA_DIR, "app.log")
+
+
+def _ensure_appdata_dir() -> None:
+    os.makedirs(_APPDATA_DIR, exist_ok=True)
+
+
+def appdata_dir() -> str:
+    """Return (and ensure) the %APPDATA%/DocToMarkdown directory."""
+    _ensure_appdata_dir()
+    return _APPDATA_DIR
+
+
+# ---------------------------------------------------------------------------
+# ConversionLogger — per-file, feeds GUI + appends to unified log
+# ---------------------------------------------------------------------------
 
 class ConversionLogger:
     """
-    Collects log entries during a single file conversion and writes them to
-    <output_dir>/conversion_log.txt on flush().
+    Collects log entries during a single file conversion.
 
     Parameters
     ----------
     source_file : str
         Absolute path to the source document being converted.
-    output_dir : str
-        Directory where conversion_log.txt will be written.
     gui_callback : callable, optional
         Called with (str) for each new log line so the GUI panel stays live.
     """
@@ -31,11 +55,9 @@ class ConversionLogger:
     def __init__(
         self,
         source_file: str,
-        output_dir: str,
         gui_callback: Optional[Callable[[str], None]] = None,
     ):
         self._source = source_file
-        self._output_dir = output_dir
         self._gui_callback = gui_callback
         self._entries: list[str] = []
         self._start_time: Optional[datetime.datetime] = None
@@ -68,19 +90,18 @@ class ConversionLogger:
         self._log("ERROR", message)
 
     def flush(self) -> None:
-        """Write all collected entries to conversion_log.txt."""
-        os.makedirs(self._output_dir, exist_ok=True)
-        log_path = os.path.join(self._output_dir, "conversion_log.txt")
-        with open(log_path, "w", encoding="utf-8") as fh:
-            fh.write(f"Conversion Log\n")
-            fh.write(f"Source: {self._source}\n")
-            if self._start_time:
-                fh.write(f"Started: {self._start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            if self._end_time:
-                fh.write(f"Finished: {self._end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            fh.write("-" * 60 + "\n")
-            for entry in self._entries:
-                fh.write(entry + "\n")
+        """Append all collected entries to the unified app log."""
+        _ensure_appdata_dir()
+        try:
+            with open(APP_LOG_PATH, "a", encoding="utf-8") as fh:
+                fh.write(f"--- Conversion: {os.path.basename(self._source)}")
+                if self._start_time:
+                    fh.write(f" | {self._start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                fh.write(" ---\n")
+                for entry in self._entries:
+                    fh.write(entry + "\n")
+        except OSError:
+            pass
 
     def entries(self) -> list[str]:
         """Return all log entries collected so far (read-only copy)."""
@@ -101,16 +122,12 @@ class ConversionLogger:
                 pass
 
 
-class AppLogger:
-    """
-    Application-level logger. Writes to a single app.log in the logs/ folder
-    next to the output root. Used for startup, shutdown, and cross-file events.
-    """
+# ---------------------------------------------------------------------------
+# AppLogger — app-level events (startup, batch start/finish)
+# ---------------------------------------------------------------------------
 
-    def __init__(self, log_dir: str):
-        self._log_dir = log_dir
-        self._path = os.path.join(log_dir, "app.log")
-        os.makedirs(log_dir, exist_ok=True)
+class AppLogger:
+    """Writes app-level events to the unified %APPDATA%/DocToMarkdown/app.log."""
 
     def info(self, message: str) -> None:
         self._write("INFO", message)
@@ -122,10 +139,11 @@ class AppLogger:
         self._write("ERROR", message)
 
     def _write(self, level: str, message: str) -> None:
+        _ensure_appdata_dir()
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"{ts} | {level:<7} | {message}\n"
         try:
-            with open(self._path, "a", encoding="utf-8") as fh:
+            with open(APP_LOG_PATH, "a", encoding="utf-8") as fh:
                 fh.write(line)
         except OSError:
             pass

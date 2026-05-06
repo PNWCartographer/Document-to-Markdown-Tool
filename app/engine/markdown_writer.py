@@ -70,25 +70,46 @@ class ConversionOutput:
 # Path helpers
 # ---------------------------------------------------------------------------
 
-def output_dir_for(source_file: str, output_root: str, alias: str = "") -> str:
+def output_dir_for(
+    source_file: str,
+    output_root: str,
+    alias: str = "",
+    use_subfolder: bool = True,
+) -> str:
     """
     Return the per-file output directory.
-    e.g. /output/root/MyDocument/
+    use_subfolder=True  → <output_root>/<stem>/
+    use_subfolder=False → <output_root>/
     """
-    stem = alias if alias else _safe_stem(source_file)
-    return os.path.join(output_root, stem)
+    if use_subfolder:
+        stem = alias if alias else _safe_stem(source_file)
+        return os.path.join(output_root, stem)
+    return output_root
 
 
-def md_path_for(source_file: str, output_root: str, alias: str = "") -> str:
+def md_path_for(
+    source_file: str,
+    output_root: str,
+    alias: str = "",
+    use_subfolder: bool = True,
+) -> str:
     """Return the full path for the .md output file."""
     stem = alias if alias else _safe_stem(source_file)
-    out_dir = output_dir_for(source_file, output_root, alias)
+    out_dir = output_dir_for(source_file, output_root, alias, use_subfolder)
     return os.path.join(out_dir, stem + ".md")
 
 
-def assets_dir_for(source_file: str, output_root: str, alias: str = "") -> str:
+def assets_dir_for(
+    source_file: str,
+    output_root: str,
+    alias: str = "",
+    use_subfolder: bool = True,
+) -> str:
     """Return the assets/ subdirectory path."""
-    return os.path.join(output_dir_for(source_file, output_root, alias), "assets")
+    return os.path.join(
+        output_dir_for(source_file, output_root, alias, use_subfolder),
+        "assets",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +161,7 @@ def build_markdown(
 def write_markdown(
     output: ConversionOutput,
     output_root: str,
+    use_subfolder: bool = True,
     include_confidence_summary: bool = True,
     include_page_numbers: bool = True,
     rebuild_toc: bool = True,
@@ -150,9 +172,9 @@ def write_markdown(
     Returns the path written.
     Raises FileExistsError if file exists and overwrite=False.
     """
-    path = md_path_for(output.source_file, output_root, output.alias)
+    path = md_path_for(output.source_file, output_root, output.alias, use_subfolder)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    os.makedirs(assets_dir_for(output.source_file, output_root, output.alias), exist_ok=True)
+    os.makedirs(assets_dir_for(output.source_file, output_root, output.alias, use_subfolder), exist_ok=True)
 
     if not overwrite and os.path.exists(path):
         raise FileExistsError(f"Output file already exists: {path}")
