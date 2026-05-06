@@ -1,5 +1,6 @@
 import os
 import tkinter as tk
+import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
 from .tooltip import Tooltip
@@ -35,6 +36,15 @@ _FONT_NAV_ACT  = ("Segoe UI", 12, "bold")
 _FONT_SMALL    = ("Segoe UI", 11)
 _FONT_BTN      = ("Segoe UI", 13, "bold")
 _FONT_SECTION  = ("Segoe UI", 10, "bold")
+
+_CONF_AREAS = [
+    "Overall",
+    "Text extraction",
+    "Table structure",
+    "Image extraction",
+    "Image placement",
+    "Document order",
+]
 
 _TIPS = {
     "conversion_mode": (
@@ -122,6 +132,12 @@ class App:
         self.root.grid_columnconfigure(0, weight=0)  # sidebar
         self.root.grid_columnconfigure(1, weight=0)  # 1px border
         self.root.grid_columnconfigure(2, weight=1)  # content
+
+        # Use clam so ttk scrollbar colors are respected on Windows
+        self._ttk_style = ttk.Style()
+        self._ttk_style.theme_use('clam')
+        self._ttk_style.configure('App.Vertical.TScrollbar',
+            relief='flat', borderwidth=0)
 
         self._build_sidebar()
         self._build_content()
@@ -313,10 +329,11 @@ class App:
         )
         self._file_listbox.bind("<Button-3>", self._on_listbox_right_click)
         self._file_listbox.bind("<<ListboxSelect>>", self._on_listbox_select)
-        self._file_scrollbar = tk.Scrollbar(
+        self._file_scrollbar = ttk.Scrollbar(
             self._file_list_frame,
             orient="vertical",
             command=self._file_listbox.yview,
+            style='App.Vertical.TScrollbar',
         )
         self._file_listbox.config(yscrollcommand=self._file_scrollbar.set)
 
@@ -500,27 +517,224 @@ class App:
 
     def _build_conversion(self):
         f = self._new_screen("Conversion")
-        f.grid_rowconfigure(2, weight=1)
+        f.grid_rowconfigure(7, weight=1)
 
         self._heading(
             f, "Conversion",
             "Monitor progress, current file, conversion stage, warnings, and completion status.",
         )
 
-        self._ph_conv, self._ph_conv_lbl = self._placeholder(
-            f, "Progress bar and log output will appear here.", row=2, height=260)
+        # ── Overall progress ─────────────────────────────────
+        self._conv_overall_row = tk.Frame(f)
+        self._conv_overall_row.grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 4))
+        self._conv_overall_row.grid_columnconfigure(0, weight=1)
+
+        self._conv_overall_lbl = tk.Label(
+            self._conv_overall_row, text="Overall Progress", font=_FONT_SMALL, anchor="w")
+        self._conv_overall_lbl.grid(row=0, column=0, sticky="w")
+
+        self._conv_overall_count_lbl = tk.Label(
+            self._conv_overall_row, text="0 of 0 files", font=_FONT_SMALL, anchor="e")
+        self._conv_overall_count_lbl.grid(row=0, column=1, sticky="e")
+
+        self._conv_overall_bar_outer = tk.Frame(f, height=10, highlightthickness=1)
+        self._conv_overall_bar_outer.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._conv_overall_bar_outer.grid_propagate(False)
+
+        self._conv_overall_bar_inner = tk.Frame(self._conv_overall_bar_outer, height=10)
+        self._conv_overall_bar_inner.place(x=0, y=0, relheight=1.0, relwidth=0.0)
+
+        # ── Current file + stage ─────────────────────────────
+        self._conv_file_row = tk.Frame(f)
+        self._conv_file_row.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 4))
+        self._conv_file_row.grid_columnconfigure(0, weight=1)
+
+        self._conv_file_name_lbl = tk.Label(
+            self._conv_file_row, text="No conversion in progress",
+            font=_FONT_BODY, anchor="w")
+        self._conv_file_name_lbl.grid(row=0, column=0, sticky="w")
+
+        self._conv_stage_lbl = tk.Label(
+            self._conv_file_row, text="", font=_FONT_SMALL, anchor="w")
+        self._conv_stage_lbl.grid(row=1, column=0, sticky="w")
+
+        # ── Per-file progress ────────────────────────────────
+        self._conv_file_bar_outer = tk.Frame(f, height=6, highlightthickness=1)
+        self._conv_file_bar_outer.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._conv_file_bar_outer.grid_propagate(False)
+
+        self._conv_file_bar_inner = tk.Frame(self._conv_file_bar_outer, height=6)
+        self._conv_file_bar_inner.place(x=0, y=0, relheight=1.0, relwidth=0.0)
+
+        # ── Log panel ────────────────────────────────────────
+        self._conv_log_lbl = tk.Label(f, text="Log", font=_FONT_SMALL, anchor="w")
+        self._conv_log_lbl.grid(row=6, column=0, sticky="w", padx=32, pady=(0, 4))
+
+        self._conv_log_frame = tk.Frame(f, highlightthickness=1)
+        self._conv_log_frame.grid(row=7, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._conv_log_frame.grid_rowconfigure(0, weight=1)
+        self._conv_log_frame.grid_columnconfigure(0, weight=1)
+
+        self._conv_log = tk.Text(
+            self._conv_log_frame,
+            bd=0, relief="flat",
+            font=_FONT_SMALL,
+            state="disabled",
+            highlightthickness=0,
+            wrap="word",
+            padx=8, pady=6,
+        )
+        self._conv_log_sb = ttk.Scrollbar(
+            self._conv_log_frame, orient="vertical", command=self._conv_log.yview,
+            style='App.Vertical.TScrollbar')
+        self._conv_log.config(yscrollcommand=self._conv_log_sb.set)
+        self._conv_log.grid(row=0, column=0, sticky="nsew")
+        self._conv_log_sb.grid(row=0, column=1, sticky="ns")
+
+        # ── Cancel button ────────────────────────────────────
+        self._btn_cancel = tk.Button(
+            f,
+            text="Cancel",
+            font=_FONT_BTN,
+            padx=24, pady=10,
+            bd=0, relief="flat",
+            highlightthickness=1,
+            cursor="hand2",
+            command=self._on_cancel_conversion,
+        )
+        self._btn_cancel.grid(row=8, column=0, sticky="w", padx=32, pady=(0, 28))
 
     def _build_results(self):
         f = self._new_screen("Results")
-        f.grid_rowconfigure(2, weight=1)
+        f.grid_rowconfigure(8, weight=1)
 
         self._heading(
             f, "Results",
             "View the output location, confidence report summary, warnings, and open the output folder.",
         )
 
-        self._ph_results, self._ph_results_lbl = self._placeholder(
-            f, "Conversion results and confidence summary will appear here.", row=2, height=260)
+        # ── Status banner ────────────────────────────────────
+        self._results_status_frame = tk.Frame(f, highlightthickness=1)
+        self._results_status_frame.grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_status_frame.grid_columnconfigure(0, weight=1)
+
+        self._results_status_lbl = tk.Label(
+            self._results_status_frame,
+            text="No conversion has been run yet.",
+            font=_FONT_SMALL,
+            anchor="w",
+            padx=12, pady=8,
+        )
+        self._results_status_lbl.grid(row=0, column=0, sticky="ew")
+
+        # ── Output location row ──────────────────────────────
+        self._results_out_row = tk.Frame(f)
+        self._results_out_row.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_out_row.grid_columnconfigure(0, weight=1)
+
+        self._results_out_path_frame = tk.Frame(self._results_out_row, highlightthickness=1)
+        self._results_out_path_frame.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._results_out_path_frame.grid_columnconfigure(0, weight=1)
+
+        self._results_out_path_lbl = tk.Label(
+            self._results_out_path_frame,
+            text="Output location: —",
+            font=_FONT_SMALL,
+            anchor="w",
+            padx=10, pady=6,
+        )
+        self._results_out_path_lbl.grid(row=0, column=0, sticky="ew")
+
+        self._btn_open_folder = tk.Button(
+            self._results_out_row,
+            text="Open Folder",
+            font=_FONT_SMALL,
+            bd=0, relief="flat",
+            highlightthickness=1,
+            padx=12, pady=5,
+            cursor="hand2",
+            command=self._on_open_output_folder,
+        )
+        self._btn_open_folder.grid(row=0, column=1)
+
+        # ── Confidence summary ───────────────────────────────
+        self._results_conf_section_lbl = tk.Label(
+            f, text="CONFIDENCE SUMMARY", font=_FONT_SECTION, anchor="w")
+        self._results_conf_section_lbl.grid(
+            row=4, column=0, sticky="ew", padx=32, pady=(0, 2))
+
+        self._results_conf_div = tk.Frame(f, height=1)
+        self._results_conf_div.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 6))
+
+        self._results_conf_frame = tk.Frame(f)
+        self._results_conf_frame.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_conf_frame.grid_columnconfigure(0, weight=1)
+
+        self._results_conf_level_lbls: list[tk.Label] = []
+        for idx, area in enumerate(_CONF_AREAS):
+            tk.Label(
+                self._results_conf_frame, text=area, font=_FONT_SMALL, anchor="w",
+            ).grid(row=idx, column=0, sticky="w", pady=2)
+
+            lvl = tk.Label(
+                self._results_conf_frame, text="—", font=_FONT_SMALL, anchor="e")
+            lvl.grid(row=idx, column=1, sticky="e", pady=2)
+            self._results_conf_level_lbls.append(lvl)
+
+        # ── Warnings ─────────────────────────────────────────
+        self._results_warn_lbl = tk.Label(f, text="Warnings", font=_FONT_SMALL, anchor="w")
+        self._results_warn_lbl.grid(row=7, column=0, sticky="w", padx=32, pady=(0, 4))
+
+        self._results_warn_frame = tk.Frame(f, highlightthickness=1)
+        self._results_warn_frame.grid(row=8, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._results_warn_frame.grid_rowconfigure(0, weight=1)
+        self._results_warn_frame.grid_columnconfigure(0, weight=1)
+
+        self._results_warn_text = tk.Text(
+            self._results_warn_frame,
+            bd=0, relief="flat",
+            font=_FONT_SMALL,
+            state="disabled",
+            highlightthickness=0,
+            wrap="word",
+            padx=8, pady=6,
+            height=4,
+        )
+        self._results_warn_sb = ttk.Scrollbar(
+            self._results_warn_frame, orient="vertical",
+            command=self._results_warn_text.yview,
+            style='App.Vertical.TScrollbar',
+        )
+        self._results_warn_text.config(yscrollcommand=self._results_warn_sb.set)
+        self._results_warn_text.grid(row=0, column=0, sticky="nsew")
+        self._results_warn_sb.grid(row=0, column=1, sticky="ns")
+
+        # ── Button row ───────────────────────────────────────
+        self._results_btn_row = tk.Frame(f)
+        self._results_btn_row.grid(row=9, column=0, sticky="ew", padx=32, pady=(0, 28))
+
+        self._btn_open_output = tk.Button(
+            self._results_btn_row,
+            text="Open Output Folder",
+            font=_FONT_BTN,
+            padx=24, pady=10,
+            bd=0, relief="flat",
+            cursor="hand2",
+            command=self._on_open_output_folder,
+        )
+        self._btn_open_output.grid(row=0, column=0)
+
+        self._btn_new_conv = tk.Button(
+            self._results_btn_row,
+            text="Start New Conversion",
+            font=_FONT_BTN,
+            padx=24, pady=10,
+            bd=0, relief="flat",
+            highlightthickness=1,
+            cursor="hand2",
+            command=lambda: self._show("Home"),
+        )
+        self._btn_new_conv.grid(row=0, column=1, padx=(12, 0))
 
     # ── File picker logic ────────────────────────────────────
 
@@ -681,13 +895,47 @@ class App:
         ready = bool(self._selected_files) and bool(self._output_path)
         self._btn_start.config(state="normal" if ready else "disabled")
 
-    def _on_start(self):
+    def _on_open_output_folder(self):
         messagebox.showinfo(
-            "Coming Soon",
-            "Conversion is not yet available in this version.\n\n"
-            "File selection and output folder are ready. "
-            "The conversion engine will be wired in the next milestone.",
+            "No Output Available",
+            "No conversion output is available yet.\n\n"
+            "Complete a conversion to open the output folder.",
         )
+
+    def _on_cancel_conversion(self):
+        messagebox.showinfo(
+            "No Active Conversion",
+            "No conversion is currently running.\n\n"
+            "Cancel will stop an in-progress conversion once the engine is wired in.",
+        )
+
+    def _log_write(self, text: str):
+        self._conv_log.config(state="normal")
+        self._conv_log.insert(tk.END, text + "\n")
+        self._conv_log.config(state="disabled")
+        self._conv_log.see(tk.END)
+
+    def _reset_conversion_screen(self):
+        n = len(self._selected_files)
+        self._conv_overall_bar_inner.place(relwidth=0.0)
+        self._conv_file_bar_inner.place(relwidth=0.0)
+        label = "1 file" if n == 1 else f"{n} files"
+        self._conv_overall_count_lbl.config(text=f"0 of {n} file{'s' if n != 1 else ''}")
+        self._conv_file_name_lbl.config(text="Preparing…")
+        self._conv_stage_lbl.config(text="")
+        self._conv_log.config(state="normal")
+        self._conv_log.delete("1.0", tk.END)
+        self._conv_log.config(state="disabled")
+        self._log_write(f"Queued {label} for conversion:\n")
+        for i, path in enumerate(self._selected_files, 1):
+            alias = self._file_aliases.get(path)
+            name = alias if alias else os.path.basename(path)
+            self._log_write(f"  {i}.  {name}")
+        self._log_write("")
+
+    def _on_start(self):
+        self._reset_conversion_screen()
+        self._show("Conversion")
 
     def _on_listbox_select(self, _event=None):
         sel = self._file_listbox.curselection()
@@ -825,6 +1073,17 @@ class App:
             selectbackground=t["accent"],
             selectforeground=t["text_on_accent"],
         )
+        self._ttk_style.configure('App.Vertical.TScrollbar',
+            background=t["border"],
+            troughcolor=t["bg"],
+            arrowcolor=t["text_secondary"],
+            bordercolor=t["bg"],
+            darkcolor=t["border"],
+            lightcolor=t["border"],
+        )
+        self._ttk_style.map('App.Vertical.TScrollbar',
+            background=[('active', t["text_secondary"]), ('pressed', t["text"])],
+        )
         self._lbl_empty.config(bg=t["bg"], fg=t["text_secondary"])
         self._lbl_file_count.config(bg=t["content_bg"], fg=t["text_secondary"])
 
@@ -832,13 +1091,77 @@ class App:
         self._out_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._lbl_output_path.config(bg=t["bg"], fg=t["text_secondary"])
 
-        # ── Placeholder boxes (Conversion and Results only) ──
-        for box, lbl in [
-            (self._ph_conv,     self._ph_conv_lbl),
-            (self._ph_results,  self._ph_results_lbl),
-        ]:
-            box.config(bg=t["bg"], highlightbackground=t["border"])
-            lbl.config(bg=t["bg"], fg=t["text_secondary"])
+        # ── Results-specific widgets ──────────────────────────
+        self._results_status_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._results_status_lbl.config(bg=t["bg"], fg=t["text_secondary"])
+
+        self._results_out_row.config(bg=t["content_bg"])
+        self._results_out_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._results_out_path_lbl.config(bg=t["bg"], fg=t["text_secondary"])
+        self._btn_open_folder.config(
+            bg=t["sidebar_bg"],
+            fg=t["accent"],
+            highlightbackground=t["border"],
+            activebackground=t["nav_hover_bg"],
+            activeforeground=t["accent"],
+        )
+
+        self._results_conf_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._results_conf_div.config(bg=t["border"])
+        self._results_conf_frame.config(bg=t["content_bg"])
+        for lbl in self._results_conf_level_lbls:
+            lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._results_warn_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._results_warn_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._results_warn_text.config(
+            bg=t["bg"], fg=t["text"], insertbackground=t["text"])
+
+        self._results_btn_row.config(bg=t["content_bg"])
+        self._btn_open_output.config(
+            bg=t["accent"],
+            fg=t["text_on_accent"],
+            activebackground=t["accent_hover"],
+            activeforeground=t["text_on_accent"],
+            disabledforeground=t["text_on_accent"],
+        )
+        self._btn_new_conv.config(
+            bg=t["sidebar_bg"],
+            fg=t["accent"],
+            highlightbackground=t["border"],
+            activebackground=t["nav_hover_bg"],
+            activeforeground=t["accent"],
+        )
+
+        # ── Conversion-specific widgets ───────────────────────
+        self._conv_overall_row.config(bg=t["content_bg"])
+        self._conv_overall_lbl.config(bg=t["content_bg"], fg=t["text"])
+        self._conv_overall_count_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._conv_overall_bar_outer.config(bg=t["bg"], highlightbackground=t["border"])
+        self._conv_overall_bar_inner.config(bg=t["accent"])
+
+        self._conv_file_row.config(bg=t["content_bg"])
+        self._conv_file_name_lbl.config(bg=t["content_bg"], fg=t["text"])
+        self._conv_stage_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._conv_file_bar_outer.config(bg=t["bg"], highlightbackground=t["border"])
+        self._conv_file_bar_inner.config(bg=t["accent"])
+
+        self._conv_log_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._conv_log_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._conv_log.config(
+            bg=t["bg"], fg=t["text"],
+            insertbackground=t["text"],
+        )
+
+        self._btn_cancel.config(
+            bg=t["sidebar_bg"],
+            fg=t["accent"],
+            highlightbackground=t["border"],
+            activebackground=t["nav_hover_bg"],
+            activeforeground=t["accent"],
+        )
 
         # Start button
         self._btn_start.config(

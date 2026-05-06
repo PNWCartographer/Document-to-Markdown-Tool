@@ -1,0 +1,10 @@
+{
+  "conversion_mode": "Standard",
+  "preserve_images": false,
+  "preserve_page_numbers": false,
+  "rebuild_toc": false,
+  "ocr_language": "English",
+  "overwrite_existing": false,
+  "output_subfolder": true,
+  "low_confidence_action": "Ask me"
+}
