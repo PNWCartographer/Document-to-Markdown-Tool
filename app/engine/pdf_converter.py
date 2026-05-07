@@ -201,6 +201,8 @@ def _convert_docling(
         log_warn("docling returned empty Markdown for PDF.")
         return None
 
+    md_text = _clean_docling_text(md_text)
+
     # Extract outline / TOC from docling document model
     if rebuild_toc:
         _extract_docling_toc(doc, output, log_info)
@@ -222,6 +224,7 @@ def _convert_docling(
     confidence.image_extraction = "High" if preserve_images else "N/A"
     confidence.image_placement = "High" if preserve_images else "N/A"
     confidence.ocr_confidence = "N/A"
+    confidence.add_note("Engine: docling (AI layout analysis)")
     confidence.derive_overall()
 
     log_info("docling PDF conversion complete.")
@@ -326,7 +329,8 @@ def _convert_pymupdf4llm(
     confidence.image_extraction = "High" if preserve_images else "N/A"
     confidence.image_placement = "Medium" if preserve_images else "N/A"
     confidence.ocr_confidence = "N/A"
-    confidence.add_note("pymupdf4llm used — table structure is best-effort.")
+    confidence.add_note("Engine: pymupdf4llm (fast Markdown export)")
+    confidence.add_note("Table structure is best-effort — verify complex tables.")
     confidence.derive_overall()
 
     log_info("pymupdf4llm PDF conversion complete.")
@@ -451,6 +455,8 @@ def _convert_pymupdf(
     confidence.image_placement = "Medium" if preserve_images and assets_dir else "N/A"
     confidence.derive_overall()
 
+    engine_label = "pymupdf page-by-page (OCR)" if use_ocr else "pymupdf page-by-page"
+    confidence.add_note(f"Engine: {engine_label}")
     log_info(f"pymupdf conversion complete | pages={total_pages} extracted={extracted_pages}")
     progress(1.0)
     return output
@@ -523,6 +529,57 @@ def _get_page_tables(pdf_path: str, page_num: int, log_info) -> list:
         return table_extractor.extract_tables_from_file(pdf_path, pages=[page_num])
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Docling output post-processing
+# ---------------------------------------------------------------------------
+
+def _clean_docling_text(text: str) -> str:
+    """
+    Fix three classes of artifacts that docling produces from PDFs with
+    custom-encoded fonts:
+
+    1. Adobe PUA characters (U+F700-U+F7FF) — many PDFs encode their body
+       font glyphs in the Private Use Area block offset by 0xF700. Each PUA
+       char is simply the matching printable ASCII char plus 0xF700.
+       Subtract 0xF700 to recover the original character.
+
+    2. Soft hyphens (U+00AD) — used in PDFs for in-line word-break
+       hyphenation. Removing them rejoins the word correctly.
+
+    3. <!-- image --> placeholders — docling inserts these when it detects
+       an embedded image it cannot export. Replace with a human-readable note.
+
+    4. Decorative PUA separators (U+E048, U+E061) — custom ornament glyphs
+       used as section dividers. Replace with a Markdown horizontal rule.
+    """
+    result = []
+    for ch in text:
+        cp = ord(ch)
+        if 0xF700 <= cp <= 0xF7FF:
+            ascii_equiv = cp - 0xF700
+            if 0x20 <= ascii_equiv <= 0x7E:
+                result.append(chr(ascii_equiv))
+            # else: drop non-printable PUA char
+        elif cp == 0x00AD:
+            pass  # drop soft hyphen — rejoins hyphenated word
+        elif cp in (0xE048, 0xE061):
+            result.append("\n\n---\n\n")
+        else:
+            result.append(ch)
+
+    cleaned = "".join(result)
+
+    # Replace docling image placeholders with a readable note
+    cleaned = re.sub(
+        r'<!--\s*image\s*-->',
+        '*[image — could not be extracted]*',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    return cleaned
 
 
 # ---------------------------------------------------------------------------
