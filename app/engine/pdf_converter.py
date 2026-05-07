@@ -36,6 +36,7 @@ def convert(
     preserve_images: bool = True,
     rebuild_toc: bool = True,
     preserve_page_numbers: bool = True,
+    use_subfolder: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -78,7 +79,7 @@ def convert(
             try:
                 result = _convert_docling(
                     source_file, alias, output_root, preserve_images,
-                    rebuild_toc, preserve_page_numbers,
+                    rebuild_toc, preserve_page_numbers, use_subfolder,
                     output, confidence, log_info, log_warn, progress
                 )
                 if result:
@@ -90,7 +91,7 @@ def convert(
             try:
                 return _convert_pymupdf4llm(
                     source_file, alias, output_root, preserve_images,
-                    rebuild_toc, preserve_page_numbers,
+                    rebuild_toc, preserve_page_numbers, use_subfolder,
                     output, confidence, log_info, log_warn, progress
                 )
             except Exception as e:
@@ -99,7 +100,7 @@ def convert(
         if _pymupdf_available():
             return _convert_pymupdf(
                 source_file, alias, output_root, preserve_images,
-                rebuild_toc, preserve_page_numbers, language,
+                rebuild_toc, preserve_page_numbers, language, use_subfolder,
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=False
             )
@@ -111,7 +112,7 @@ def convert(
         if _pymupdf_available():
             return _convert_pymupdf(
                 source_file, alias, output_root, preserve_images,
-                rebuild_toc, preserve_page_numbers, language,
+                rebuild_toc, preserve_page_numbers, language, use_subfolder,
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=True
             )
@@ -183,7 +184,7 @@ def _detect_scanned(pdf_path: str, log_info) -> bool:
 
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, output, confidence, log_info, log_warn, progress
+    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
 
@@ -207,9 +208,9 @@ def _convert_docling(
     if rebuild_toc:
         _extract_docling_toc(doc, output, log_info)
 
-    # Save images
+    # Save images via fitz (docling's own image API returns None for most PDFs)
     if preserve_images and output_root:
-        _save_docling_images(doc, source_file, alias, output_root, output, log_info)
+        _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn, use_subfolder)
 
     # Inject page anchors if page number info is available
     if preserve_page_numbers:
@@ -265,24 +266,59 @@ def _extract_docling_toc(doc, output: ConversionOutput, log_info) -> None:
     output.toc_entries = unique
 
 
-def _save_docling_images(doc, source_file, alias, output_root, output, log_info):
-    from .markdown_writer import assets_dir_for
-    assets_dir = assets_dir_for(source_file, output_root, alias)
-    os.makedirs(assets_dir, exist_ok=True)
+def _extract_fitz_images(
+    source_file: str,
+    alias: str,
+    output_root: str,
+    output: ConversionOutput,
+    log_info,
+    log_warn,
+    use_subfolder: bool = True,
+) -> None:
+    """
+    Extract all embedded images from a PDF using fitz and save them to assets/.
+    Used by all three PDF conversion paths (docling, pymupdf4llm, pymupdf page-by-page).
+    Deduplicates images by xref so the same image reused on multiple pages
+    is only saved once.
+    """
     try:
-        for idx, (key, picture) in enumerate(doc.pictures.items()):
-            img_filename = f"page_image_{idx + 1:03d}.png"
-            img_path = os.path.join(assets_dir, img_filename)
-            try:
-                pil_img = picture.pil_image
-                if pil_img:
-                    pil_img.save(img_path)
-                    output.asset_paths.append(f"assets/{img_filename}")
-                    log_info(f"Saved image asset: {img_filename}")
-            except Exception:
-                pass
-    except Exception:
-        pass
+        import fitz
+        from .markdown_writer import assets_dir_for
+        assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
+        os.makedirs(assets_dir, exist_ok=True)
+
+        doc = fitz.open(source_file)
+        saved_xrefs: set[int] = set()
+        img_counter = 0
+
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
+                if xref in saved_xrefs:
+                    continue  # skip duplicate (same image on multiple pages)
+                try:
+                    base_image = doc.extract_image(xref)
+                    img_bytes = base_image["image"]
+                    if len(img_bytes) < 512:
+                        continue  # skip tiny images (icons, borders)
+                    ext = base_image.get("ext", "png")
+                    img_counter += 1
+                    filename = f"image_{img_counter:03d}_p{page_idx + 1}.{ext}"
+                    img_path = os.path.join(assets_dir, filename)
+                    with open(img_path, "wb") as fh:
+                        fh.write(img_bytes)
+                    output.asset_paths.append(f"assets/{filename}")
+                    saved_xrefs.add(xref)
+                    log_info(f"Saved image: {filename} ({len(img_bytes)} bytes)")
+                except Exception as e:
+                    log_warn(f"Could not extract image xref={xref}: {e}")
+
+        doc.close()
+        log_info(f"Image extraction complete | saved={img_counter}")
+
+    except Exception as e:
+        log_warn(f"fitz image extraction failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +327,7 @@ def _save_docling_images(doc, source_file, alias, output_root, output, log_info)
 
 def _convert_pymupdf4llm(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, output, confidence, log_info, log_warn, progress
+    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
 ) -> ConversionOutput:
     import pymupdf4llm
     import fitz
@@ -315,7 +351,7 @@ def _convert_pymupdf4llm(
 
     # Extract and save images via fitz
     if preserve_images and output_root:
-        _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn)
+        _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn, use_subfolder)
 
     if preserve_page_numbers:
         md_text = _inject_page_anchors_from_text(md_text)
@@ -344,8 +380,8 @@ def _convert_pymupdf4llm(
 
 def _convert_pymupdf(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, language, output, confidence, log_info, log_warn,
-    progress, use_ocr: bool = False
+    preserve_page_numbers, language, use_subfolder, output, confidence,
+    log_info, log_warn, progress, use_ocr: bool = False
 ) -> ConversionOutput:
     import fitz
 
@@ -372,7 +408,7 @@ def _convert_pymupdf(
     assets_dir = None
     if preserve_images and output_root:
         from .markdown_writer import assets_dir_for
-        assets_dir = assets_dir_for(source_file, output_root, alias)
+        assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
         os.makedirs(assets_dir, exist_ok=True)
 
     page_sections = []

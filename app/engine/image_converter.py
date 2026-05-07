@@ -29,6 +29,7 @@ def convert(
     output_root: str = "",
     language: str = "en",
     preserve_images: bool = True,
+    use_subfolder: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -89,7 +90,7 @@ def convert(
     # ------------------------------------------------------------------
     asset_rel_path = None
     if preserve_images and output_root:
-        asset_rel_path = _save_asset(processed_pil, source_file, alias, output_root, logger)
+        asset_rel_path = _save_asset(processed_pil, source_file, alias, output_root, logger, use_subfolder)
         if asset_rel_path:
             output.asset_paths.append(asset_rel_path)
 
@@ -197,14 +198,14 @@ def _deskew(gray_array):
 # Asset saving
 # ---------------------------------------------------------------------------
 
-def _save_asset(pil_image, source_file: str, alias: str, output_root: str, logger) -> Optional[str]:
+def _save_asset(pil_image, source_file: str, alias: str, output_root: str, logger, use_subfolder: bool = True) -> Optional[str]:
     """
     Save the processed image to assets/ and return the relative path for Markdown linking.
     """
     from .markdown_writer import assets_dir_for
 
     try:
-        assets_dir = assets_dir_for(source_file, output_root, alias)
+        assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
         os.makedirs(assets_dir, exist_ok=True)
 
         stem = re.sub(r'[<>:"/\\|?*]', "_", os.path.splitext(os.path.basename(source_file))[0])

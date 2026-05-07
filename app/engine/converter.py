@@ -221,6 +221,8 @@ class ConversionJob:
         def stage(s: str):
             self._gui(self._on_stage, s)
 
+        use_subfolder = self._cfg.get("output_subfolder", True)
+
         if ext == ".pdf":
             stage("Analysing PDF…")
             from . import pdf_converter
@@ -233,6 +235,7 @@ class ConversionJob:
                 preserve_images=preserve_images,
                 rebuild_toc=rebuild_toc,
                 preserve_page_numbers=preserve_pages,
+                use_subfolder=use_subfolder,
                 logger=logger,
                 progress_callback=progress,
             )
@@ -248,6 +251,7 @@ class ConversionJob:
                 preserve_images=preserve_images,
                 rebuild_toc=rebuild_toc,
                 preserve_page_numbers=preserve_pages,
+                use_subfolder=use_subfolder,
                 logger=logger,
                 progress_callback=progress,
             )
@@ -281,6 +285,7 @@ class ConversionJob:
                 output_root=self._output_root,
                 language=lang,
                 preserve_images=preserve_images,
+                use_subfolder=use_subfolder,
                 logger=logger,
                 progress_callback=progress,
             )

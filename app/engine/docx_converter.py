@@ -27,6 +27,7 @@ def convert(
     preserve_images: bool = True,
     rebuild_toc: bool = True,
     preserve_page_numbers: bool = False,
+    use_subfolder: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -50,7 +51,7 @@ def convert(
         try:
             result = _convert_docling(
                 source_file, alias, output_root, preserve_images, rebuild_toc,
-                preserve_page_numbers, output, confidence, log_info, log_warn, progress
+                preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
             )
             if result:
                 return result
@@ -64,7 +65,7 @@ def convert(
         try:
             return _convert_mammoth(
                 source_file, alias, output_root, preserve_images, rebuild_toc,
-                output, confidence, log_info, log_warn, progress
+                use_subfolder, output, confidence, log_info, log_warn, progress
             )
         except Exception as e:
             log_warn(f"mammoth failed: {e} — trying python-docx fallback.")
@@ -75,7 +76,7 @@ def convert(
     if _python_docx_available():
         return _convert_python_docx(
             source_file, alias, output_root, preserve_images, rebuild_toc,
-            output, confidence, log_info, log_warn, progress
+            use_subfolder, output, confidence, log_info, log_warn, progress
         )
 
     log_warn("No DOCX conversion engine available.")
@@ -98,7 +99,7 @@ def _docling_available() -> bool:
 
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, output, confidence, log_info, log_warn, progress
+    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
     from docling.datamodel.base_models import InputFormat
@@ -123,9 +124,9 @@ def _convert_docling(
     if rebuild_toc:
         _extract_toc_from_markdown(md_text, output)
 
-    # Extract and save images if docling captured them
+    # Extract and save images
     if preserve_images and output_root:
-        _save_docling_images(doc, source_file, alias, output_root, output, log_info)
+        _save_docling_images(doc, source_file, alias, output_root, output, log_info, use_subfolder)
 
     output.add_section(body=md_text)
     progress(0.9)
@@ -144,26 +145,31 @@ def _convert_docling(
     return output
 
 
-def _save_docling_images(doc, source_file, alias, output_root, output, log_info):
+def _save_docling_images(doc, source_file, alias, output_root, output, log_info, use_subfolder=True):
     from .markdown_writer import assets_dir_for
 
-    assets_dir = assets_dir_for(source_file, output_root, alias)
+    assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
     os.makedirs(assets_dir, exist_ok=True)
 
+    saved = 0
     try:
-        for idx, (key, image) in enumerate(doc.pictures.items()):
+        for idx, picture in enumerate(doc.pictures):
             img_filename = f"image_{idx + 1:03d}.png"
             img_path = os.path.join(assets_dir, img_filename)
             try:
-                pil_img = image.pil_image
+                pil_img = picture.get_image(doc)
+                if pil_img is None and hasattr(picture, 'image') and picture.image:
+                    pil_img = picture.image.pil_image
                 if pil_img:
                     pil_img.save(img_path)
                     output.asset_paths.append(f"assets/{img_filename}")
                     log_info(f"Saved image asset: {img_filename}")
+                    saved += 1
             except Exception:
                 pass
     except Exception:
         pass
+    log_info(f"DOCX image extraction complete | saved={saved}")
 
 
 def _extract_toc_from_markdown(md_text: str, output: ConversionOutput) -> None:
@@ -189,7 +195,7 @@ def _mammoth_available() -> bool:
 
 def _convert_mammoth(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    output, confidence, log_info, log_warn, progress
+    use_subfolder, output, confidence, log_info, log_warn, progress
 ) -> ConversionOutput:
     import mammoth
 
@@ -272,7 +278,7 @@ _HEADING_MAP = {
 
 def _convert_python_docx(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    output, confidence, log_info, log_warn, progress
+    use_subfolder, output, confidence, log_info, log_warn, progress
 ) -> ConversionOutput:
     import docx as python_docx
 
