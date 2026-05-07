@@ -91,6 +91,17 @@ _TIPS = {
         "you a choice. 'Keep and flag' will include the uncertain content and mark it for review. "
         "'Skip' will leave it out entirely."
     ),
+    "embed_images": (
+        "Encodes images directly inside the Markdown file. The output is fully self-contained "
+        "— no separate assets folder needed, images appear in their original position.\n\n"
+        "⚠ Raw text editors (Notepad, WordPad) will show base64 data as walls of characters. "
+        "This is normal — the file is not broken. Open it in a Markdown viewer to see images correctly.\n\n"
+        "Notepad++: Plugins → Plugins Admin → search 'MarkdownViewer' → Install → restart "
+        "Notepad++ → open file → click the Markdown icon in the toolbar.\n\n"
+        "Free alternatives: VS Code (Ctrl+Shift+V for preview), Obsidian, Typora.\n\n"
+        "Turn this off to save images as separate files in an assets folder instead "
+        "(smaller .md file, but assets folder must stay alongside it)."
+    ),
 }
 
 
@@ -101,8 +112,11 @@ class App:
         self.root.geometry("960x640")
         self.root.minsize(720, 500)
 
-        self._dark = False
-        self._t = themes.LIGHT
+        # Load config first — theme preference is stored here
+        self._cfg = _cfg_mod.load()
+
+        self._dark = (self._cfg.get("theme", "light") == "dark")
+        self._t = themes.DARK if self._dark else themes.LIGHT
         self._nav_btns: dict[str, tk.Button] = {}
         self._frames:   dict[str, tk.Frame]  = {}
         self._current   = "Home"
@@ -112,8 +126,7 @@ class App:
         self._file_aliases:   dict[str, str] = {}   # path → custom output name
         self._output_path: str = ""
 
-        # Settings state
-        self._cfg = _cfg_mod.load()
+        # Settings state (config already loaded above)
         self._setting_vars:        dict = {}
         self._settings_section_hdrs: list[tk.Label]  = []
         self._settings_dividers:     list[tk.Frame]  = []
@@ -121,6 +134,7 @@ class App:
         self._settings_name_labels:  list[tk.Label]  = []
         self._settings_checkboxes:   list[tk.Widget] = []
         self._settings_dropdowns:    list[tk.Widget] = []
+        self._settings_default_lbls: list[tk.Label]  = []
 
         # Engine state
         self._active_job: "Optional[_converter_mod.ConversionJob]" = None
@@ -407,6 +421,7 @@ class App:
             "preserve_images":       tk.BooleanVar(value=self._cfg["preserve_images"]),
             "preserve_page_numbers": tk.BooleanVar(value=self._cfg["preserve_page_numbers"]),
             "rebuild_toc":           tk.BooleanVar(value=self._cfg["rebuild_toc"]),
+            "embed_images":          tk.BooleanVar(value=self._cfg["embed_images"]),
             "ocr_language":          tk.StringVar(value=self._cfg["ocr_language"]),
             "overwrite_existing":    tk.BooleanVar(value=self._cfg["overwrite_existing"]),
             "output_subfolder":      tk.BooleanVar(value=self._cfg["output_subfolder"]),
@@ -415,9 +430,34 @@ class App:
         for var in self._setting_vars.values():
             var.trace_add("write", self._on_setting_changed)
 
-        # ── Content frame ─────────────────────────────────────
-        self._settings_content = tk.Frame(f)
-        self._settings_content.grid(row=2, column=0, sticky="nsew", padx=32, pady=(0, 24))
+        # ── Scrollable content frame ───────────────────────────
+        scroll_outer = tk.Frame(f)
+        scroll_outer.grid(row=2, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        scroll_outer.grid_rowconfigure(0, weight=1)
+        scroll_outer.grid_columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(scroll_outer, bd=0, highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        vsb = ttk.Scrollbar(scroll_outer, orient="vertical", command=canvas.yview,
+                            style='App.Vertical.TScrollbar')
+        vsb.grid(row=0, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=vsb.set)
+
+        self._settings_content = tk.Frame(canvas)
+        self._settings_canvas_window = canvas.create_window(
+            (0, 0), window=self._settings_content, anchor="nw")
+
+        def _on_content_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        def _on_canvas_configure(event):
+            canvas.itemconfig(self._settings_canvas_window, width=event.width)
+        self._settings_content.bind("<Configure>", _on_content_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(-1 * (e.delta // 120), "units"))
+
+        self._settings_canvas = canvas
+
+        # col 0 = ⓘ icon, col 1 = label (expands), col 2 = control, col 3 = default hint
         self._settings_content.grid_columnconfigure(1, weight=1)
 
         row = 0
@@ -428,6 +468,7 @@ class App:
             self._settings_content, "conversion_mode", "Conversion Mode",
             ["Standard", "OCR", "Auto-detect"],
             _TIPS["conversion_mode"], row,
+            default_hint="default: Auto-detect",
         )
 
         # Section: Content Handling
@@ -435,14 +476,22 @@ class App:
         row = self._settings_add_checkbox(
             self._settings_content, "preserve_images", "Preserve Images",
             _TIPS["preserve_images"], row,
+            default_hint="default: on",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "embed_images", "Embed Images in File (Base64)",
+            _TIPS["embed_images"], row,
+            default_hint="default: on",
         )
         row = self._settings_add_checkbox(
             self._settings_content, "preserve_page_numbers", "Preserve Page Numbers",
             _TIPS["preserve_page_numbers"], row,
+            default_hint="default: on",
         )
         row = self._settings_add_checkbox(
             self._settings_content, "rebuild_toc", "Rebuild Table of Contents",
             _TIPS["rebuild_toc"], row,
+            default_hint="default: on",
         )
 
         # Section: OCR
@@ -452,6 +501,7 @@ class App:
             ["English", "French", "German", "Spanish", "Italian", "Portuguese",
              "Dutch", "Auto-detect"],
             _TIPS["ocr_language"], row,
+            default_hint="default: English",
         )
 
         # Section: Output
@@ -459,66 +509,101 @@ class App:
         row = self._settings_add_checkbox(
             self._settings_content, "overwrite_existing", "Overwrite Existing Files",
             _TIPS["overwrite_existing"], row,
+            default_hint="default: off",
         )
         row = self._settings_add_checkbox(
             self._settings_content, "output_subfolder", "Output Subfolder Structure",
             _TIPS["output_subfolder"], row,
+            default_hint="default: off",
         )
         row = self._settings_add_dropdown(
             self._settings_content, "low_confidence_action", "Handle Low Confidence Results",
             ["Ask me", "Keep and flag", "Skip"],
             _TIPS["low_confidence_action"], row,
+            default_hint="default: Ask me",
         )
+
+        # ── Reset to Defaults button ──────────────────────────
+        row = self._settings_add_section(self._settings_content, "Reset", row)
+        self._btn_reset_defaults = tk.Button(
+            self._settings_content,
+            text="Reset to Defaults",
+            font=_FONT_SMALL,
+            bd=0, relief="flat",
+            highlightthickness=1,
+            padx=14, pady=6,
+            cursor="hand2",
+            command=self._on_reset_defaults,
+        )
+        self._btn_reset_defaults.grid(
+            row=row, column=1, columnspan=3, sticky="w", pady=(4, 16))
 
     def _settings_add_section(self, parent, title: str, row: int, first=False) -> int:
         top_pad = 8 if first else 18
         lbl = tk.Label(parent, text=title.upper(), font=_FONT_SECTION, anchor="w")
-        lbl.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(top_pad, 2))
+        lbl.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(top_pad, 2))
         sep = tk.Frame(parent, height=1)
-        sep.grid(row=row + 1, column=0, columnspan=3, sticky="ew", pady=(0, 2))
+        sep.grid(row=row + 1, column=0, columnspan=4, sticky="ew", pady=(0, 2))
         self._settings_section_hdrs.append(lbl)
         self._settings_dividers.append(sep)
         return row + 2
 
-    def _settings_add_checkbox(self, parent, key, label, tip, row) -> int:
+    def _settings_add_checkbox(self, parent, key, label, tip, row, default_hint="") -> int:
         info = tk.Label(parent, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
         info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
         Tooltip(info, tip, lambda: self._t)
 
         lbl = tk.Label(parent, text=label, font=_FONT_SMALL, anchor="w")
-        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=4)
+        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=4)
 
         var = self._setting_vars[key]
         cb = tk.Checkbutton(parent, variable=var, bd=0, highlightthickness=0, cursor="hand2")
-        cb.grid(row=row, column=2, sticky="e", pady=4)
+        cb.grid(row=row, column=2, sticky="e", pady=4, padx=(0, 8))
+
+        hint_lbl = tk.Label(parent, text=default_hint, font=("Segoe UI", 9), anchor="e")
+        hint_lbl.grid(row=row, column=3, sticky="e", pady=4, padx=(0, 4))
 
         self._settings_info_labels.append(info)
         self._settings_name_labels.append(lbl)
         self._settings_checkboxes.append(cb)
+        self._settings_default_lbls.append(hint_lbl)
         return row + 1
 
-    def _settings_add_dropdown(self, parent, key, label, options, tip, row) -> int:
+    def _settings_add_dropdown(self, parent, key, label, options, tip, row, default_hint="") -> int:
         info = tk.Label(parent, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
         info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
         Tooltip(info, tip, lambda: self._t)
 
         lbl = tk.Label(parent, text=label, font=_FONT_SMALL, anchor="w")
-        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=4)
+        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=4)
 
         var = self._setting_vars[key]
         menu = tk.OptionMenu(parent, var, *options)
         menu.config(bd=0, relief="flat", highlightthickness=1, pady=3, padx=8, cursor="hand2")
-        menu.grid(row=row, column=2, sticky="e", pady=3)
+        menu.grid(row=row, column=2, sticky="e", pady=3, padx=(0, 8))
+
+        hint_lbl = tk.Label(parent, text=default_hint, font=("Segoe UI", 9), anchor="e")
+        hint_lbl.grid(row=row, column=3, sticky="e", pady=4, padx=(0, 4))
 
         self._settings_info_labels.append(info)
         self._settings_name_labels.append(lbl)
         self._settings_dropdowns.append(menu)
+        self._settings_default_lbls.append(hint_lbl)
         return row + 1
 
     def _on_setting_changed(self, *_):
         for key, var in self._setting_vars.items():
             self._cfg[key] = var.get()
         _cfg_mod.save(self._cfg)
+
+    def _on_reset_defaults(self):
+        """Reset conversion settings to factory defaults. Theme is NOT changed."""
+        defaults = _cfg_mod.DEFAULTS
+        # Only reset keys that are exposed as settings controls — never touch theme
+        for key, val in defaults.items():
+            if key in self._setting_vars:
+                self._setting_vars[key].set(val)
+        # _on_setting_changed fires from the var traces and saves cfg — done.
 
     def _build_conversion(self):
         f = self._new_screen("Conversion")
@@ -1116,10 +1201,54 @@ class App:
     def _toggle_theme(self):
         self._dark = not self._dark
         self._t = themes.DARK if self._dark else themes.LIGHT
+        self._cfg["theme"] = "dark" if self._dark else "light"
+        _cfg_mod.save(self._cfg)
         self._apply_theme()
+
+    def _set_titlebar_dark(self, dark: bool) -> None:
+        """
+        Apply dark/light title bar on Windows via the DWM API.
+
+        Key details:
+        - winfo_id() returns the child (client-area) HWND, NOT the top-level
+          frame HWND.  GetParent() walks up to the real top-level window that
+          DWM controls the title bar of.
+        - update_idletasks() ensures the window is fully realised before we
+          query its handle.
+        - We try attribute 20 first (Windows 11 / Win10 20H1+), then fall back
+          to attribute 19 (older Win10 insider/preview builds).
+        """
+        try:
+            import ctypes
+            from ctypes import c_int, byref, sizeof
+
+            self.root.update_idletasks()
+
+            # Get the actual top-level frame HWND (not the client-area child)
+            client_hwnd = self.root.winfo_id()
+            hwnd = ctypes.windll.user32.GetParent(client_hwnd)
+            if not hwnd:
+                hwnd = client_hwnd  # fallback if no parent (shouldn't happen)
+
+            value = c_int(1 if dark else 0)
+
+            # Win10 20H1+ / Win11
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            ret = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, byref(value), sizeof(value)
+            )
+
+            # Fallback: older Windows 10 insider builds used attribute 19
+            if ret != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 19, byref(value), sizeof(value)
+                )
+        except Exception:
+            pass
 
     def _apply_theme(self):
         t = self._t
+        self._set_titlebar_dark(self._dark)
 
         self.root.config(bg=t["bg"])
         self._sidebar.config(bg=t["sidebar_bg"])
@@ -1270,10 +1399,12 @@ class App:
         )
 
         # ── Settings-specific widgets ────────────────────────
-        # _style_screen_labels already walked the settings content frame and set
-        # all Labels to content_bg/text and all Frames to content_bg. Override
-        # the widgets that need non-default colors.
+        # _settings_content is embedded inside a Canvas window so it is NOT
+        # reached by the _style_screen_labels traversal above.  Walk it
+        # explicitly first, then apply per-widget color overrides below.
+        self._settings_canvas.config(bg=t["content_bg"])
         self._settings_content.config(bg=t["content_bg"])
+        self._style_screen_labels(self._settings_content, t)
 
         for lbl in self._settings_section_hdrs:
             lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
@@ -1308,6 +1439,17 @@ class App:
                 activeforeground=t["text_on_accent"],
             )
 
+        for lbl in self._settings_default_lbls:
+            lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._btn_reset_defaults.config(
+            bg=t["sidebar_bg"],
+            fg=t["accent"],
+            highlightbackground=t["border"],
+            activebackground=t["nav_hover_bg"],
+            activeforeground=t["accent"],
+        )
+
         self._refresh_nav()
 
     def _style_screen_labels(self, widget, t):
@@ -1322,4 +1464,7 @@ class App:
     # ── Run ──────────────────────────────────────────────────
 
     def run(self):
+        # Apply title bar theme after the event loop starts.
+        # The window must be fully mapped before DWM will accept the attribute.
+        self.root.after(100, lambda: self._set_titlebar_dark(self._dark))
         self.root.mainloop()

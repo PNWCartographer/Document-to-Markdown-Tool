@@ -202,7 +202,7 @@ def _save_asset(pil_image, source_file: str, alias: str, output_root: str, logge
     """
     Save the processed image to assets/ and return the relative path for Markdown linking.
     """
-    from .markdown_writer import assets_dir_for
+    from .markdown_writer import assets_dir_for, assets_rel_prefix_for
 
     try:
         assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
@@ -214,8 +214,9 @@ def _save_asset(pil_image, source_file: str, alias: str, output_root: str, logge
 
         pil_image.save(asset_path, format="PNG")
 
-        # Return relative path from the .md file location (sibling of assets/)
-        rel_path = f"assets/{asset_filename}"
+        # Return relative path from the .md file location
+        prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
+        rel_path = f"{prefix}{asset_filename}"
         if logger:
             logger.info(f"Image saved | path={asset_path}")
         return rel_path

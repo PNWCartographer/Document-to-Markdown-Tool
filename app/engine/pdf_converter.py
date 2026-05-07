@@ -37,6 +37,7 @@ def convert(
     rebuild_toc: bool = True,
     preserve_page_numbers: bool = True,
     use_subfolder: bool = True,
+    embed_images: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -80,7 +81,7 @@ def convert(
                 result = _convert_docling(
                     source_file, alias, output_root, preserve_images,
                     rebuild_toc, preserve_page_numbers, use_subfolder,
-                    output, confidence, log_info, log_warn, progress
+                    embed_images, output, confidence, log_info, log_warn, progress
                 )
                 if result:
                     return result
@@ -184,7 +185,8 @@ def _detect_scanned(pdf_path: str, log_info) -> bool:
 
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
+    preserve_page_numbers, use_subfolder, embed_images,
+    output, confidence, log_info, log_warn, progress
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
 
@@ -202,15 +204,23 @@ def _convert_docling(
         log_warn("docling returned empty Markdown for PDF.")
         return None
 
+    # Embed images inline (base64) BEFORE cleaning — placeholders must still be present
+    if embed_images and preserve_images and output_root:
+        log_info("Embedding images as inline base64...")
+        md_text = _embed_images_in_markdown(
+            md_text, doc, source_file, log_info, log_warn
+        )
+        confidence.add_note("Images embedded as inline base64 for self-contained Markdown.")
+    elif preserve_images and output_root:
+        # Fall back to saving image files to assets/
+        _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn, use_subfolder)
+
+    # Post-process text artifacts (PUA chars, soft hyphens, leftover placeholders)
     md_text = _clean_docling_text(md_text)
 
     # Extract outline / TOC from docling document model
     if rebuild_toc:
         _extract_docling_toc(doc, output, log_info)
-
-    # Save images via fitz (docling's own image API returns None for most PDFs)
-    if preserve_images and output_root:
-        _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn, use_subfolder)
 
     # Inject page anchors if page number info is available
     if preserve_page_numbers:
@@ -231,6 +241,124 @@ def _convert_docling(
     log_info("docling PDF conversion complete.")
     progress(1.0)
     return output
+
+
+def _embed_images_in_markdown(
+    md_text: str,
+    doc,
+    source_file: str,
+    log_info,
+    log_warn,
+) -> str:
+    """
+    Replace every ``<!-- image -->`` placeholder emitted by docling's
+    ``export_to_markdown()`` with a base64-encoded PNG crop extracted from
+    the PDF at the exact position of the corresponding picture element.
+
+    Algorithm
+    ---------
+    1. Count how many ``<!-- image -->`` placeholders appear in md_text.
+    2. Iterate ``doc.pictures`` (a list of PictureItem objects in document
+       order, which matches the order of the placeholders).
+    3. For each picture:
+       - Read its bounding-box from ``prov[0].bbox`` (docling uses a
+         bottom-left coordinate origin in PDF points).
+       - Open the PDF with fitz and get the page height (top-left origin).
+       - Convert:  fitz_rect = (bbox.l, page_height - bbox.t,
+                                bbox.r, page_height - bbox.b)
+       - Render the cropped region at 3× resolution for clarity.
+       - Base64-encode the PNG and replace the placeholder inline.
+    4. Any picture whose crop fails falls back to a text note so the
+       placeholder is always consumed.
+    """
+    import fitz
+    import base64
+
+    PLACEHOLDER_RE = re.compile(r'<!--\s*image\s*-->', re.IGNORECASE)
+    placeholder_count = len(PLACEHOLDER_RE.findall(md_text))
+
+    if placeholder_count == 0:
+        log_info("No <!-- image --> placeholders found — nothing to embed.")
+        return md_text
+
+    pictures = getattr(doc, 'pictures', [])
+    log_info(f"Embedding images | placeholders={placeholder_count} pictures={len(pictures)}")
+
+    if not pictures:
+        log_info("doc.pictures is empty — skipping base64 embedding.")
+        return md_text
+
+    # Open PDF once; keep it open for all crops
+    try:
+        fitz_doc = fitz.open(source_file)
+    except Exception as e:
+        log_warn(f"fitz could not open PDF for image embedding: {e}")
+        return md_text
+
+    replacements: list[str] = []
+
+    for idx, picture in enumerate(pictures):
+        if idx >= placeholder_count:
+            break  # more pictures than placeholders — stop early
+
+        try:
+            prov_list = getattr(picture, 'prov', None)
+            if not prov_list:
+                raise ValueError("picture has no prov list")
+
+            prov = prov_list[0]
+            bbox = prov.bbox          # docling BoundingBox: l, t, r, b (bottom-left origin)
+            page_no = prov.page_no    # 1-indexed
+
+            page_idx = page_no - 1
+            if page_idx < 0 or page_idx >= len(fitz_doc):
+                raise ValueError(f"page_no={page_no} out of range (doc has {len(fitz_doc)} pages)")
+
+            page = fitz_doc[page_idx]
+            page_height = page.rect.height   # fitz: top-left origin
+
+            # Coordinate conversion: docling bottom-left → fitz top-left
+            fitz_rect = fitz.Rect(
+                bbox.l,
+                page_height - bbox.t,
+                bbox.r,
+                page_height - bbox.b,
+            )
+
+            # Validate the rect
+            if fitz_rect.is_empty or fitz_rect.is_infinite or fitz_rect.width < 2 or fitz_rect.height < 2:
+                raise ValueError(f"Degenerate bounding box: {fitz_rect}")
+
+            # Render at 3× for crisp output
+            mat = fitz.Matrix(3.0, 3.0)
+            pix = page.get_pixmap(matrix=mat, clip=fitz_rect, colorspace=fitz.csRGB)
+            img_bytes = pix.tobytes("png")
+
+            b64_data = base64.b64encode(img_bytes).decode("ascii")
+            alt = f"Image {idx + 1} — page {page_no}"
+            replacement = f"![{alt}](data:image/png;base64,{b64_data})"
+            replacements.append(replacement)
+
+            log_info(
+                f"  Embedded image {idx + 1}/{placeholder_count}: "
+                f"page={page_no} size={fitz_rect.width:.0f}×{fitz_rect.height:.0f}pt "
+                f"png={len(img_bytes)} bytes"
+            )
+
+        except Exception as e:
+            log_warn(f"Could not embed image {idx + 1}: {e}")
+            replacements.append("*[image — could not be extracted]*")
+
+    fitz_doc.close()
+
+    # Replace placeholders one by one in document order
+    result = md_text
+    for replacement in replacements:
+        result = PLACEHOLDER_RE.sub(replacement, result, count=1)
+
+    embedded = sum(1 for r in replacements if r.startswith("!["))
+    log_info(f"Image embedding complete | embedded={embedded}/{len(replacements)}")
+    return result
 
 
 def _extract_docling_toc(doc, output: ConversionOutput, log_info) -> None:
@@ -406,9 +534,11 @@ def _convert_pymupdf(
 
     # Assets dir
     assets_dir = None
+    rel_prefix = "assets/"
     if preserve_images and output_root:
-        from .markdown_writer import assets_dir_for
+        from .markdown_writer import assets_dir_for, assets_rel_prefix_for
         assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
+        rel_prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
         os.makedirs(assets_dir, exist_ok=True)
 
     page_sections = []
@@ -444,7 +574,7 @@ def _convert_pymupdf(
         # Image extraction
         if preserve_images and assets_dir:
             img_refs = _extract_page_images(
-                doc, page, page_num, assets_dir, output, log_info
+                doc, page, page_num, assets_dir, output, log_info, rel_prefix
             )
             page_parts.extend(img_refs)
 
@@ -526,7 +656,11 @@ def _ocr_page(page, language: str, log_info, log_warn) -> tuple[str, str]:
 # Image extraction
 # ---------------------------------------------------------------------------
 
-def _extract_page_images(doc, page, page_num: int, assets_dir: str, output: ConversionOutput, log_info) -> list[str]:
+def _extract_page_images(
+    doc, page, page_num: int, assets_dir: str,
+    output: ConversionOutput, log_info,
+    rel_prefix: str = "assets/",
+) -> list[str]:
     """Extract embedded images from a fitz page, save to assets/, return Markdown refs."""
     import fitz
 
@@ -545,7 +679,7 @@ def _extract_page_images(doc, page, page_num: int, assets_dir: str, output: Conv
                 with open(img_path, "wb") as f:
                     f.write(img_bytes)
 
-                rel_path = f"assets/{filename}"
+                rel_path = f"{rel_prefix}{filename}"
                 output.asset_paths.append(rel_path)
                 refs.append(f"\n![Image from page {page_num}]({rel_path})\n")
                 log_info(f"Saved image: {filename}")

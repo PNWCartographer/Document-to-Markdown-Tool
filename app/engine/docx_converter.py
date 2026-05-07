@@ -146,9 +146,10 @@ def _convert_docling(
 
 
 def _save_docling_images(doc, source_file, alias, output_root, output, log_info, use_subfolder=True):
-    from .markdown_writer import assets_dir_for
+    from .markdown_writer import assets_dir_for, assets_rel_prefix_for
 
     assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
+    rel_prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
     os.makedirs(assets_dir, exist_ok=True)
 
     saved = 0
@@ -162,7 +163,7 @@ def _save_docling_images(doc, source_file, alias, output_root, output, log_info,
                     pil_img = picture.image.pil_image
                 if pil_img:
                     pil_img.save(img_path)
-                    output.asset_paths.append(f"assets/{img_filename}")
+                    output.asset_paths.append(f"{rel_prefix}{img_filename}")
                     log_info(f"Saved image asset: {img_filename}")
                     saved += 1
             except Exception:

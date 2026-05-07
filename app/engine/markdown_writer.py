@@ -105,11 +105,34 @@ def assets_dir_for(
     alias: str = "",
     use_subfolder: bool = True,
 ) -> str:
-    """Return the assets/ subdirectory path."""
-    return os.path.join(
-        output_dir_for(source_file, output_root, alias, use_subfolder),
-        "assets",
-    )
+    """
+    Return the assets/ subdirectory path (absolute).
+    use_subfolder=True  → <output_root>/<stem>/assets/
+    use_subfolder=False → <output_root>/assets/<stem>/   (keeps per-file separation)
+    """
+    out_dir = output_dir_for(source_file, output_root, alias, use_subfolder)
+    if use_subfolder:
+        return os.path.join(out_dir, "assets")
+    # When all .md files land in output_root directly, give each its own
+    # assets sub-folder so images from different files don't collide.
+    stem = alias if alias else _safe_stem(source_file)
+    return os.path.join(out_dir, "assets", stem)
+
+
+def assets_rel_prefix_for(
+    source_file: str,
+    alias: str = "",
+    use_subfolder: bool = True,
+) -> str:
+    """
+    Return the relative path prefix used in Markdown image references.
+    use_subfolder=True  → "assets/"
+    use_subfolder=False → "assets/<stem>/"
+    """
+    if use_subfolder:
+        return "assets/"
+    stem = alias if alias else _safe_stem(source_file)
+    return f"assets/{stem}/"
 
 
 # ---------------------------------------------------------------------------

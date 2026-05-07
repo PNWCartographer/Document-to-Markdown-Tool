@@ -1,10 +1,12 @@
 {
-  "conversion_mode": "Standard",
-  "preserve_images": false,
-  "preserve_page_numbers": false,
-  "rebuild_toc": false,
+  "conversion_mode": "Auto-detect",
+  "preserve_images": true,
+  "preserve_page_numbers": true,
+  "rebuild_toc": true,
+  "embed_images": true,
   "ocr_language": "English",
   "overwrite_existing": false,
-  "output_subfolder": true,
-  "low_confidence_action": "Ask me"
+  "output_subfolder": false,
+  "low_confidence_action": "Ask me",
+  "theme": "dark"
 }

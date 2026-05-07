@@ -4,14 +4,16 @@ import os
 _PATH = os.path.join(os.path.dirname(__file__), "settings.json")
 
 DEFAULTS: dict = {
-    "conversion_mode":       "Standard",
+    "conversion_mode":       "Auto-detect",
     "preserve_images":       True,
-    "preserve_page_numbers": False,
-    "rebuild_toc":           False,
+    "preserve_page_numbers": True,
+    "rebuild_toc":           True,
+    "embed_images":          True,
     "ocr_language":          "English",
     "overwrite_existing":    False,
-    "output_subfolder":      True,
+    "output_subfolder":      False,
     "low_confidence_action": "Ask me",
+    "theme":                 "light",
 }
 
 

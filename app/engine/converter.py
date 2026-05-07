@@ -224,7 +224,7 @@ class ConversionJob:
         use_subfolder = self._cfg.get("output_subfolder", True)
 
         if ext == ".pdf":
-            stage("Analysing PDF…")
+            stage("Analyzing PDF…")
             from . import pdf_converter
             return pdf_converter.convert(
                 source_file,
@@ -236,6 +236,7 @@ class ConversionJob:
                 rebuild_toc=rebuild_toc,
                 preserve_page_numbers=preserve_pages,
                 use_subfolder=use_subfolder,
+                embed_images=self._cfg.get("embed_images", True),
                 logger=logger,
                 progress_callback=progress,
             )

@@ -47,7 +47,7 @@ class Tooltip:
             self._win,
             text=self._text,
             justify="left",
-            wraplength=320,
+            wraplength=380,
             padx=10,
             pady=8,
             bg=t["sidebar_bg"],
