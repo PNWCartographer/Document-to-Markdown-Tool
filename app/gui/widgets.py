@@ -1,10 +1,11 @@
 """
 Custom widgets for the Darksquare-themed GUI.
 
-PillButton    — Rounded pill/capsule-shaped button (Canvas).
-ToggleSwitch  — Pill-shaped on/off slider toggle (Canvas).
-GlassScrollbar — Thin pill-thumbed scrollbar (Canvas).
-GlassDropdown — Liquid-glass themed dropdown selector (Canvas + Toplevel).
+PillButton      — Rounded pill/capsule-shaped button (Canvas).
+ToggleSwitch    — Animated pill-shaped on/off slider toggle (Canvas).
+GlassScrollbar  — Thin pill-thumbed scrollbar (Canvas).
+GlassDropdown   — Liquid-glass themed dropdown selector (Canvas + Toplevel).
+PillProgressBar — Pill-shaped progress bar (Canvas).
 
 All pixel dimensions are scaled at creation time via the module-level
 DPI factor.  Call ``set_dpi_scale(factor)`` once before building widgets.
@@ -36,6 +37,32 @@ def _sf(px) -> float:
     return px * _DPI
 
 
+# ── Color utilities ─────────────────────────────────────────
+
+
+def _darken(hex_color: str, factor: float = 0.85) -> str:
+    """Return *hex_color* shifted toward black by *factor* (0=black, 1=unchanged)."""
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return hex_color
+    r = int(int(h[0:2], 16) * factor)
+    g = int(int(h[2:4], 16) * factor)
+    b = int(int(h[4:6], 16) * factor)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _lerp_color(c1: str, c2: str, t: float) -> str:
+    """Linearly interpolate between two hex colors.  t=0 → c1, t=1 → c2."""
+    a = c1.lstrip("#")
+    b = c2.lstrip("#")
+    if len(a) != 6 or len(b) != 6:
+        return c2 if t >= 0.5 else c1
+    r = int(int(a[0:2], 16) + (int(b[0:2], 16) - int(a[0:2], 16)) * t)
+    g = int(int(a[2:4], 16) + (int(b[2:4], 16) - int(a[2:4], 16)) * t)
+    bl = int(int(a[4:6], 16) + (int(b[4:6], 16) - int(a[4:6], 16)) * t)
+    return f"#{max(0,min(255,r)):02x}{max(0,min(255,g)):02x}{max(0,min(255,bl)):02x}"
+
+
 # ── PillButton ──────────────────────────────────────────────
 
 class PillButton(tk.Canvas):
@@ -56,7 +83,7 @@ class PillButton(tk.Canvas):
                        hover_fill="#b87afc", parent_bg="#121220")
     """
 
-    _STEPS = 32        # polygon steps for outlined pills
+    _STEPS = 72        # polygon steps for outlined pills
 
     def __init__(self, parent, text="", command=None,
                  font=("Segoe UI", 11), padx=22, pady=8,
@@ -72,6 +99,7 @@ class PillButton(tk.Canvas):
         self._style = style
         self._state = state
         self._btn_hovered = False
+        self._pressed = False
         self._parent_bg = bg
         self._outline_w = _sf(1.5)   # scaled outline stroke width
         self._inset = _s(2)          # scaled edge inset
@@ -168,6 +196,10 @@ class PillButton(tk.Canvas):
             fg = self._fg
             outline = self._outline_c if self._style == "secondary" else ""
 
+        # Press feedback: darken the resolved fill
+        if self._pressed and self._state != "disabled":
+            fill = _darken(fill, 0.80)
+
         # Primary buttons: outline matches fill (invisible)
         if self._style == "primary":
             outline = fill
@@ -190,12 +222,19 @@ class PillButton(tk.Canvas):
 
     def _on_leave(self, _e):
         self._btn_hovered = False
+        self._pressed = False
         self._draw()
 
     def _on_press(self, _e):
-        pass
+        if self._state != "disabled":
+            self._pressed = True
+            self._draw()
 
     def _on_release(self, _e):
+        was_pressed = self._pressed
+        self._pressed = False
+        if was_pressed:
+            self._draw()
         if self._state != "disabled" and self._btn_hovered and self._command:
             self._command()
 
@@ -204,10 +243,10 @@ class PillButton(tk.Canvas):
 
 class ToggleSwitch(tk.Canvas):
     """
-    A pill-shaped on/off toggle slider.
+    A pill-shaped on/off toggle slider with smooth animation.
 
     Binds to a tkinter BooleanVar and toggles it on click.
-    The thumb slides left (off) or right (on) inside a pill track.
+    The thumb slides smoothly between off and on positions.
 
     Usage::
 
@@ -219,11 +258,13 @@ class ToggleSwitch(tk.Canvas):
                           parent_bg="#121220")
     """
 
-    _STEPS = 24
+    _STEPS = 72
+    _ANIM_INTERVAL_MS = 16
+    _ANIM_EASE = 0.28
 
     def __init__(self, parent, variable=None, command=None, **kw):
-        self._track_w = _s(44)
-        self._track_h = _s(24)
+        self._track_w = _s(52)
+        self._track_h = _s(28)
         self._thumb_pad = _s(3)
 
         bg = kw.pop("bg", kw.pop("background", parent.cget("bg")))
@@ -240,10 +281,16 @@ class ToggleSwitch(tk.Canvas):
         self._thumb_on = "#ffffff"
         self._thumb_off = "#7e7e98"
 
+        # Animation state: 0.0 = off position, 1.0 = on position
+        self._anim_t = 1.0 if (self._var and self._var.get()) else 0.0
+        self._anim_target = self._anim_t
+        self._anim_id = None
+        self._animating = False
+
         self.bind("<ButtonRelease-1>", self._on_click)
 
         if self._var:
-            self._var.trace_add("write", lambda *_: self.after_idle(self._draw))
+            self._var.trace_add("write", self._on_var_changed)
 
         self.after_idle(self._draw)
 
@@ -266,28 +313,56 @@ class ToggleSwitch(tk.Canvas):
     def _draw(self):
         self.delete("all")
         w, h = self._track_w, self._track_h
-        on = self._var.get() if self._var else False
+        t = self._anim_t
 
-        # Track (pill)
-        track_fill = self._on_fill if on else self._off_fill
+        # Track — interpolate between off and on colors
+        track_fill = _lerp_color(self._off_fill, self._on_fill, t)
         _draw_pill(self, 1, 1, w - 1, h - 1, fill=track_fill,
-                   outline=track_fill, outline_w=0, steps=self._STEPS)
+                   outline=track_fill, outline_w=0, steps=self._STEPS,
+                   aa_bg=self._parent_bg)
 
-        # Thumb (circle)
+        # Thumb — interpolate position and color
         pad = self._thumb_pad
         thumb_r = (h - 2 * pad) / 2
-        cx = (w - pad - thumb_r - 1) if on else (pad + thumb_r + 1)
+        off_cx = pad + thumb_r + 1
+        on_cx = w - pad - thumb_r - 1
+        cx = off_cx + (on_cx - off_cx) * t
         cy = h / 2
-        thumb_c = self._thumb_on if on else self._thumb_off
-        self.create_oval(cx - thumb_r, cy - thumb_r,
-                         cx + thumb_r, cy + thumb_r,
-                         fill=thumb_c, outline="")
+        thumb_c = _lerp_color(self._thumb_off, self._thumb_on, t)
+        _draw_circle(self, cx, cy, thumb_r, fill=thumb_c, aa_bg=track_fill)
+
+    def _on_var_changed(self, *_):
+        if not self._animating:
+            self._anim_t = 1.0 if self._var.get() else 0.0
+            self._anim_target = self._anim_t
+            self.after_idle(self._draw)
 
     def _on_click(self, _e):
-        if self._var:
-            self._var.set(not self._var.get())
-        if self._command:
-            self._command()
+        if not self._var:
+            return
+        new_val = not self._var.get()
+        self._anim_target = 1.0 if new_val else 0.0
+        if self._anim_id is not None:
+            self.after_cancel(self._anim_id)
+        self._animating = True
+        self._animate_step()
+
+    def _animate_step(self):
+        diff = self._anim_target - self._anim_t
+        if abs(diff) < 0.01:
+            self._anim_t = self._anim_target
+            self._anim_id = None
+            self._animating = False
+            target_bool = self._anim_target >= 0.5
+            if self._var.get() != target_bool:
+                self._var.set(target_bool)
+            if self._command:
+                self._command()
+            self._draw()
+            return
+        self._anim_t += diff * self._ANIM_EASE
+        self._draw()
+        self._anim_id = self.after(self._ANIM_INTERVAL_MS, self._animate_step)
 
 
 # ── GlassScrollbar ──────────────────────────────────────────
@@ -387,17 +462,9 @@ class GlassScrollbar(tk.Canvas):
         # Draw vertical pill thumb centred horizontally
         tw = self._thumb_w
         tx = (w - tw) / 2
-        r = tw / 2
-        # Top cap
-        self.create_oval(tx, ty, tx + tw, ty + 2 * r,
-                         fill=color, outline="")
-        # Bottom cap
-        self.create_oval(tx, ty + thumb_h - 2 * r, tx + tw,
-                         ty + thumb_h, fill=color, outline="")
-        # Middle
-        if thumb_h > 2 * r:
-            self.create_rectangle(tx, ty + r, tx + tw,
-                                  ty + thumb_h - r, fill=color, outline="")
+        _draw_pill(self, tx, ty, tx + tw, ty + thumb_h,
+                   fill=color, outline=color, outline_w=0, steps=24,
+                   aa_bg=self._parent_bg)
 
     # ── Thumb geometry helper ───────────────────────────────
 
@@ -487,7 +554,7 @@ class GlassDropdown(tk.Canvas):
                       parent_bg="#121220")
     """
 
-    _STEPS = 32         # polygon steps for outlined pill shape
+    _STEPS = 72         # polygon steps for outlined pill shape
 
     def __init__(self, parent, variable=None, options=None, command=None,
                  font=("Segoe UI", 11), **kw):
@@ -742,50 +809,137 @@ class GlassDropdown(tk.Canvas):
             self._root_bind_id = None
 
 
+# ── PillProgressBar ─────────────────────────────────────────
+
+class PillProgressBar(tk.Canvas):
+    """
+    A pill-shaped progress bar matching the Darksquare theme.
+
+    Usage::
+
+        bar = PillProgressBar(parent, height=10)
+        bar.grid(row=0, column=0, sticky="ew")
+        bar.set_colors(track="#0e0e16", fill="#a855f7",
+                       border="#2a2a3c", parent_bg="#121220")
+        bar.set_progress(0.65)
+    """
+
+    def __init__(self, parent, height=10, **kw):
+        self._bar_h = _s(height)
+        bg = kw.pop("bg", kw.pop("background", parent.cget("bg")))
+        super().__init__(parent, height=self._bar_h, highlightthickness=0,
+                         bd=0, bg=bg, **kw)
+
+        self._progress = 0.0
+        self._parent_bg = bg
+        self._track_color = "#1a1a2c"
+        self._fill_color = "#a855f7"
+        self._border_color = "#2a2a3c"
+
+        self.bind("<Configure>", lambda _e: self._draw())
+
+    def set_colors(self, *, track="", fill="", border="", parent_bg=None):
+        if track:  self._track_color = track
+        if fill:   self._fill_color = fill
+        if border: self._border_color = border
+        if parent_bg is not None:
+            self._parent_bg = parent_bg
+            self.config(bg=parent_bg)
+        self._draw()
+
+    def set_progress(self, fraction: float):
+        self._progress = max(0.0, min(1.0, fraction))
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        w = self.winfo_width()
+        h = self._bar_h
+        if w < 4 or h < 4:
+            return
+
+        ins = _s(1)
+        r = (h - 2 * ins) / 2
+
+        # Track (full-width pill with border)
+        _draw_pill(self, ins, ins, w - ins, h - ins,
+                   fill=self._track_color, outline=self._border_color,
+                   outline_w=_sf(1), steps=48)
+
+        # Fill (partial pill, inset from track border)
+        if self._progress > 0.01:
+            fi = ins + _sf(1.5)
+            fill_r = (h - 2 * fi) / 2
+            avail = w - 2 * fi
+            fill_w = max(2 * fill_r + 2, avail * self._progress)
+            fill_x2 = min(fi + fill_w, w - fi)
+            _draw_pill(self, fi, fi, fill_x2, h - fi,
+                       fill=self._fill_color, outline="",
+                       outline_w=0, steps=48)
+
+
 # ── Shared helpers ──────────────────────────────────────────
 
 def _draw_pill(canvas: tk.Canvas, x1, y1, x2, y2, *,
-               fill, outline, outline_w=0, steps=16):
+               fill, outline, outline_w=0, steps=16, aa_bg=""):
     """
     Draw a smooth pill (stadium) shape on *canvas*.
 
-    When no visible outline is needed the shape is composed of
-    hardware-rendered ``create_oval`` caps + ``create_rectangle`` middle
-    for perfectly smooth curves.  When an outline stroke IS visible a
-    single-path polygon is used so the stroke is seamless.
+    Automatically detects orientation: horizontal (width >= height) places
+    semicircles on left/right; vertical (height > width) places them on
+    top/bottom.  Uses ``smooth=True`` for Bezier spline interpolation.
     """
-    r = (y2 - y1) / 2
-    needs_outline = outline_w > 0 and outline and outline != fill
+    w = x2 - x1
+    h = y2 - y1
+    r = min(w, h) / 2
 
-    if not needs_outline:
-        # ── Oval + rect approach: pixel-perfect at any DPI ──
-        # Left cap
-        canvas.create_oval(x1, y1, x1 + 2 * r, y2,
-                           fill=fill, outline="")
-        # Right cap
-        canvas.create_oval(x2 - 2 * r, y1, x2, y2,
-                           fill=fill, outline="")
-        # Middle rectangle (only if wider than two caps)
-        mid_l = x1 + r
-        mid_r = x2 - r
-        if mid_r > mid_l:
-            canvas.create_rectangle(mid_l, y1, mid_r, y2,
-                                    fill=fill, outline="")
-    else:
-        # ── Polygon path for seamless outline stroke ────────
+    pts = []
+    if w >= h:
         cx_l = x1 + r
         cx_r = x2 - r
         cy = (y1 + y2) / 2
-
-        pts = []
-        # Right semicircle  (-90 deg -> +90 deg)
         for i in range(steps + 1):
             a = -math.pi / 2 + i * math.pi / steps
             pts.extend([cx_r + r * math.cos(a), cy + r * math.sin(a)])
-        # Left semicircle   (+90 deg -> +270 deg)
         for i in range(steps + 1):
             a = math.pi / 2 + i * math.pi / steps
             pts.extend([cx_l + r * math.cos(a), cy + r * math.sin(a)])
+    else:
+        cx = (x1 + x2) / 2
+        cy_t = y1 + r
+        cy_b = y2 - r
+        for i in range(steps + 1):
+            a = math.pi + i * math.pi / steps
+            pts.extend([cx + r * math.cos(a), cy_t + r * math.sin(a)])
+        for i in range(steps + 1):
+            a = i * math.pi / steps
+            pts.extend([cx + r * math.cos(a), cy_b + r * math.sin(a)])
 
+    needs_outline = outline_w > 0 and outline and outline != fill
+
+    if needs_outline:
         canvas.create_polygon(pts, fill=fill, outline=outline,
-                              width=outline_w, smooth=False)
+                              width=outline_w, smooth=True, splinesteps=16)
+    elif aa_bg:
+        edge = _lerp_color(fill, aa_bg, 0.12)
+        canvas.create_polygon(pts, fill=fill, outline=edge,
+                              width=1, smooth=True, splinesteps=16)
+    else:
+        canvas.create_polygon(pts, fill=fill, outline=fill,
+                              width=1, smooth=True, splinesteps=16)
+
+
+def _draw_circle(canvas: tk.Canvas, cx, cy, r, *, fill, aa_bg="", steps=48):
+    """Draw a smooth circle via polygon with multi-pass manual AA edge."""
+    pts = []
+    for i in range(steps):
+        a = i * 2 * math.pi / steps
+        pts.extend([cx + r * math.cos(a), cy + r * math.sin(a)])
+
+    if aa_bg:
+        edge = _lerp_color(fill, aa_bg, 0.12)
+        canvas.create_polygon(pts, fill=fill, outline=edge,
+                              width=1, smooth=True, splinesteps=16)
+    else:
+        canvas.create_polygon(pts, fill=fill, outline=fill,
+                              width=1, smooth=True, splinesteps=16)

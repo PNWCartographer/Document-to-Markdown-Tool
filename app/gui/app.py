@@ -1,10 +1,12 @@
+import math
 import os
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
 from .tooltip import Tooltip
-from .widgets import PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown
+from .widgets import (PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown,
+                      PillProgressBar, _draw_circle)
 import config.settings as _cfg_mod
 import engine.converter as _converter_mod
 
@@ -273,19 +275,28 @@ class App:
         self._div_bot = tk.Frame(self._sidebar, height=1)
         self._div_bot.grid(row=10, column=0, sticky="ew", padx=12, pady=(0, 4))
 
-        self._btn_theme = tk.Button(
-            self._sidebar,
-            text="  ☀   Light Mode",
-            font=_FONT_SMALL,
-            anchor="w",
-            bd=0,
-            relief="flat",
-            padx=8,
-            pady=9,
-            cursor="hand2",
-            command=self._toggle_theme,
-        )
-        self._btn_theme.grid(row=11, column=0, sticky="ew", padx=8, pady=(0, 10))
+        # Theme toggle: [sun] [toggle] [moon]
+        self._theme_row = tk.Frame(self._sidebar)
+        self._theme_row.grid(row=11, column=0, sticky="ew", padx=8, pady=(0, 14))
+        self._theme_inner = tk.Frame(self._theme_row)
+        self._theme_inner.pack(anchor="center")
+
+        _icon_s = round(32 * self._dpi)
+        self._sun_canvas = tk.Canvas(
+            self._theme_inner, width=_icon_s, height=_icon_s,
+            highlightthickness=0, bd=0)
+        self._sun_canvas.pack(side="left", padx=(0, 6))
+
+        self._theme_dark_var = tk.BooleanVar(value=self._dark)
+        self._theme_toggle = ToggleSwitch(
+            self._theme_inner, variable=self._theme_dark_var,
+            command=self._toggle_theme)
+        self._theme_toggle.pack(side="left")
+
+        self._moon_canvas = tk.Canvas(
+            self._theme_inner, width=_icon_s, height=_icon_s,
+            highlightthickness=0, bd=0)
+        self._moon_canvas.pack(side="left", padx=(6, 0))
 
         self._border_line = tk.Frame(self.root, width=1)
         self._border_line.grid(row=0, column=1, sticky="nsew")
@@ -503,14 +514,14 @@ class App:
             var.trace_add("write", self._on_setting_changed)
 
         # ── Scrollable content frame ───────────────────────────
-        scroll_outer = tk.Frame(f)
-        scroll_outer.grid(row=2, column=0, sticky="nsew", padx=32, pady=(0, 8))
-        scroll_outer.grid_rowconfigure(0, weight=1)
-        scroll_outer.grid_columnconfigure(0, weight=1)
+        self._settings_scroll_outer = tk.Frame(f)
+        self._settings_scroll_outer.grid(row=2, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._settings_scroll_outer.grid_rowconfigure(0, weight=1)
+        self._settings_scroll_outer.grid_columnconfigure(0, weight=1)
 
-        canvas = tk.Canvas(scroll_outer, bd=0, highlightthickness=0)
+        canvas = tk.Canvas(self._settings_scroll_outer, bd=0, highlightthickness=0)
         canvas.grid(row=0, column=0, sticky="nsew")
-        vsb = GlassScrollbar(scroll_outer, orient="vertical", command=canvas.yview)
+        vsb = GlassScrollbar(self._settings_scroll_outer, orient="vertical", command=canvas.yview)
         vsb.grid(row=0, column=1, sticky="ns")
         self._glass_scrollbars.append(vsb)
         canvas.configure(yscrollcommand=vsb.set)
@@ -525,7 +536,13 @@ class App:
             canvas.itemconfig(self._settings_canvas_window, width=event.width)
         self._settings_content.bind("<Configure>", _on_content_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
-        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(-1 * (e.delta // 120), "units"))
+
+        def _on_mousewheel(e):
+            canvas.yview_scroll(-1 * (e.delta // 120), "units")
+        self._settings_scroll_outer.bind(
+            "<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        self._settings_scroll_outer.bind(
+            "<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
 
         self._settings_canvas = canvas
 
@@ -749,12 +766,8 @@ class App:
             self._conv_overall_row, text="0 of 0 files", font=_FONT_SMALL, anchor="e")
         self._conv_overall_count_lbl.grid(row=0, column=1, sticky="e")
 
-        self._conv_overall_bar_outer = tk.Frame(f, height=10, highlightthickness=1)
-        self._conv_overall_bar_outer.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
-        self._conv_overall_bar_outer.grid_propagate(False)
-
-        self._conv_overall_bar_inner = tk.Frame(self._conv_overall_bar_outer, height=10)
-        self._conv_overall_bar_inner.place(x=0, y=0, relheight=1.0, relwidth=0.0)
+        self._conv_overall_bar = PillProgressBar(f, height=10)
+        self._conv_overall_bar.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
 
         # ── Current file + stage ─────────────────────────────
         self._conv_file_row = tk.Frame(f)
@@ -771,12 +784,8 @@ class App:
         self._conv_stage_lbl.grid(row=1, column=0, sticky="w")
 
         # ── Per-file progress ────────────────────────────────
-        self._conv_file_bar_outer = tk.Frame(f, height=6, highlightthickness=1)
-        self._conv_file_bar_outer.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 16))
-        self._conv_file_bar_outer.grid_propagate(False)
-
-        self._conv_file_bar_inner = tk.Frame(self._conv_file_bar_outer, height=6)
-        self._conv_file_bar_inner.place(x=0, y=0, relheight=1.0, relwidth=0.0)
+        self._conv_file_bar = PillProgressBar(f, height=6)
+        self._conv_file_bar.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 16))
 
         # ── Log panel ────────────────────────────────────────
         self._conv_log_lbl = tk.Label(f, text="Log", font=_FONT_SMALL, anchor="w")
@@ -971,16 +980,24 @@ class App:
         win.config(bg=t["bg"])
 
         # Scrollable text widget
+        text_frame = tk.Frame(win, bg=t["bg"])
+        text_frame.pack(fill="both", expand=True)
+        text_frame.grid_rowconfigure(0, weight=1)
+        text_frame.grid_columnconfigure(0, weight=1)
+
         text = tk.Text(
-            win, font=_FONT_SMALL, wrap="word",
+            text_frame, font=_FONT_SMALL, wrap="word",
             bg=t["bg"], fg=t["text"],
             bd=0, highlightthickness=0,
             padx=12, pady=10,
         )
-        sb = ttk.Scrollbar(win, orient="vertical", command=text.yview)
+        sb = GlassScrollbar(text_frame, orient="vertical", command=text.yview)
+        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
+        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
         text.config(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-        text.pack(fill="both", expand=True)
+        text.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns")
 
         lines = []
         lines.append("═══  CONVERSION DEBUG INFO  ═══\n")
@@ -1119,7 +1136,10 @@ class App:
         lb = tk.Listbox(list_frame, bd=0, relief="flat", font=_FONT_SMALL,
                         bg=t["bg"], fg=t["text"], highlightthickness=0,
                         selectmode=tk.EXTENDED, activestyle="none")
-        sb = tk.Scrollbar(list_frame, orient="vertical", command=lb.yview)
+        sb = GlassScrollbar(list_frame, orient="vertical", command=lb.yview)
+        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
+        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
         lb.config(yscrollcommand=sb.set)
         lb.grid(row=0, column=0, sticky="nsew", padx=(4, 0), pady=4)
         sb.grid(row=0, column=1, sticky="ns", pady=4)
@@ -1137,17 +1157,22 @@ class App:
             self._update_file_list()
             dlg.destroy()
 
-        tk.Button(btn_row, text="Cancel", command=dlg.destroy,
-                  bg=t["sidebar_bg"], fg=t["text"],
-                  activebackground=t["nav_hover_bg"], activeforeground=t["text"],
-                  highlightthickness=1, highlightbackground=t["border"],
-                  bd=0, relief="flat", padx=16, pady=7,
-                  font=_FONT_SMALL, cursor="hand2").pack(side="right", padx=(8, 0))
-        tk.Button(btn_row, text="Add Files", command=confirm,
-                  bg=t["accent"], fg=t["text_on_accent"],
-                  activebackground=t["accent_hover"], activeforeground=t["text_on_accent"],
-                  bd=0, relief="flat", padx=16, pady=7,
-                  font=_FONT_SMALL, cursor="hand2").pack(side="right")
+        btn_cancel = PillButton(btn_row, text="Cancel", command=dlg.destroy,
+                                font=_FONT_SMALL, style="secondary", padx=14, pady=6)
+        btn_cancel.set_colors(
+            fill=t["content_bg"], fg=t["accent"], outline=t["border"],
+            hover_fill=t["content_bg"], hover_fg=t["accent"],
+            hover_outline=t["accent"], parent_bg=t["content_bg"],
+        )
+        btn_cancel.pack(side="right", padx=(8, 0))
+        btn_add = PillButton(btn_row, text="Add Files", command=confirm,
+                             font=_FONT_SMALL, style="primary", padx=14, pady=6)
+        btn_add.set_colors(
+            fill=t["accent"], fg=t["text_on_accent"],
+            hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+            parent_bg=t["content_bg"],
+        )
+        btn_add.pack(side="right")
 
     def _clear_files(self):
         self._selected_files.clear()
@@ -1222,8 +1247,8 @@ class App:
 
     def _reset_conversion_screen(self):
         n = len(self._selected_files)
-        self._conv_overall_bar_inner.place(relwidth=0.0)
-        self._conv_file_bar_inner.place(relwidth=0.0)
+        self._conv_overall_bar.set_progress(0.0)
+        self._conv_file_bar.set_progress(0.0)
         label = "1 file" if n == 1 else f"{n} files"
         self._conv_overall_count_lbl.config(text=f"0 of {n} file{'s' if n != 1 else ''}")
         self._conv_file_name_lbl.config(text="Preparing…")
@@ -1259,10 +1284,10 @@ class App:
         self._active_job.start()
 
     def _set_file_progress(self, fraction: float) -> None:
-        self._conv_file_bar_inner.place(relwidth=max(0.0, min(1.0, fraction)))
+        self._conv_file_bar.set_progress(fraction)
 
     def _set_overall_progress(self, fraction: float) -> None:
-        self._conv_overall_bar_inner.place(relwidth=max(0.0, min(1.0, fraction)))
+        self._conv_overall_bar.set_progress(fraction)
 
     def _on_file_start(self, filename: str, idx: int, total: int) -> None:
         self._conv_file_name_lbl.config(text=filename)
@@ -1273,8 +1298,8 @@ class App:
 
     def _on_conversion_done(self, result: "_converter_mod.BatchResult") -> None:
         # Final bar states
-        self._conv_overall_bar_inner.place(relwidth=1.0)
-        self._conv_file_bar_inner.place(relwidth=1.0)
+        self._conv_overall_bar.set_progress(1.0)
+        self._conv_file_bar.set_progress(1.0)
         total = result.total
         self._conv_overall_count_lbl.config(text=f"{result.completed} of {total} file{'s' if total != 1 else ''}")
         self._conv_file_name_lbl.config(text="Conversion complete" if not result.cancelled else "Cancelled")
@@ -1407,11 +1432,42 @@ class App:
     # ── Theme ────────────────────────────────────────────────
 
     def _toggle_theme(self):
-        self._dark = not self._dark
+        self._dark = self._theme_dark_var.get()
         self._t = themes.DARK if self._dark else themes.LIGHT
         self._cfg["theme"] = "dark" if self._dark else "light"
         _cfg_mod.save(self._cfg)
         self._apply_theme()
+
+    def _draw_sun_icon(self):
+        c = self._sun_canvas
+        c.delete("all")
+        s = int(c.cget("width"))
+        cx, cy = s / 2, s / 2
+        active = not self._dark
+        color = "#f59e0b" if active else self._t["text_secondary"]
+
+        inner_r = s * 0.18
+        outer_r = s * 0.42
+        pts = []
+        for i in range(16):
+            a = i * math.pi / 8 - math.pi / 2
+            r = outer_r if i % 2 == 0 else inner_r
+            pts.extend([cx + r * math.cos(a), cy + r * math.sin(a)])
+        c.create_polygon(pts, fill=color, outline=color,
+                         width=1, smooth=True, splinesteps=16)
+
+    def _draw_moon_icon(self):
+        c = self._moon_canvas
+        c.delete("all")
+        s = int(c.cget("width"))
+        cx, cy = s / 2, s / 2
+        bg = self._t["sidebar_bg"]
+        active = self._dark
+        color = "#cbd5e1" if active else self._t["text_secondary"]
+
+        r = s * 0.32
+        _draw_circle(c, cx, cy, r, fill=color, steps=64)
+        _draw_circle(c, cx - r * 0.35, cy + r * 0.05, r * 1.0, fill=bg, steps=64)
 
     def _set_titlebar_dark(self, dark: bool) -> None:
         """
@@ -1467,13 +1523,19 @@ class App:
         self._sidebar_spacer.config(bg=t["sidebar_bg"])
         self._lbl_title.config(bg=t["sidebar_bg"], fg=t["text"])
 
-        self._btn_theme.config(
-            bg=t["sidebar_bg"],
-            fg=t["text_secondary"],
-            activebackground=t["nav_hover_bg"],
-            activeforeground=t["text"],
-            text="  ☀   Light Mode" if self._dark else "  ☽   Dark Mode",
+        self._theme_row.config(bg=t["sidebar_bg"])
+        self._theme_inner.config(bg=t["sidebar_bg"])
+        self._sun_canvas.config(bg=t["sidebar_bg"])
+        self._moon_canvas.config(bg=t["sidebar_bg"])
+        self._theme_toggle.set_colors(
+            on_fill=t["accent"],
+            off_fill="#2a2a3c" if self._dark else "#c0bdd0",
+            thumb_on="#ffffff",
+            thumb_off="#7e7e98" if self._dark else "#9898a8",
+            parent_bg=t["sidebar_bg"],
         )
+        self._draw_sun_icon()
+        self._draw_moon_icon()
 
         # Screen frames and their heading labels
         for frame in self._frames.values():
@@ -1553,15 +1615,17 @@ class App:
         self._conv_overall_lbl.config(bg=t["content_bg"], fg=t["text"])
         self._conv_overall_count_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
 
-        self._conv_overall_bar_outer.config(bg=t["bg"], highlightbackground=t["border"])
-        self._conv_overall_bar_inner.config(bg=t["accent"])
+        self._conv_overall_bar.set_colors(
+            track=t["bg"], fill=t["accent"], border=t["border"],
+            parent_bg=t["content_bg"])
 
         self._conv_file_row.config(bg=t["content_bg"])
         self._conv_file_name_lbl.config(bg=t["content_bg"], fg=t["text"])
         self._conv_stage_lbl.config(bg=t["content_bg"], fg=t["accent_secondary"])
 
-        self._conv_file_bar_outer.config(bg=t["bg"], highlightbackground=t["border"])
-        self._conv_file_bar_inner.config(bg=t["accent"])
+        self._conv_file_bar.set_colors(
+            track=t["bg"], fill=t["accent"], border=t["border"],
+            parent_bg=t["content_bg"])
 
         self._conv_log_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
         self._conv_log_frame.config(bg=t["bg"], highlightbackground=t["border"])
