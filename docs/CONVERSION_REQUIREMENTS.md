@@ -157,3 +157,151 @@ output/
     confidence_report.txt
     conversion_log.txt
 ```
+
+## PowerPoint (PPTX) Conversion Rules
+
+PowerPoint files are converted slide by slide using python-pptx.
+
+### Slide Order
+- Slides are processed in presentation order (slide 1, slide 2, etc.)
+- Each slide becomes a section headed with `## Slide N: Title`
+
+### Shape Reading Order
+- Shapes within a slide are sorted by position: top-to-bottom first, then left-to-right
+- This produces a natural reading order even for complex slide layouts
+
+### Slide Content Mapping
+- Slide title shape text becomes the section heading
+- Text frames and text boxes become body paragraphs
+- Bold, italic, and combined formatting are preserved as Markdown inline syntax
+- Tables within slides are converted to Markdown table syntax
+- Images are extracted to the assets folder and linked in Markdown
+- Speaker notes are included as blockquotes at the end of each slide section
+- SmartArt and grouped shapes have text extracted on a best-effort basis
+
+### PPTX Limitations
+- Animations and transitions are not represented in output
+- Chart data is not extracted (charts appear as images if image preservation is on)
+- Audio and video embeds are noted but not extracted
+
+## EPUB Conversion Rules
+
+EPUB e-books are converted chapter by chapter using ebooklib and BeautifulSoup.
+
+### Reading Order
+- Chapters are processed in spine order (the reading sequence defined by the EPUB)
+- Each chapter or document item becomes a DocumentSection
+
+### HTML to Markdown Element Mapping
+| HTML Element | Markdown Output |
+|-------------|-----------------|
+| `<h1>` through `<h6>` | `#` through `######` headings |
+| `<p>` | Paragraphs |
+| `<ul>`, `<ol>` | Unordered and ordered lists (nested lists supported) |
+| `<table>` | Markdown tables |
+| `<img>` | Image extracted from EPUB archive, saved to assets, linked in Markdown |
+| `<blockquote>` | `>` blockquotes |
+| `<code>`, `<pre>` | Inline code or fenced code blocks |
+| `<strong>`, `<b>` | `**bold**` |
+| `<em>`, `<i>` | `*italic*` |
+| `<a>` | `[text](url)` links |
+
+### TOC Extraction
+- Table of contents is extracted from the EPUB NCX or nav document when available
+- Nested TOC entries preserve their hierarchy
+- When no formal TOC exists, headings from chapter content are used
+
+### Image Extraction
+- Images embedded in the EPUB archive are extracted and saved to the assets folder
+- Image references in Markdown use relative paths to the assets folder
+- Supported image formats: PNG, JPEG, GIF, SVG (SVG saved as-is)
+
+## Post-Processor Pipeline
+
+Post-processors run between raw text extraction and output assembly. They clean and enhance the extracted text before it becomes the final output.
+
+### Processing Order
+Processors run in this fixed sequence to avoid conflicts:
+
+1. **Remove headers and footers** — Scans all pages for repeated text at the top and bottom. Lines appearing on 60% or more of pages (minimum 3) are classified as headers or footers and removed.
+
+2. **Skip blank pages** — Removes pages with fewer than 10 non-whitespace characters. Catches empty separator pages and blank backs of double-sided scans.
+
+3. **Strip line numbers** — Detects and removes sequential line numbers in the left margin. Only strips when numbers form a sequential ascending pattern with at least 5 numbers to avoid removing real content.
+
+4. **Detect code blocks** — Identifies source code by indentation patterns, high symbol density, and common code keywords. Wraps detected code in fenced code blocks with language hints when possible.
+
+5. **Detect footnotes** — Finds footnote references and definitions. Converts numbered footnotes to Markdown `[^N]` reference and `[^N]: text` definition syntax.
+
+6. **Detect equations** — Identifies mathematical expressions by Greek letters, math operators, and formula patterns. Wraps inline math in `$...$` and display math in `$$...$$` LaTeX delimiters. Skips content inside code blocks.
+
+### Pipeline Behavior
+- Each processor can be toggled on or off independently via Settings
+- Processors that operate on pages (headers/footers, blank pages) split text at page markers and reassemble after processing
+- Processors that operate on full text (code blocks, footnotes, equations) run on the assembled Markdown
+- The pipeline is skipped entirely when all toggles are off (no performance cost)
+
+### Converter Integration
+- **PDF (docling path):** Text is split on `<a id="page-N">` markers for page-level processors, then rejoined
+- **PDF (pymupdf path):** Page texts are collected during extraction, then processed as a batch
+- **DOCX:** All processors run on the assembled monolithic text (DOCX has no natural page boundaries for header/footer detection in most cases)
+- **PPTX and EPUB:** Post-processors are not applied (content structure differs from paginated documents)
+
+## RAG Chunks Output Format
+
+The RAG Chunks format produces JSONL (JSON Lines) output designed for ingestion into vector databases and AI retrieval pipelines.
+
+### Chunking Strategy
+1. Split the document by sections first (natural document boundaries from headings)
+2. Within sections, split by word count if the section exceeds the chunk size
+3. Apply overlap: include the last N words from the previous chunk at the start of each new chunk
+4. Preserve heading context: each chunk records its parent heading
+
+### Default Parameters
+- Chunk size: 512 words
+- Chunk overlap: 50 words
+
+### Chunk Schema
+Each line in the JSONL output is a self-contained JSON object:
+
+```json
+{
+    "id": "filename_chunk_001",
+    "text": "chunk content here...",
+    "metadata": {
+        "source": "original_filename.pdf",
+        "section": "Section 2.1 — Methods",
+        "chunk_index": 0,
+        "total_chunks": 42,
+        "confidence": "High"
+    }
+}
+```
+
+### RAG Chunks Behavior
+- Page numbers are included in chunk metadata when page number preservation is enabled
+- TOC entries are included as a special first chunk when TOC reconstruction is enabled
+- Confidence data is included per-chunk when confidence reporting is enabled
+- Empty chunks (all whitespace) are excluded from output
+
+## Quality Preset Behavior
+
+Quality presets control the tradeoff between conversion speed and output accuracy.
+
+### Fast
+- Overrides conversion mode to Standard (no OCR processing)
+- Skips docling AI-powered layout analysis
+- Uses the fastest available text extraction method
+- Best for: large batches of digital-native documents where speed matters more than formatting
+
+### Balanced
+- Uses standard conversion with limited fallbacks
+- Logs when fallback engines are needed but does not skip them
+- Best for: general-purpose conversion with reasonable speed
+
+### Quality
+- Full pipeline with all engines enabled (current default behavior)
+- OCR fallback is available when needed
+- Advanced table detection with pdfplumber and camelot
+- AI-powered layout analysis via docling
+- Best for: documents where accuracy and structure preservation are critical

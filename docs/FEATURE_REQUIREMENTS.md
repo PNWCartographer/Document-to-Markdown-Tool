@@ -8,6 +8,8 @@ The tool should eventually support:
 - Excel files
 - CSV files
 - Dataset files
+- PowerPoint presentations (.pptx) — slides, tables, images, speaker notes
+- EPUB e-books (.epub) — chapters, images, TOC, metadata
 - Images with text
 - Electrical drawings with text
 - Tables
@@ -18,6 +20,10 @@ The tool should eventually support:
 ## Required Outputs
 The tool should produce:
 - Markdown files
+- JSON structured output
+- HTML standalone documents
+- Plain Text output
+- RAG Chunks (.jsonl) — chunked JSONL for vector databases and AI retrieval
 - Extracted image assets when needed
 - Linked image references inside Markdown
 - Confidence reports
@@ -35,8 +41,17 @@ The user should be able to:
 - Choose whether to preserve images
 - Choose whether to OCR images
 - Choose how to handle low confidence results
+- Toggle header and footer removal
+- Toggle blank page skipping
+- Toggle line number stripping
+- Toggle code block detection
+- Toggle footnote detection
+- Toggle equation detection
+- Select parallel worker count for batch processing
+- Select quality preset (Fast, Balanced, Quality)
 - View conversion status
 - View final success or error messages
+- View debug/diagnostic information on the Results screen
 - Open output folder after conversion
 
 ## Required Conversion Behavior

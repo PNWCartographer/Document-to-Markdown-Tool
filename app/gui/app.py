@@ -4,6 +4,7 @@ import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
 from .tooltip import Tooltip
+from .widgets import PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown
 import config.settings as _cfg_mod
 import engine.converter as _converter_mod
 
@@ -17,12 +18,15 @@ ICONS = {
 }
 
 _SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
+                   ".pptx", ".epub",
                    ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
 
 _FILETYPES = [
-    ("Supported files",  "*.pdf *.docx *.doc *.xlsx *.xls *.csv *.png *.jpg *.jpeg *.tiff *.bmp"),
+    ("Supported files",  "*.pdf *.docx *.doc *.xlsx *.xls *.csv *.pptx *.epub *.png *.jpg *.jpeg *.tiff *.bmp"),
     ("PDF files",        "*.pdf"),
     ("Word documents",   "*.docx *.doc"),
+    ("PowerPoint files", "*.pptx"),
+    ("EPUB e-books",     "*.epub"),
     ("Excel files",      "*.xlsx *.xls"),
     ("CSV files",        "*.csv"),
     ("Image files",      "*.png *.jpg *.jpeg *.tiff *.bmp"),
@@ -91,6 +95,13 @@ _TIPS = {
         "you a choice. 'Keep and flag' will include the uncertain content and mark it for review. "
         "'Skip' will leave it out entirely."
     ),
+    "output_format": (
+        "Choose the file format for your converted output. Markdown is the default and works "
+        "best for human reading and AI upload. JSON produces structured data that can be "
+        "processed by scripts, APIs, and AI pipelines. HTML creates a self-contained web page "
+        "viewable in any browser. Plain Text strips all formatting for simple reading or "
+        "search indexing."
+    ),
     "embed_images": (
         "Encodes images directly inside the Markdown file. The output is fully self-contained "
         "— no separate assets folder needed, images appear in their original position.\n\n"
@@ -102,15 +113,71 @@ _TIPS = {
         "Turn this off to save images as separate files in an assets folder instead "
         "(smaller .md file, but assets folder must stay alongside it)."
     ),
+    "remove_headers_footers": (
+        "Removes repeated headers and footers that appear on every page. "
+        "This prevents the same text from cluttering your Markdown output. "
+        "Turn this off if headers or footers contain important content you want to keep."
+    ),
+    "skip_blank_pages": (
+        "Skips pages that contain little or no meaningful text. "
+        "This removes empty separator pages and blank backs of double-sided scans. "
+        "Turn this off if blank pages are intentional and should be preserved."
+    ),
+    "strip_line_numbers": (
+        "Removes line numbers that appear in the margins of legal documents, "
+        "code listings, or academic papers. Off by default because most documents "
+        "do not have line numbers. Turn this on only if your source has numbered lines."
+    ),
+    "detect_code_blocks": (
+        "Identifies sections of source code or terminal output and wraps them in "
+        "code blocks in the Markdown output. Uses font changes and indentation patterns "
+        "to distinguish code from normal text. Recommended for technical documents."
+    ),
+    "detect_footnotes": (
+        "Finds footnotes and endnotes in the document and converts them into "
+        "Markdown footnote syntax. Links each reference number to its footnote text "
+        "at the bottom of the section. Recommended for academic and legal documents."
+    ),
+    "detect_equations": (
+        "Detects mathematical equations, formulas, and expressions and preserves them "
+        "using LaTeX notation in the Markdown output. Looks for Greek letters, math "
+        "symbols, and formula patterns. Recommended for scientific and engineering documents."
+    ),
+    "parallel_workers": (
+        "Controls how many files are converted at the same time. Higher values "
+        "convert batches faster but use more memory and CPU. Start with 1 and "
+        "increase if you are converting many files and have available system resources."
+    ),
+    "quality_preset": (
+        "Controls the tradeoff between conversion speed and output quality. "
+        "Fast skips OCR and advanced table detection. Balanced uses standard processing. "
+        "Quality enables all analysis engines for the most accurate results."
+    ),
 }
 
 
 class App:
     def __init__(self):
         self.root = tk.Tk()
+
+        # ── High-fidelity DPI scaling ────────────────────────
+        # With per-monitor DPI awareness (set in main.py), tkinter
+        # auto-detects display DPI for font/widget scaling.  We read the
+        # real system DPI so we can scale window geometry, sidebar width,
+        # and custom widget dimensions to match.
+        try:
+            import ctypes
+            _sys_dpi = ctypes.windll.user32.GetDpiForSystem()
+            self._dpi = _sys_dpi / 96.0
+        except Exception:
+            self._dpi = 1.0
+
+        from .widgets import set_dpi_scale
+        set_dpi_scale(self._dpi)
+
         self.root.title("Document to Markdown Converter")
-        self.root.geometry("960x640")
-        self.root.minsize(720, 500)
+        self.root.geometry(f"{int(960 * self._dpi)}x{int(640 * self._dpi)}")
+        self.root.minsize(int(720 * self._dpi), int(500 * self._dpi))
 
         # Load config first — theme preference is stored here
         self._cfg = _cfg_mod.load()
@@ -132,9 +199,14 @@ class App:
         self._settings_dividers:     list[tk.Frame]  = []
         self._settings_info_labels:  list[tk.Label]  = []
         self._settings_name_labels:  list[tk.Label]  = []
-        self._settings_checkboxes:   list[tk.Widget] = []
+        self._settings_toggles:   list[tk.Widget] = []
         self._settings_dropdowns:    list[tk.Widget] = []
         self._settings_default_lbls: list[tk.Label]  = []
+
+        # Custom widget tracking (filled by _build_* methods, themed in _apply_theme)
+        self._primary_pills:    list = []   # filled accent PillButtons
+        self._secondary_pills:  list = []   # outline PillButtons
+        self._glass_scrollbars: list = []   # GlassScrollbar instances
 
         # Engine state
         self._active_job: "Optional[_converter_mod.ConversionJob]" = None
@@ -152,17 +224,15 @@ class App:
         self.root.grid_columnconfigure(1, weight=0)  # 1px border
         self.root.grid_columnconfigure(2, weight=1)  # content
 
-        # Use clam so ttk scrollbar colors are respected on Windows
+        # Use clam so any remaining ttk widgets get flat styling
         self._ttk_style = ttk.Style()
         self._ttk_style.theme_use('clam')
-        self._ttk_style.configure('App.Vertical.TScrollbar',
-            relief='flat', borderwidth=0)
 
         self._build_sidebar()
         self._build_content()
 
     def _build_sidebar(self):
-        self._sidebar = tk.Frame(self.root, width=196)
+        self._sidebar = tk.Frame(self.root, width=int(196 * self._dpi))
         self._sidebar.grid(row=0, column=0, sticky="nsew")
         self._sidebar.grid_propagate(False)
         self._sidebar.grid_columnconfigure(0, weight=1)
@@ -269,56 +339,52 @@ class App:
         self._home_toolbar.grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 4))
         self._home_toolbar.grid_columnconfigure(3, weight=1)  # spacer col
 
-        self._btn_add_files = tk.Button(
+        self._btn_add_files = PillButton(
             self._home_toolbar,
             text="+ Add Files",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            padx=12, pady=5,
-            cursor="hand2",
+            style="secondary",
+            padx=14, pady=6,
             command=self._pick_files,
         )
         self._btn_add_files.grid(row=0, column=0, padx=(0, 6))
+        self._secondary_pills.append(self._btn_add_files)
 
-        self._btn_add_folder = tk.Button(
+        self._btn_add_folder = PillButton(
             self._home_toolbar,
             text="+ Add Folder",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            padx=12, pady=5,
-            cursor="hand2",
+            style="secondary",
+            padx=14, pady=6,
             command=self._pick_folder_input,
         )
         self._btn_add_folder.grid(row=0, column=1, padx=(0, 6))
+        self._secondary_pills.append(self._btn_add_folder)
 
-        self._btn_rename = tk.Button(
+        self._btn_rename = PillButton(
             self._home_toolbar,
             text="Rename…",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            padx=12, pady=5,
-            cursor="hand2",
+            style="secondary",
+            padx=14, pady=6,
             state="disabled",
             command=self._rename_selected_file,
         )
         self._btn_rename.grid(row=0, column=2, padx=(0, 6))
+        self._secondary_pills.append(self._btn_rename)
 
         # spacer at column 3
 
-        self._btn_clear = tk.Button(
+        self._btn_clear = PillButton(
             self._home_toolbar,
             text="Clear All",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            padx=12, pady=5,
-            cursor="hand2",
+            style="secondary",
+            padx=14, pady=6,
             command=self._clear_files,
         )
         self._btn_clear.grid(row=0, column=4)
+        self._secondary_pills.append(self._btn_clear)
 
         # ── File list ────────────────────────────────────────
         self._file_list_frame = tk.Frame(f, highlightthickness=1)
@@ -348,12 +414,12 @@ class App:
         )
         self._file_listbox.bind("<Button-3>", self._on_listbox_right_click)
         self._file_listbox.bind("<<ListboxSelect>>", self._on_listbox_select)
-        self._file_scrollbar = ttk.Scrollbar(
+        self._file_scrollbar = GlassScrollbar(
             self._file_list_frame,
             orient="vertical",
             command=self._file_listbox.yview,
-            style='App.Vertical.TScrollbar',
         )
+        self._glass_scrollbars.append(self._file_scrollbar)
         self._file_listbox.config(yscrollcommand=self._file_scrollbar.set)
 
         # ── File count ───────────────────────────────────────
@@ -379,32 +445,29 @@ class App:
         )
         self._lbl_output_path.grid(row=0, column=0, sticky="ew")
 
-        self._btn_browse = tk.Button(
+        self._btn_browse = PillButton(
             self._home_out_row,
             text="Browse…",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            padx=12, pady=5,
-            cursor="hand2",
+            style="secondary",
+            padx=14, pady=6,
             command=self._pick_output_folder,
         )
         self._btn_browse.grid(row=0, column=1)
+        self._secondary_pills.append(self._btn_browse)
 
         # ── Start button ─────────────────────────────────────
-        self._btn_start = tk.Button(
+        self._btn_start = PillButton(
             f,
             text="Start Conversion",
             font=_FONT_BTN,
-            padx=24,
-            pady=10,
-            bd=0,
-            relief="flat",
-            cursor="hand2",
+            style="primary",
+            padx=26, pady=10,
             state="disabled",
             command=self._on_start,
         )
         self._btn_start.grid(row=6, column=0, sticky="w", padx=32, pady=(0, 28))
+        self._primary_pills.append(self._btn_start)
 
     def _build_settings(self):
         f = self._new_screen("Settings")
@@ -417,15 +480,24 @@ class App:
 
         # ── Build tk.Vars from loaded config ─────────────────
         self._setting_vars = {
-            "conversion_mode":       tk.StringVar(value=self._cfg["conversion_mode"]),
-            "preserve_images":       tk.BooleanVar(value=self._cfg["preserve_images"]),
-            "preserve_page_numbers": tk.BooleanVar(value=self._cfg["preserve_page_numbers"]),
-            "rebuild_toc":           tk.BooleanVar(value=self._cfg["rebuild_toc"]),
-            "embed_images":          tk.BooleanVar(value=self._cfg["embed_images"]),
-            "ocr_language":          tk.StringVar(value=self._cfg["ocr_language"]),
-            "overwrite_existing":    tk.BooleanVar(value=self._cfg["overwrite_existing"]),
-            "output_subfolder":      tk.BooleanVar(value=self._cfg["output_subfolder"]),
-            "low_confidence_action": tk.StringVar(value=self._cfg["low_confidence_action"]),
+            "conversion_mode":        tk.StringVar(value=self._cfg["conversion_mode"]),
+            "preserve_images":        tk.BooleanVar(value=self._cfg["preserve_images"]),
+            "preserve_page_numbers":  tk.BooleanVar(value=self._cfg["preserve_page_numbers"]),
+            "rebuild_toc":            tk.BooleanVar(value=self._cfg["rebuild_toc"]),
+            "embed_images":           tk.BooleanVar(value=self._cfg["embed_images"]),
+            "remove_headers_footers": tk.BooleanVar(value=self._cfg["remove_headers_footers"]),
+            "skip_blank_pages":       tk.BooleanVar(value=self._cfg["skip_blank_pages"]),
+            "strip_line_numbers":     tk.BooleanVar(value=self._cfg["strip_line_numbers"]),
+            "detect_code_blocks":     tk.BooleanVar(value=self._cfg["detect_code_blocks"]),
+            "detect_footnotes":       tk.BooleanVar(value=self._cfg["detect_footnotes"]),
+            "detect_equations":       tk.BooleanVar(value=self._cfg["detect_equations"]),
+            "parallel_workers":       tk.StringVar(value=self._cfg["parallel_workers"]),
+            "quality_preset":         tk.StringVar(value=self._cfg["quality_preset"]),
+            "ocr_language":           tk.StringVar(value=self._cfg["ocr_language"]),
+            "output_format":          tk.StringVar(value=self._cfg["output_format"]),
+            "overwrite_existing":     tk.BooleanVar(value=self._cfg["overwrite_existing"]),
+            "output_subfolder":       tk.BooleanVar(value=self._cfg["output_subfolder"]),
+            "low_confidence_action":  tk.StringVar(value=self._cfg["low_confidence_action"]),
         }
         for var in self._setting_vars.values():
             var.trace_add("write", self._on_setting_changed)
@@ -438,9 +510,9 @@ class App:
 
         canvas = tk.Canvas(scroll_outer, bd=0, highlightthickness=0)
         canvas.grid(row=0, column=0, sticky="nsew")
-        vsb = ttk.Scrollbar(scroll_outer, orient="vertical", command=canvas.yview,
-                            style='App.Vertical.TScrollbar')
+        vsb = GlassScrollbar(scroll_outer, orient="vertical", command=canvas.yview)
         vsb.grid(row=0, column=1, sticky="ns")
+        self._glass_scrollbars.append(vsb)
         canvas.configure(yscrollcommand=vsb.set)
 
         self._settings_content = tk.Frame(canvas)
@@ -493,6 +565,51 @@ class App:
             _TIPS["rebuild_toc"], row,
             default_hint="default: on",
         )
+        row = self._settings_add_checkbox(
+            self._settings_content, "remove_headers_footers", "Remove Headers and Footers",
+            _TIPS["remove_headers_footers"], row,
+            default_hint="default: on",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "skip_blank_pages", "Skip Blank Pages",
+            _TIPS["skip_blank_pages"], row,
+            default_hint="default: on",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "strip_line_numbers", "Strip Line Numbers",
+            _TIPS["strip_line_numbers"], row,
+            default_hint="default: off",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "detect_code_blocks", "Detect Code Blocks",
+            _TIPS["detect_code_blocks"], row,
+            default_hint="default: on",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "detect_footnotes", "Detect Footnotes",
+            _TIPS["detect_footnotes"], row,
+            default_hint="default: on",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "detect_equations", "Detect Equations",
+            _TIPS["detect_equations"], row,
+            default_hint="default: on",
+        )
+
+        # Section: Performance
+        row = self._settings_add_section(self._settings_content, "Performance", row)
+        row = self._settings_add_dropdown(
+            self._settings_content, "parallel_workers", "Parallel Workers",
+            ["1", "2", "4", "Auto"],
+            _TIPS["parallel_workers"], row,
+            default_hint="default: 1",
+        )
+        row = self._settings_add_dropdown(
+            self._settings_content, "quality_preset", "Conversion Quality",
+            ["Fast", "Balanced", "Quality"],
+            _TIPS["quality_preset"], row,
+            default_hint="default: Quality",
+        )
 
         # Section: OCR
         row = self._settings_add_section(self._settings_content, "OCR", row)
@@ -506,6 +623,12 @@ class App:
 
         # Section: Output
         row = self._settings_add_section(self._settings_content, "Output", row)
+        row = self._settings_add_dropdown(
+            self._settings_content, "output_format", "Output Format",
+            ["Markdown", "JSON", "HTML", "Plain Text", "RAG Chunks"],
+            _TIPS["output_format"], row,
+            default_hint="default: Markdown",
+        )
         row = self._settings_add_checkbox(
             self._settings_content, "overwrite_existing", "Overwrite Existing Files",
             _TIPS["overwrite_existing"], row,
@@ -525,18 +648,17 @@ class App:
 
         # ── Reset to Defaults button ──────────────────────────
         row = self._settings_add_section(self._settings_content, "Reset", row)
-        self._btn_reset_defaults = tk.Button(
+        self._btn_reset_defaults = PillButton(
             self._settings_content,
             text="Reset to Defaults",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
+            style="secondary",
             padx=14, pady=6,
-            cursor="hand2",
             command=self._on_reset_defaults,
         )
         self._btn_reset_defaults.grid(
             row=row, column=1, columnspan=3, sticky="w", pady=(4, 16))
+        self._secondary_pills.append(self._btn_reset_defaults)
 
     def _settings_add_section(self, parent, title: str, row: int, first=False) -> int:
         top_pad = 8 if first else 18
@@ -557,7 +679,7 @@ class App:
         lbl.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=4)
 
         var = self._setting_vars[key]
-        cb = tk.Checkbutton(parent, variable=var, bd=0, highlightthickness=0, cursor="hand2")
+        cb = ToggleSwitch(parent, variable=var)
         cb.grid(row=row, column=2, sticky="e", pady=4, padx=(0, 8))
 
         hint_lbl = tk.Label(parent, text=default_hint, font=("Segoe UI", 9), anchor="e")
@@ -565,7 +687,7 @@ class App:
 
         self._settings_info_labels.append(info)
         self._settings_name_labels.append(lbl)
-        self._settings_checkboxes.append(cb)
+        self._settings_toggles.append(cb)
         self._settings_default_lbls.append(hint_lbl)
         return row + 1
 
@@ -578,8 +700,8 @@ class App:
         lbl.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=4)
 
         var = self._setting_vars[key]
-        menu = tk.OptionMenu(parent, var, *options)
-        menu.config(bd=0, relief="flat", highlightthickness=1, pady=3, padx=8, cursor="hand2")
+        menu = GlassDropdown(parent, variable=var, options=options,
+                             font=_FONT_SMALL)
         menu.grid(row=row, column=2, sticky="e", pady=3, padx=(0, 8))
 
         hint_lbl = tk.Label(parent, text=default_hint, font=("Segoe UI", 9), anchor="e")
@@ -674,25 +796,24 @@ class App:
             wrap="word",
             padx=8, pady=6,
         )
-        self._conv_log_sb = ttk.Scrollbar(
-            self._conv_log_frame, orient="vertical", command=self._conv_log.yview,
-            style='App.Vertical.TScrollbar')
+        self._conv_log_sb = GlassScrollbar(
+            self._conv_log_frame, orient="vertical", command=self._conv_log.yview)
+        self._glass_scrollbars.append(self._conv_log_sb)
         self._conv_log.config(yscrollcommand=self._conv_log_sb.set)
         self._conv_log.grid(row=0, column=0, sticky="nsew")
         self._conv_log_sb.grid(row=0, column=1, sticky="ns")
 
         # ── Cancel button ────────────────────────────────────
-        self._btn_cancel = tk.Button(
+        self._btn_cancel = PillButton(
             f,
             text="Cancel",
             font=_FONT_BTN,
-            padx=24, pady=10,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            cursor="hand2",
+            style="secondary",
+            padx=26, pady=10,
             command=self._on_cancel_conversion,
         )
         self._btn_cancel.grid(row=8, column=0, sticky="w", padx=32, pady=(0, 28))
+        self._secondary_pills.append(self._btn_cancel)
 
     def _build_results(self):
         f = self._new_screen("Results")
@@ -735,17 +856,16 @@ class App:
         )
         self._results_out_path_lbl.grid(row=0, column=0, sticky="ew")
 
-        self._btn_open_folder = tk.Button(
+        self._btn_open_folder = PillButton(
             self._results_out_row,
             text="Open Folder",
             font=_FONT_SMALL,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            padx=12, pady=5,
-            cursor="hand2",
+            style="secondary",
+            padx=14, pady=6,
             command=self._on_open_output_folder,
         )
         self._btn_open_folder.grid(row=0, column=1)
+        self._secondary_pills.append(self._btn_open_folder)
 
         # ── Confidence summary ───────────────────────────────
         self._results_conf_section_lbl = tk.Label(
@@ -790,11 +910,10 @@ class App:
             padx=8, pady=6,
             height=4,
         )
-        self._results_warn_sb = ttk.Scrollbar(
+        self._results_warn_sb = GlassScrollbar(
             self._results_warn_frame, orient="vertical",
-            command=self._results_warn_text.yview,
-            style='App.Vertical.TScrollbar',
-        )
+            command=self._results_warn_text.yview)
+        self._glass_scrollbars.append(self._results_warn_sb)
         self._results_warn_text.config(yscrollcommand=self._results_warn_sb.set)
         self._results_warn_text.grid(row=0, column=0, sticky="nsew")
         self._results_warn_sb.grid(row=0, column=1, sticky="ns")
@@ -803,28 +922,116 @@ class App:
         self._results_btn_row = tk.Frame(f)
         self._results_btn_row.grid(row=9, column=0, sticky="ew", padx=32, pady=(0, 28))
 
-        self._btn_open_output = tk.Button(
+        self._btn_open_output = PillButton(
             self._results_btn_row,
             text="Open Output Folder",
             font=_FONT_BTN,
-            padx=24, pady=10,
-            bd=0, relief="flat",
-            cursor="hand2",
+            style="primary",
+            padx=26, pady=10,
             command=self._on_open_output_folder,
         )
         self._btn_open_output.grid(row=0, column=0)
+        self._primary_pills.append(self._btn_open_output)
 
-        self._btn_new_conv = tk.Button(
+        self._btn_new_conv = PillButton(
             self._results_btn_row,
             text="Start New Conversion",
             font=_FONT_BTN,
-            padx=24, pady=10,
-            bd=0, relief="flat",
-            highlightthickness=1,
-            cursor="hand2",
+            style="secondary",
+            padx=26, pady=10,
             command=lambda: self._show("Home"),
         )
         self._btn_new_conv.grid(row=0, column=1, padx=(12, 0))
+        self._secondary_pills.append(self._btn_new_conv)
+
+        self._btn_debug_info = PillButton(
+            self._results_btn_row,
+            text="View Debug Info",
+            font=_FONT_SMALL,
+            style="secondary",
+            padx=14, pady=7,
+            command=self._show_debug_window,
+        )
+        self._btn_debug_info.grid(row=0, column=2, padx=(12, 0))
+        self._secondary_pills.append(self._btn_debug_info)
+
+    # ── Debug / Preview window ──────────────────────────────
+
+    def _show_debug_window(self):
+        """Open a Toplevel window with diagnostic info about the last conversion."""
+        result = getattr(self, "_last_batch_result", None)
+        if result is None:
+            messagebox.showinfo("Debug Info", "No conversion results available yet.")
+            return
+
+        t = self._t
+        win = tk.Toplevel(self.root)
+        win.title("Debug Info — Conversion Diagnostics")
+        win.geometry("680x500")
+        win.config(bg=t["bg"])
+
+        # Scrollable text widget
+        text = tk.Text(
+            win, font=_FONT_SMALL, wrap="word",
+            bg=t["bg"], fg=t["text"],
+            bd=0, highlightthickness=0,
+            padx=12, pady=10,
+        )
+        sb = ttk.Scrollbar(win, orient="vertical", command=text.yview)
+        text.config(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        text.pack(fill="both", expand=True)
+
+        lines = []
+        lines.append("═══  CONVERSION DEBUG INFO  ═══\n")
+        lines.append(f"Status: {result.status_text}")
+        lines.append(f"Total files: {result.total}")
+        lines.append(f"Completed: {result.completed}")
+        lines.append(f"Failed: {result.failed}")
+        lines.append(f"Cancelled: {result.cancelled}")
+        lines.append(f"Output root: {result.output_root}")
+        lines.append("")
+
+        # Batch confidence details
+        bc = result.batch_confidence
+        lines.append("── BATCH CONFIDENCE ──")
+        lines.append(f"  Overall:           {bc.overall or 'N/A'}")
+        lines.append(f"  Text extraction:   {bc.text_extraction or 'N/A'}")
+        lines.append(f"  Table structure:   {bc.table_structure or 'N/A'}")
+        lines.append(f"  Image extraction:  {bc.image_extraction or 'N/A'}")
+        lines.append(f"  Image placement:   {bc.image_placement or 'N/A'}")
+        lines.append(f"  Document order:    {bc.document_order or 'N/A'}")
+        lines.append(f"  OCR confidence:    {bc.ocr_confidence or 'N/A'}")
+        lines.append("")
+
+        # Per-file confidence
+        if result.all_confidence:
+            lines.append("── PER-FILE CONFIDENCE ──")
+            for conf in result.all_confidence:
+                fname = os.path.basename(conf.source_file) if conf.source_file else "Unknown"
+                lines.append(f"\n  {fname}:")
+                lines.append(f"    Overall:         {conf.overall or 'N/A'}")
+                lines.append(f"    Text extraction: {conf.text_extraction or 'N/A'}")
+                lines.append(f"    Table structure: {conf.table_structure or 'N/A'}")
+                lines.append(f"    OCR confidence:  {conf.ocr_confidence or 'N/A'}")
+                if conf.warnings:
+                    lines.append(f"    Warnings ({len(conf.warnings)}):")
+                    for w in conf.warnings:
+                        lines.append(f"      - {w}")
+                if conf.notes:
+                    lines.append(f"    Notes ({len(conf.notes)}):")
+                    for n in conf.notes:
+                        lines.append(f"      - {n}")
+            lines.append("")
+
+        # Settings snapshot
+        lines.append("── SETTINGS USED ──")
+        for key, val in sorted(self._cfg.items()):
+            if key != "theme":
+                lines.append(f"  {key}: {val}")
+
+        text.insert("1.0", "\n".join(lines))
+        text.config(state="disabled")
 
     # ── File picker logic ────────────────────────────────────
 
@@ -983,7 +1190,7 @@ class App:
 
     def _check_start_ready(self):
         ready = bool(self._selected_files) and bool(self._output_path)
-        self._btn_start.config(state="normal" if ready else "disabled")
+        self._btn_start.set_state("normal" if ready else "disabled")
 
     def _on_open_output_folder(self):
         path = self._last_output_root
@@ -1080,6 +1287,7 @@ class App:
         self._show("Results")
 
     def _populate_results(self, result: "_converter_mod.BatchResult") -> None:
+        self._last_batch_result = result
         t = self._t
         bc = result.batch_confidence
 
@@ -1121,7 +1329,7 @@ class App:
 
     def _on_listbox_select(self, _event=None):
         sel = self._file_listbox.curselection()
-        self._btn_rename.config(state="normal" if len(sel) == 1 else "disabled")
+        self._btn_rename.set_state("normal" if len(sel) == 1 else "disabled")
 
     def _rename_selected_file(self):
         sel = self._file_listbox.curselection()
@@ -1263,8 +1471,8 @@ class App:
             bg=t["sidebar_bg"],
             fg=t["text_secondary"],
             activebackground=t["nav_hover_bg"],
-            activeforeground=t["text_secondary"],
-            text="  ☽   Dark Mode" if self._dark else "  ☀   Light Mode",
+            activeforeground=t["text"],
+            text="  ☀   Light Mode" if self._dark else "  ☽   Dark Mode",
         )
 
         # Screen frames and their heading labels
@@ -1275,23 +1483,30 @@ class App:
         # ── Home-specific widgets ────────────────────────────
         self._home_toolbar.config(bg=t["content_bg"])
 
-        for btn in (self._btn_add_files, self._btn_add_folder, self._btn_clear, self._btn_browse):
-            btn.config(
-                bg=t["sidebar_bg"],
-                fg=t["accent"],
-                highlightbackground=t["border"],
-                activebackground=t["nav_hover_bg"],
-                activeforeground=t["accent"],
-            )
-        self._btn_rename.config(
-            bg=t["sidebar_bg"],
-            fg=t["accent"],
-            disabledforeground=t["text_secondary"],
-            highlightbackground=t["border"],
-            activebackground=t["nav_hover_bg"],
-            activeforeground=t["accent"],
-        )
+        # ── PillButton batch theming ──────────────────────────
+        # Compute a dimmed accent for disabled primary buttons
+        _dis_fill = "#352450" if self._dark else "#c4b0e0"
 
+        for btn in self._primary_pills:
+            btn.set_colors(
+                fill=t["accent"], fg=t["text_on_accent"],
+                hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+                disabled_fill=_dis_fill,
+                disabled_fg=t["text_secondary"],
+                parent_bg=t["content_bg"],
+            )
+
+        for btn in self._secondary_pills:
+            btn.set_colors(
+                fill=t["content_bg"], fg=t["accent"],
+                outline=t["border"],
+                hover_fill=t["content_bg"], hover_fg=t["accent"],
+                hover_outline=t["accent"],
+                disabled_fg=t["text_secondary"],
+                parent_bg=t["content_bg"],
+            )
+
+        # ── Home-specific non-button widgets ─────────────────
         self._file_list_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._file_listbox.config(
             bg=t["bg"],
@@ -1299,17 +1514,12 @@ class App:
             selectbackground=t["accent"],
             selectforeground=t["text_on_accent"],
         )
-        self._ttk_style.configure('App.Vertical.TScrollbar',
-            background=t["border"],
-            troughcolor=t["bg"],
-            arrowcolor=t["text_secondary"],
-            bordercolor=t["bg"],
-            darkcolor=t["border"],
-            lightcolor=t["border"],
-        )
-        self._ttk_style.map('App.Vertical.TScrollbar',
-            background=[('active', t["text_secondary"]), ('pressed', t["text"])],
-        )
+        # GlassScrollbar theming
+        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
+        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        for sb in self._glass_scrollbars:
+            sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover,
+                          parent_bg=t["bg"])
         self._lbl_empty.config(bg=t["bg"], fg=t["text_secondary"])
         self._lbl_file_count.config(bg=t["content_bg"], fg=t["text_secondary"])
 
@@ -1324,13 +1534,6 @@ class App:
         self._results_out_row.config(bg=t["content_bg"])
         self._results_out_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._results_out_path_lbl.config(bg=t["bg"], fg=t["text_secondary"])
-        self._btn_open_folder.config(
-            bg=t["sidebar_bg"],
-            fg=t["accent"],
-            highlightbackground=t["border"],
-            activebackground=t["nav_hover_bg"],
-            activeforeground=t["accent"],
-        )
 
         self._results_conf_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
         self._results_conf_div.config(bg=t["border"])
@@ -1344,20 +1547,6 @@ class App:
             bg=t["bg"], fg=t["text"], insertbackground=t["text"])
 
         self._results_btn_row.config(bg=t["content_bg"])
-        self._btn_open_output.config(
-            bg=t["accent"],
-            fg=t["text_on_accent"],
-            activebackground=t["accent_hover"],
-            activeforeground=t["text_on_accent"],
-            disabledforeground=t["text_on_accent"],
-        )
-        self._btn_new_conv.config(
-            bg=t["sidebar_bg"],
-            fg=t["accent"],
-            highlightbackground=t["border"],
-            activebackground=t["nav_hover_bg"],
-            activeforeground=t["accent"],
-        )
 
         # ── Conversion-specific widgets ───────────────────────
         self._conv_overall_row.config(bg=t["content_bg"])
@@ -1369,7 +1558,7 @@ class App:
 
         self._conv_file_row.config(bg=t["content_bg"])
         self._conv_file_name_lbl.config(bg=t["content_bg"], fg=t["text"])
-        self._conv_stage_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._conv_stage_lbl.config(bg=t["content_bg"], fg=t["accent_secondary"])
 
         self._conv_file_bar_outer.config(bg=t["bg"], highlightbackground=t["border"])
         self._conv_file_bar_inner.config(bg=t["accent"])
@@ -1379,23 +1568,6 @@ class App:
         self._conv_log.config(
             bg=t["bg"], fg=t["text"],
             insertbackground=t["text"],
-        )
-
-        self._btn_cancel.config(
-            bg=t["sidebar_bg"],
-            fg=t["accent"],
-            highlightbackground=t["border"],
-            activebackground=t["nav_hover_bg"],
-            activeforeground=t["accent"],
-        )
-
-        # Start button
-        self._btn_start.config(
-            bg=t["accent"],
-            fg=t["text_on_accent"],
-            activebackground=t["accent_hover"],
-            activeforeground=t["text_on_accent"],
-            disabledforeground=t["text_on_accent"],
         )
 
         # ── Settings-specific widgets ────────────────────────
@@ -1413,47 +1585,43 @@ class App:
             sep.config(bg=t["border"])
 
         for lbl in self._settings_info_labels:
-            lbl.config(bg=t["content_bg"], fg=t["accent"])
+            lbl.config(bg=t["content_bg"], fg=t["accent_secondary"])
 
-        for cb in self._settings_checkboxes:
-            cb.config(
-                bg=t["content_bg"],
-                fg=t["text"],
-                activebackground=t["content_bg"],
-                activeforeground=t["text"],
-                selectcolor=t["bg"],
+        _off_track = "#2a2a3c" if self._dark else "#c0bdd0"
+        _thumb_off = "#7e7e98" if self._dark else "#9898a8"
+
+        for tog in self._settings_toggles:
+            tog.set_colors(
+                on_fill=t["accent"],
+                off_fill=_off_track,
+                thumb_on="#ffffff",
+                thumb_off=_thumb_off,
+                parent_bg=t["content_bg"],
             )
 
-        for menu in self._settings_dropdowns:
-            menu.config(
-                bg=t["sidebar_bg"],
+        for dd in self._settings_dropdowns:
+            dd.set_colors(
+                fill=t["sidebar_bg"],
                 fg=t["text"],
-                activebackground=t["nav_hover_bg"],
-                activeforeground=t["text"],
-                highlightbackground=t["border"],
-            )
-            menu["menu"].config(
-                bg=t["sidebar_bg"],
-                fg=t["text"],
-                activebackground=t["accent"],
-                activeforeground=t["text_on_accent"],
+                border=t["border"],
+                hover_fill=t["nav_hover_bg"],
+                popup_bg=t["sidebar_bg"],
+                popup_fg=t["text"],
+                popup_hover_bg=t["nav_hover_bg"],
+                popup_accent=t["accent"],
+                chevron=t["text_secondary"],
+                parent_bg=t["content_bg"],
             )
 
         for lbl in self._settings_default_lbls:
             lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
 
-        self._btn_reset_defaults.config(
-            bg=t["sidebar_bg"],
-            fg=t["accent"],
-            highlightbackground=t["border"],
-            activebackground=t["nav_hover_bg"],
-            activeforeground=t["accent"],
-        )
-
         self._refresh_nav()
 
     def _style_screen_labels(self, widget, t):
         cls = widget.winfo_class()
+        if cls == "Canvas":
+            return  # PillButtons handle their own theming
         if cls == "Label":
             widget.config(bg=t["content_bg"], fg=t["text"])
         elif cls == "Frame":

@@ -36,6 +36,7 @@ from .markdown_writer import (
     write_markdown,
     output_dir_for,
 )
+from .output_formats import write_output as write_alt_format, output_path_for
 
 
 # Language display names → ISO 639-1 codes used by ocr_engine
@@ -113,6 +114,51 @@ class ConversionJob:
         app_logger = AppLogger()
         app_logger.info(f"Batch started | files={total}")
 
+        # Resolve worker count
+        workers_cfg = self._cfg.get("parallel_workers", "1")
+        if workers_cfg == "Auto":
+            workers = min(os.cpu_count() or 1, 4)
+        else:
+            try:
+                workers = max(1, int(workers_cfg))
+            except (ValueError, TypeError):
+                workers = 1
+
+        if workers > 1 and total > 1:
+            completed, failed, results = self._run_parallel(
+                total, workers, app_logger, results,
+            )
+        else:
+            completed, failed, results = self._run_sequential(
+                total, app_logger, results,
+            )
+
+        # Build batch result (shared by both sequential and parallel paths)
+        batch_confidence = aggregate_confidence(results) if results else ConfidenceResult()
+        batch_result = BatchResult(
+            total=total,
+            completed=completed,
+            failed=failed,
+            cancelled=self._cancel_event.is_set(),
+            output_root=self._output_root,
+            batch_confidence=batch_confidence,
+            all_confidence=results,
+        )
+
+        app_logger.info(
+            f"Batch finished | completed={completed} failed={failed} "
+            f"cancelled={batch_result.cancelled}"
+        )
+        self._gui(self._on_done, batch_result)
+
+    # ------------------------------------------------------------------
+    # Sequential processing (workers=1, default)
+    # ------------------------------------------------------------------
+
+    def _run_sequential(self, total, app_logger, results):
+        completed = 0
+        failed = 0
+
         for idx, source_file in enumerate(self._files):
             if self._cancel_event.is_set():
                 self._gui(self._on_log, "Conversion cancelled.")
@@ -127,11 +173,9 @@ class ConversionJob:
             self._gui(self._on_stage, "Initialising…")
             self._gui(self._on_log, f"── [{idx + 1}/{total}] {filename}")
 
-            # Determine output dir
             use_subfolder = self._cfg.get("output_subfolder", True)
             out_dir = output_dir_for(source_file, self._output_root, alias, use_subfolder)
 
-            # Per-file logger
             logger = ConversionLogger(
                 source_file=source_file,
                 gui_callback=lambda line: self._gui(self._on_log, line),
@@ -141,26 +185,14 @@ class ConversionJob:
             try:
                 output = self._convert_file(source_file, alias, logger)
                 self._gui(self._on_stage, "Writing output…")
+                self._write_output(output, use_subfolder)
 
-                # Write Markdown
-                write_markdown(
-                    output,
-                    output_root=self._output_root,
-                    use_subfolder=use_subfolder,
-                    include_confidence_summary=True,
-                    include_page_numbers=self._cfg.get("preserve_page_numbers", False),
-                    rebuild_toc=self._cfg.get("rebuild_toc", False),
-                    overwrite=self._cfg.get("overwrite_existing", False),
-                )
-
-                # Write confidence report to %APPDATA%\DocToMarkdown\
                 if output.confidence:
                     write_confidence_report(output.confidence)
                     results.append(output.confidence)
 
                 logger.end()
                 logger.flush()
-
                 completed += 1
                 self._gui(self._on_log, f"   ✓ Done → {out_dir}")
 
@@ -184,23 +216,130 @@ class ConversionJob:
             self._gui(self._on_file_progress, 1.0)
             self._gui(self._on_stage, "")
 
-        # Build batch result
-        batch_confidence = aggregate_confidence(results) if results else ConfidenceResult()
-        batch_result = BatchResult(
-            total=total,
-            completed=completed,
-            failed=failed,
-            cancelled=self._cancel_event.is_set(),
-            output_root=self._output_root,
-            batch_confidence=batch_confidence,
-            all_confidence=results,
-        )
+        return completed, failed, results
 
-        app_logger.info(
-            f"Batch finished | completed={completed} failed={failed} "
-            f"cancelled={batch_result.cancelled}"
-        )
-        self._gui(self._on_done, batch_result)
+    # ------------------------------------------------------------------
+    # Parallel processing (workers>1)
+    # ------------------------------------------------------------------
+
+    def _run_parallel(self, total, workers, app_logger, results):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        completed = 0
+        failed = 0
+
+        self._gui(self._on_log, f"Parallel mode: {workers} workers")
+        self._gui(self._on_stage, f"Converting {total} files ({workers} workers)…")
+
+        use_subfolder = self._cfg.get("output_subfolder", True)
+        finished_count = 0
+
+        def convert_one(idx, source_file):
+            """Convert a single file — runs on a worker thread."""
+            if self._cancel_event.is_set():
+                return None, None, "cancelled"
+
+            alias = self._aliases.get(source_file, "")
+            logger = ConversionLogger(
+                source_file=source_file,
+                gui_callback=lambda line: self._gui(self._on_log, line),
+            )
+            logger.start()
+
+            try:
+                output = self._convert_file(source_file, alias, logger)
+                self._write_output(output, use_subfolder)
+
+                if output.confidence:
+                    write_confidence_report(output.confidence)
+
+                logger.end()
+                logger.flush()
+                return output.confidence, source_file, "ok"
+
+            except FileExistsError as e:
+                logger.warning(f"Skipped — output already exists: {e}")
+                logger.end()
+                logger.flush()
+                return None, source_file, "skipped"
+
+            except Exception as e:
+                logger.error(f"Conversion failed: {e}")
+                logger.end()
+                logger.flush()
+                return None, source_file, f"failed: {e}"
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(convert_one, idx, sf): (idx, sf)
+                for idx, sf in enumerate(self._files)
+            }
+
+            for future in as_completed(futures):
+                if self._cancel_event.is_set():
+                    break
+
+                idx, sf = futures[future]
+                filename = os.path.basename(sf)
+                finished_count += 1
+
+                try:
+                    conf, src, status = future.result()
+                except Exception as e:
+                    status = f"failed: {e}"
+                    conf = None
+
+                if status == "ok":
+                    completed += 1
+                    if conf:
+                        results.append(conf)
+                    self._gui(self._on_log, f"   ✓ Done — {filename}")
+                elif status == "skipped":
+                    self._gui(self._on_log, f"   ⚠ Skipped — {filename}")
+                elif status == "cancelled":
+                    pass
+                else:
+                    failed += 1
+                    self._gui(self._on_log, f"   ✗ {status} — {filename}")
+                    app_logger.error(f"Failed: {sf} | {status}")
+
+                self._gui(self._on_overall_progress, finished_count / total)
+                self._gui(self._on_file_start, filename, finished_count, total)
+
+        return completed, failed, results
+
+    # ------------------------------------------------------------------
+    # Output writer helper (shared by sequential & parallel)
+    # ------------------------------------------------------------------
+
+    def _write_output(self, output, use_subfolder):
+        """Write conversion output in the configured format."""
+        fmt = self._cfg.get("output_format", "Markdown")
+        overwrite = self._cfg.get("overwrite_existing", False)
+        inc_pages = self._cfg.get("preserve_page_numbers", False)
+        inc_toc = self._cfg.get("rebuild_toc", False)
+
+        if fmt == "Markdown":
+            write_markdown(
+                output,
+                output_root=self._output_root,
+                use_subfolder=use_subfolder,
+                include_confidence_summary=True,
+                include_page_numbers=inc_pages,
+                rebuild_toc=inc_toc,
+                overwrite=overwrite,
+            )
+        else:
+            write_alt_format(
+                output,
+                output_root=self._output_root,
+                fmt=fmt,
+                use_subfolder=use_subfolder,
+                include_confidence=True,
+                include_page_numbers=inc_pages,
+                rebuild_toc=inc_toc,
+                overwrite=overwrite,
+            )
 
     # ------------------------------------------------------------------
     # File type routing
@@ -214,6 +353,17 @@ class ConversionJob:
         preserve_images = cfg.get("preserve_images", True)
         rebuild_toc = cfg.get("rebuild_toc", False)
         preserve_pages = cfg.get("preserve_page_numbers", False)
+
+        # Quality preset overrides for PDF conversion
+        quality = cfg.get("quality_preset", "Quality")
+        if quality == "Fast" and ext == ".pdf":
+            # Fast: force pymupdf-only path, skip OCR
+            mode = "Standard"
+            if logger:
+                logger.info("Quality preset: Fast — using standard extraction only, skipping OCR.")
+        elif quality == "Balanced" and ext == ".pdf":
+            if logger:
+                logger.info("Quality preset: Balanced — standard pipeline, limited fallbacks.")
 
         def progress(p: float):
             self._gui(self._on_file_progress, p)
@@ -237,6 +387,12 @@ class ConversionJob:
                 preserve_page_numbers=preserve_pages,
                 use_subfolder=use_subfolder,
                 embed_images=self._cfg.get("embed_images", True),
+                remove_headers_footers=cfg.get("remove_headers_footers", True),
+                skip_blank_pages=cfg.get("skip_blank_pages", True),
+                strip_line_numbers=cfg.get("strip_line_numbers", False),
+                detect_code_blocks=cfg.get("detect_code_blocks", True),
+                detect_footnotes=cfg.get("detect_footnotes", True),
+                detect_equations=cfg.get("detect_equations", True),
                 logger=logger,
                 progress_callback=progress,
             )
@@ -253,6 +409,12 @@ class ConversionJob:
                 rebuild_toc=rebuild_toc,
                 preserve_page_numbers=preserve_pages,
                 use_subfolder=use_subfolder,
+                remove_headers_footers=cfg.get("remove_headers_footers", True),
+                skip_blank_pages=cfg.get("skip_blank_pages", True),
+                strip_line_numbers=cfg.get("strip_line_numbers", False),
+                detect_code_blocks=cfg.get("detect_code_blocks", True),
+                detect_footnotes=cfg.get("detect_footnotes", True),
+                detect_equations=cfg.get("detect_equations", True),
                 logger=logger,
                 progress_callback=progress,
             )
@@ -273,6 +435,33 @@ class ConversionJob:
             return csv_converter.convert(
                 source_file,
                 alias=alias,
+                logger=logger,
+                progress_callback=progress,
+            )
+
+        elif ext == ".pptx":
+            stage("Parsing presentation…")
+            from . import pptx_converter
+            return pptx_converter.convert(
+                source_file,
+                alias=alias,
+                output_root=self._output_root,
+                preserve_images=preserve_images,
+                use_subfolder=use_subfolder,
+                logger=logger,
+                progress_callback=progress,
+            )
+
+        elif ext == ".epub":
+            stage("Reading e-book…")
+            from . import epub_converter
+            return epub_converter.convert(
+                source_file,
+                alias=alias,
+                output_root=self._output_root,
+                preserve_images=preserve_images,
+                use_subfolder=use_subfolder,
+                rebuild_toc=rebuild_toc,
                 logger=logger,
                 progress_callback=progress,
             )

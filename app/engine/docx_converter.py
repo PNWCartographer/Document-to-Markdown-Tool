@@ -28,6 +28,12 @@ def convert(
     rebuild_toc: bool = True,
     preserve_page_numbers: bool = False,
     use_subfolder: bool = True,
+    remove_headers_footers: bool = True,
+    skip_blank_pages: bool = True,
+    strip_line_numbers: bool = False,
+    detect_code_blocks: bool = True,
+    detect_footnotes: bool = True,
+    detect_equations: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -46,12 +52,22 @@ def convert(
     log_info(f"DOCX converter started | file={os.path.basename(source_file)}")
     progress(0.05)
 
+    pp_settings = dict(
+        remove_headers_footers=remove_headers_footers,
+        skip_blank_pages=skip_blank_pages,
+        strip_line_numbers=strip_line_numbers,
+        detect_code_blocks=detect_code_blocks,
+        detect_footnotes=detect_footnotes,
+        detect_equations=detect_equations,
+    )
+
     # Try docling first
     if _docling_available():
         try:
             result = _convert_docling(
                 source_file, alias, output_root, preserve_images, rebuild_toc,
-                preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
+                preserve_page_numbers, use_subfolder, output, confidence,
+                log_info, log_warn, progress, pp_settings=pp_settings,
             )
             if result:
                 return result
@@ -65,7 +81,8 @@ def convert(
         try:
             return _convert_mammoth(
                 source_file, alias, output_root, preserve_images, rebuild_toc,
-                use_subfolder, output, confidence, log_info, log_warn, progress
+                use_subfolder, output, confidence, log_info, log_warn, progress,
+                pp_settings=pp_settings,
             )
         except Exception as e:
             log_warn(f"mammoth failed: {e} — trying python-docx fallback.")
@@ -76,7 +93,8 @@ def convert(
     if _python_docx_available():
         return _convert_python_docx(
             source_file, alias, output_root, preserve_images, rebuild_toc,
-            use_subfolder, output, confidence, log_info, log_warn, progress
+            use_subfolder, output, confidence, log_info, log_warn, progress,
+            pp_settings=pp_settings,
         )
 
     log_warn("No DOCX conversion engine available.")
@@ -99,7 +117,8 @@ def _docling_available() -> bool:
 
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
+    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress,
+    pp_settings: Optional[dict] = None,
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
     from docling.datamodel.base_models import InputFormat
@@ -119,6 +138,24 @@ def _convert_docling(
         return None
 
     output.engine_used = "docling"
+
+    # Run post-processor pipeline on monolithic text
+    pp = pp_settings or {}
+    _pp_active = ("strip_line_numbers", "detect_code_blocks", "detect_footnotes", "detect_equations")
+    if any(pp.get(k) for k in _pp_active):
+        from . import post_processors
+        if pp.get("strip_line_numbers", False):
+            md_text = post_processors.strip_line_numbers(md_text)
+            log_info("Post-processing: stripped line numbers.")
+        if pp.get("detect_code_blocks", True):
+            md_text = post_processors.detect_code_blocks_in_markdown(md_text)
+            log_info("Post-processing: detected code blocks.")
+        if pp.get("detect_footnotes", True):
+            md_text = post_processors.detect_footnotes_in_markdown(md_text)
+            log_info("Post-processing: detected footnotes.")
+        if pp.get("detect_equations", True):
+            md_text = post_processors.detect_equations(md_text)
+            log_info("Post-processing: detected equations.")
 
     # Extract TOC entries from headings in the Markdown
     if rebuild_toc:
@@ -196,7 +233,8 @@ def _mammoth_available() -> bool:
 
 def _convert_mammoth(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    use_subfolder, output, confidence, log_info, log_warn, progress
+    use_subfolder, output, confidence, log_info, log_warn, progress,
+    pp_settings: Optional[dict] = None,
 ) -> ConversionOutput:
     import mammoth
 
@@ -233,6 +271,24 @@ def _convert_mammoth(
         confidence.text_extraction = "Low"
         confidence.overall = "Low"
         return output
+
+    # Run post-processor pipeline on monolithic text
+    pp = pp_settings or {}
+    _pp_mammoth_keys = ("strip_line_numbers", "detect_code_blocks", "detect_footnotes", "detect_equations")
+    if any(pp.get(k) for k in _pp_mammoth_keys):
+        from . import post_processors
+        if pp.get("strip_line_numbers", False):
+            md_text = post_processors.strip_line_numbers(md_text)
+            log_info("Post-processing: stripped line numbers.")
+        if pp.get("detect_code_blocks", True):
+            md_text = post_processors.detect_code_blocks_in_markdown(md_text)
+            log_info("Post-processing: detected code blocks.")
+        if pp.get("detect_footnotes", True):
+            md_text = post_processors.detect_footnotes_in_markdown(md_text)
+            log_info("Post-processing: detected footnotes.")
+        if pp.get("detect_equations", True):
+            md_text = post_processors.detect_equations(md_text)
+            log_info("Post-processing: detected equations.")
 
     if rebuild_toc:
         _extract_toc_from_markdown(md_text, output)
@@ -279,7 +335,8 @@ _HEADING_MAP = {
 
 def _convert_python_docx(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    use_subfolder, output, confidence, log_info, log_warn, progress
+    use_subfolder, output, confidence, log_info, log_warn, progress,
+    pp_settings: Optional[dict] = None,
 ) -> ConversionOutput:
     import docx as python_docx
 
@@ -337,6 +394,25 @@ def _convert_python_docx(
     progress(0.8)
 
     md_text = "\n".join(parts)
+
+    # Run post-processor pipeline on assembled text
+    pp = pp_settings or {}
+    _pp_docx_keys = ("strip_line_numbers", "detect_code_blocks", "detect_footnotes", "detect_equations")
+    if any(pp.get(k) for k in _pp_docx_keys):
+        from . import post_processors
+        if pp.get("strip_line_numbers", False):
+            md_text = post_processors.strip_line_numbers(md_text)
+            log_info("Post-processing: stripped line numbers.")
+        if pp.get("detect_code_blocks", True):
+            md_text = post_processors.detect_code_blocks_in_markdown(md_text)
+            log_info("Post-processing: detected code blocks.")
+        if pp.get("detect_footnotes", True):
+            md_text = post_processors.detect_footnotes_in_markdown(md_text)
+            log_info("Post-processing: detected footnotes.")
+        if pp.get("detect_equations", True):
+            md_text = post_processors.detect_equations(md_text)
+            log_info("Post-processing: detected equations.")
+
     output.add_section(body=md_text)
 
     confidence.text_extraction = "High" if paragraph_count > 0 else "Low"

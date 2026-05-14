@@ -133,6 +133,71 @@ will pause and show you a choice. Keep and flag will include the uncertain
 content and mark it for review. Skip will leave it out entirely.
 ```
 
+**Remove Headers and Footers**
+```
+Remove Headers and Footers:
+Removes repeated headers and footers that appear on every page. This prevents
+the same text from cluttering your Markdown output. Turn this off if headers
+or footers contain important content you want to keep.
+```
+
+**Skip Blank Pages**
+```
+Skip Blank Pages:
+Skips pages that contain little or no meaningful text. This removes empty
+separator pages and blank backs of double-sided scans. Turn this off if blank
+pages are intentional and should be preserved.
+```
+
+**Strip Line Numbers**
+```
+Strip Line Numbers:
+Removes line numbers that appear in the margins of legal documents, code
+listings, or academic papers. Off by default because most documents do not
+have line numbers. Turn this on only if your source has numbered lines.
+```
+
+**Detect Code Blocks**
+```
+Detect Code Blocks:
+Identifies sections of source code or terminal output and wraps them in code
+blocks in the Markdown output. Uses font changes and indentation patterns to
+distinguish code from normal text. Recommended for technical documents.
+```
+
+**Detect Footnotes**
+```
+Detect Footnotes:
+Finds footnotes and endnotes in the document and converts them into Markdown
+footnote syntax. Links each reference number to its footnote text at the
+bottom of the section. Recommended for academic and legal documents.
+```
+
+**Detect Equations**
+```
+Detect Equations:
+Detects mathematical equations, formulas, and expressions and preserves them
+using LaTeX notation in the Markdown output. Looks for Greek letters, math
+symbols, and formula patterns. Recommended for scientific and engineering
+documents.
+```
+
+**Parallel Workers**
+```
+Parallel Workers:
+Controls how many files are converted at the same time. Higher values convert
+batches faster but use more memory and CPU. Start with 1 and increase if you
+are converting many files and have available system resources.
+```
+
+**Quality Preset**
+```
+Quality Preset:
+Controls the tradeoff between conversion speed and output quality. Fast skips
+OCR and advanced table detection. Balanced uses standard processing. Quality
+enables all analysis engines for the most accurate results.
+```
+
 ### Tooltip Implementation Notes
 
 Tooltips should appear when the user hovers over the setting label or a small
@@ -168,3 +233,52 @@ Better example:
 ```text
 The PDF could not be fully read. The file may be damaged, encrypted, or contain unsupported content. Try enabling OCR fallback or review the log file.
 ```
+
+## Settings Screen Layout
+
+The Settings screen is organized into sections with consistent spacing and layout.
+
+### Section Order
+1. **Conversion** — Conversion mode dropdown
+2. **Content Handling** — 10 checkboxes controlling content processing:
+   - Preserve Images (on)
+   - Embed Images (on)
+   - Preserve Page Numbers (on)
+   - Rebuild Table of Contents (on)
+   - Remove Headers and Footers (on)
+   - Skip Blank Pages (on)
+   - Strip Line Numbers (off)
+   - Detect Code Blocks (on)
+   - Detect Footnotes (on)
+   - Detect Equations (on)
+3. **Performance** — 2 dropdowns:
+   - Parallel Workers: 1, 2, 4, Auto
+   - Quality Preset: Fast, Balanced, Quality
+4. **OCR** — OCR language dropdown
+5. **Output** — Output format dropdown (Markdown, JSON, HTML, Plain Text, RAG Chunks), overwrite toggle, subfolder toggle, low confidence action
+6. **Reset** — Reset to Defaults button
+
+Each setting has a tooltip icon that displays help text on hover.
+
+## Debug/Preview Button
+
+The Results screen includes a "View Debug Info" button in the button row alongside "Open Output Folder" and other action buttons.
+
+When clicked, it opens a diagnostic window showing:
+- Engine used for each file
+- Overall and per-dimension confidence scores
+- Warnings and notes from the conversion process
+- Current settings snapshot at the time of conversion
+
+This is not a persistent setting. It is a diagnostic tool available after each conversion completes.
+
+## Output Format Options
+
+The Output Format dropdown includes:
+- Markdown (.md)
+- JSON (.json)
+- HTML (.html)
+- Plain Text (.txt)
+- RAG Chunks (.jsonl)
+
+RAG Chunks produces JSONL output designed for AI retrieval systems and vector databases. Each line is a self-contained text chunk with metadata about its source, section, and position.

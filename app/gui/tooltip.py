@@ -1,7 +1,8 @@
 import tkinter as tk
 
-_DELAY_MS = 500
-_FONT_TIP  = ("Segoe UI", 11)
+_DELAY_MS   = 500
+_FONT_TIP   = ("Segoe UI", 11)
+_SMALL_TIP  = "Resize the window to view this tooltip."
 
 
 class Tooltip:
@@ -38,52 +39,69 @@ class Tooltip:
         self._job = None
         t = self._get_theme()
 
-        self._win = tk.Toplevel(self._widget)
-        self._win.wm_overrideredirect(True)
-        self._win.wm_geometry("+0+0")          # off-screen until we measure
-        self._win.config(bg=t["border"])
-
-        tk.Label(
-            self._win,
-            text=self._text,
-            justify="left",
-            wraplength=380,
-            padx=10,
-            pady=8,
-            bg=t["sidebar_bg"],
-            fg=t["text"],
-            font=_FONT_TIP,
-        ).pack(padx=1, pady=1)
-
-        # Measure actual tooltip size before placing it
-        self._win.update_idletasks()
-        tw = self._win.winfo_width()
-        th = self._win.winfo_height()
-
-        # Preferred position: just below and aligned with the widget
         wx = self._widget.winfo_rootx()
         wy = self._widget.winfo_rooty()
         wh = self._widget.winfo_height()
 
-        # Root window bounds
         root = self._widget.winfo_toplevel()
         rx = root.winfo_rootx()
         ry = root.winfo_rooty()
         rw = root.winfo_width()
         rh = root.winfo_height()
 
-        x = wx + 4
-        y = wy + wh + 6
+        def _build(text):
+            """(Re)create the tooltip window with given text; return (tw, th)."""
+            if self._win:
+                self._win.destroy()
+            win = tk.Toplevel(self._widget)
+            win.wm_overrideredirect(True)
+            # +10000+10000 keeps the measurement window off every monitor so
+            # it never overlaps the hovered widget (which would fire <Leave>
+            # and cancel the tooltip before it can be positioned).
+            win.wm_geometry("+10000+10000")
+            win.config(bg=t["border"])
+            tk.Label(
+                win, text=text, justify="left", wraplength=380,
+                padx=10, pady=8, bg=t["sidebar_bg"], fg=t["text"],
+                font=_FONT_TIP,
+            ).pack(padx=1, pady=1)
+            win.update_idletasks()
+            self._win = win
+            return win.winfo_width(), win.winfo_height()
 
-        # Clamp so tooltip stays inside the root window horizontally
-        if x + tw > rx + rw:
-            x = rx + rw - tw - 4
+        def _place(tw, th):
+            """Return (x, y) only if tooltip fits inside window without
+            overlapping the widget.  Returns None when it cannot fit."""
+            x = wx + 4
+            if x + tw > rx + rw - 4:
+                x = rx + rw - tw - 4
+            x = max(x, rx + 4)
 
-        # If it would go below the window, flip it above the widget instead
-        if y + th > ry + rh:
-            y = wy - th - 4
+            # Try below first
+            y_b = wy + wh + 6
+            if y_b + th <= ry + rh - 4:
+                return x, y_b
 
-        # Never go left of the window left edge
-        x = max(x, rx + 4)
+            # Try above (clamped to window top)
+            y_a = max(wy - th - 4, ry + 4)
+            if y_a + th <= wy:              # must clear the widget
+                return x, y_a
 
-        self._win.wm_geometry(f"+{x}+{y}")
+            return None                     # cannot fit without overlap or clipping
+
+        tw, th = _build(self._text)
+        result  = _place(tw, th)
+
+        if result is None:
+            # Full text won't fit — swap in the short fallback and try again
+            tw, th = _build(_SMALL_TIP)
+            result  = _place(tw, th)
+
+        if result is None:
+            # Even the short tip doesn't fit (extremely small window).
+            # Show it below the widget anyway — it will clip at the edge
+            # but will not cause the pulsing-overlap problem.
+            x = max(min(wx + 4, rx + rw - tw - 4), rx + 4)
+            result = (x, wy + wh + 6)
+
+        self._win.wm_geometry(f"+{result[0]}+{result[1]}")

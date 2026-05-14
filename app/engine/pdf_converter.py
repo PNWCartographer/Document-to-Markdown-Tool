@@ -38,6 +38,12 @@ def convert(
     preserve_page_numbers: bool = True,
     use_subfolder: bool = True,
     embed_images: bool = True,
+    remove_headers_footers: bool = True,
+    skip_blank_pages: bool = True,
+    strip_line_numbers: bool = False,
+    detect_code_blocks: bool = True,
+    detect_footnotes: bool = True,
+    detect_equations: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -76,12 +82,22 @@ def convert(
     # ------------------------------------------------------------------
     if conversion_mode == "Standard":
 
+        pp_settings = dict(
+            remove_headers_footers=remove_headers_footers,
+            skip_blank_pages=skip_blank_pages,
+            strip_line_numbers=strip_line_numbers,
+            detect_code_blocks=detect_code_blocks,
+            detect_footnotes=detect_footnotes,
+            detect_equations=detect_equations,
+        )
+
         if _docling_available():
             try:
                 result = _convert_docling(
                     source_file, alias, output_root, preserve_images,
                     rebuild_toc, preserve_page_numbers, use_subfolder,
-                    embed_images, output, confidence, log_info, log_warn, progress
+                    embed_images, output, confidence, log_info, log_warn, progress,
+                    pp_settings=pp_settings,
                 )
                 if result:
                     return result
@@ -93,7 +109,8 @@ def convert(
                 return _convert_pymupdf4llm(
                     source_file, alias, output_root, preserve_images,
                     rebuild_toc, preserve_page_numbers, use_subfolder,
-                    output, confidence, log_info, log_warn, progress
+                    output, confidence, log_info, log_warn, progress,
+                    pp_settings=pp_settings,
                 )
             except Exception as e:
                 log_warn(f"pymupdf4llm failed: {e} — falling back.")
@@ -103,7 +120,7 @@ def convert(
                 source_file, alias, output_root, preserve_images,
                 rebuild_toc, preserve_page_numbers, language, use_subfolder,
                 output, confidence, log_info, log_warn, progress,
-                use_ocr=False
+                use_ocr=False, pp_settings=pp_settings,
             )
 
     # ------------------------------------------------------------------
@@ -115,7 +132,7 @@ def convert(
                 source_file, alias, output_root, preserve_images,
                 rebuild_toc, preserve_page_numbers, language, use_subfolder,
                 output, confidence, log_info, log_warn, progress,
-                use_ocr=True
+                use_ocr=True, pp_settings=pp_settings,
             )
 
     log_warn("No PDF conversion engine available.")
@@ -186,7 +203,8 @@ def _detect_scanned(pdf_path: str, log_info) -> bool:
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
     preserve_page_numbers, use_subfolder, embed_images,
-    output, confidence, log_info, log_warn, progress
+    output, confidence, log_info, log_warn, progress,
+    pp_settings: Optional[dict] = None,
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
 
@@ -217,6 +235,41 @@ def _convert_docling(
 
     # Post-process text artifacts (PUA chars, soft hyphens, leftover placeholders)
     md_text = _clean_docling_text(md_text)
+
+    # Run post-processor pipeline (header/footer removal, blank page skip, line numbers)
+    pp = pp_settings or {}
+    _pp_keys = ("remove_headers_footers", "skip_blank_pages", "strip_line_numbers",
+                 "detect_code_blocks", "detect_footnotes", "detect_equations")
+    if any(pp.get(k) for k in _pp_keys):
+        from . import post_processors
+        # Docling produces a monolithic string; split on page anchors if present,
+        # otherwise treat as single page (post-processors are less effective).
+        page_marker = re.compile(r'(?=<a\s+id="page-\d+")')
+        pages = page_marker.split(md_text)
+        pages = [p for p in pages if p]  # drop empty leading split
+        if len(pages) > 1:
+            log_info(f"Post-processing {len(pages)} page segments...")
+            pages = post_processors.run_pipeline(
+                pages,
+                do_remove_headers_footers=pp.get("remove_headers_footers", True),
+                do_skip_blank_pages=pp.get("skip_blank_pages", True),
+                do_strip_line_numbers=pp.get("strip_line_numbers", False),
+                do_detect_code_blocks=pp.get("detect_code_blocks", True),
+                do_detect_footnotes=pp.get("detect_footnotes", True),
+                do_detect_equations=pp.get("detect_equations", True),
+            )
+            md_text = "".join(pages)
+        else:
+            # Single block — run applicable processors individually
+            if pp.get("strip_line_numbers", False):
+                md_text = post_processors.strip_line_numbers(md_text)
+            if pp.get("detect_code_blocks", True):
+                md_text = post_processors.detect_code_blocks_in_markdown(md_text)
+            if pp.get("detect_footnotes", True):
+                md_text = post_processors.detect_footnotes_in_markdown(md_text)
+            if pp.get("detect_equations", True):
+                md_text = post_processors.detect_equations(md_text)
+            log_info("Post-processing: single text block (header/footer removal needs page segments).")
 
     # Extract outline / TOC from docling document model
     if rebuild_toc:
@@ -455,7 +508,8 @@ def _extract_fitz_images(
 
 def _convert_pymupdf4llm(
     source_file, alias, output_root, preserve_images, rebuild_toc,
-    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress
+    preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress,
+    pp_settings: Optional[dict] = None,
 ) -> ConversionOutput:
     import pymupdf4llm
     import fitz
@@ -480,6 +534,37 @@ def _convert_pymupdf4llm(
     # Extract and save images via fitz
     if preserve_images and output_root:
         _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn, use_subfolder)
+
+    # Run post-processor pipeline
+    pp = pp_settings or {}
+    _pp_keys_4llm = ("remove_headers_footers", "skip_blank_pages", "strip_line_numbers",
+                      "detect_code_blocks", "detect_footnotes", "detect_equations")
+    if any(pp.get(k) for k in _pp_keys_4llm):
+        from . import post_processors
+        # pymupdf4llm uses --- as page separators; split on them for per-page processing
+        page_sep = re.compile(r'(?m)^-{3,}\s*$')
+        pages = page_sep.split(md_text)
+        if len(pages) > 1:
+            log_info(f"Post-processing {len(pages)} page segments...")
+            pages = post_processors.run_pipeline(
+                pages,
+                do_remove_headers_footers=pp.get("remove_headers_footers", True),
+                do_skip_blank_pages=pp.get("skip_blank_pages", True),
+                do_strip_line_numbers=pp.get("strip_line_numbers", False),
+                do_detect_code_blocks=pp.get("detect_code_blocks", True),
+                do_detect_footnotes=pp.get("detect_footnotes", True),
+                do_detect_equations=pp.get("detect_equations", True),
+            )
+            md_text = "\n---\n".join(pages)
+        else:
+            if pp.get("strip_line_numbers", False):
+                md_text = post_processors.strip_line_numbers(md_text)
+            if pp.get("detect_code_blocks", True):
+                md_text = post_processors.detect_code_blocks_in_markdown(md_text)
+            if pp.get("detect_footnotes", True):
+                md_text = post_processors.detect_footnotes_in_markdown(md_text)
+            if pp.get("detect_equations", True):
+                md_text = post_processors.detect_equations(md_text)
 
     if preserve_page_numbers:
         md_text = _inject_page_anchors_from_text(md_text)
@@ -509,7 +594,8 @@ def _convert_pymupdf4llm(
 def _convert_pymupdf(
     source_file, alias, output_root, preserve_images, rebuild_toc,
     preserve_page_numbers, language, use_subfolder, output, confidence,
-    log_info, log_warn, progress, use_ocr: bool = False
+    log_info, log_warn, progress, use_ocr: bool = False,
+    pp_settings: Optional[dict] = None,
 ) -> ConversionOutput:
     import fitz
 
@@ -590,6 +676,42 @@ def _convert_pymupdf(
 
     doc.close()
     progress(0.88)
+
+    # Run post-processor pipeline on collected page texts
+    pp = pp_settings or {}
+    _pp_keys_mupdf = ("remove_headers_footers", "skip_blank_pages", "strip_line_numbers",
+                       "detect_code_blocks", "detect_footnotes", "detect_equations")
+    if page_sections and any(pp.get(k) for k in _pp_keys_mupdf):
+        from . import post_processors
+        page_texts = [body for _, body in page_sections]
+        page_nums  = [num for num, _ in page_sections]
+
+        log_info(f"Post-processing {len(page_texts)} pages...")
+        processed = post_processors.run_pipeline(
+            page_texts,
+            do_remove_headers_footers=pp.get("remove_headers_footers", True),
+            do_skip_blank_pages=pp.get("skip_blank_pages", True),
+            do_strip_line_numbers=pp.get("strip_line_numbers", False),
+            do_detect_code_blocks=pp.get("detect_code_blocks", True),
+            do_detect_footnotes=pp.get("detect_footnotes", True),
+            do_detect_equations=pp.get("detect_equations", True),
+        )
+
+        # Rebuild page_sections; blank-page filtering may have removed some
+        # Match remaining pages back to their page numbers
+        if len(processed) < len(page_texts):
+            # Some pages were removed (blank page filtering)
+            # Re-associate: processed texts are a subset in order
+            remaining = []
+            proc_idx = 0
+            for orig_idx, (pnum, orig_text) in enumerate(zip(page_nums, page_texts)):
+                if proc_idx < len(processed) and processed[proc_idx].strip():
+                    remaining.append((pnum, processed[proc_idx]))
+                    proc_idx += 1
+                # else: this page was removed
+            page_sections = remaining
+        else:
+            page_sections = list(zip(page_nums, processed))
 
     # Assemble sections
     for page_num, body in page_sections:

@@ -4,16 +4,25 @@ import os
 _PATH = os.path.join(os.path.dirname(__file__), "settings.json")
 
 DEFAULTS: dict = {
-    "conversion_mode":       "Auto-detect",
-    "preserve_images":       True,
-    "preserve_page_numbers": True,
-    "rebuild_toc":           True,
-    "embed_images":          True,
-    "ocr_language":          "English",
-    "overwrite_existing":    False,
-    "output_subfolder":      False,
-    "low_confidence_action": "Ask me",
-    "theme":                 "light",
+    "conversion_mode":        "Auto-detect",
+    "preserve_images":        True,
+    "preserve_page_numbers":  True,
+    "rebuild_toc":            True,
+    "embed_images":           True,
+    "remove_headers_footers": True,
+    "skip_blank_pages":       True,
+    "strip_line_numbers":     False,
+    "detect_code_blocks":     True,
+    "detect_footnotes":       True,
+    "detect_equations":       True,
+    "parallel_workers":       "1",
+    "quality_preset":         "Quality",
+    "ocr_language":           "English",
+    "output_format":          "Markdown",
+    "overwrite_existing":     False,
+    "output_subfolder":       False,
+    "low_confidence_action":  "Ask me",
+    "theme":                  "dark",
 }
 
 
