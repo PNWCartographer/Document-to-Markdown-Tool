@@ -20,7 +20,7 @@ from .converter import ConversionJob
 
 _SUPPORTED_EXTS = {
     ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
-    ".pptx", ".epub",
+    ".pptx", ".epub", ".dxf",
     ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
 }
 

@@ -478,6 +478,19 @@ class ConversionJob:
                 progress_callback=progress,
             )
 
+        elif ext == ".dxf":
+            stage("Parsing DXF drawing…")
+            from . import dxf_converter
+            return dxf_converter.convert(
+                source_file,
+                alias=alias,
+                output_root=self._output_root,
+                preserve_images=preserve_images,
+                use_subfolder=use_subfolder,
+                logger=logger,
+                progress_callback=progress,
+            )
+
         elif ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp", ".gif"):
             stage("Processing image…")
             from . import image_converter
