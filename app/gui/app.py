@@ -11,6 +11,7 @@ import config.settings as _cfg_mod
 import engine.converter as _converter_mod
 import engine.watch_folder as _watch_mod
 import engine.rules_engine as _rules_mod
+import engine.validation as _validation_mod
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -917,16 +918,55 @@ class App:
 
     def _build_results(self):
         f = self._new_screen("Results")
-        f.grid_rowconfigure(8, weight=1)
+        f.grid_rowconfigure(2, weight=1)
 
         self._heading(
             f, "Results",
             "View the output location, confidence report summary, warnings, and open the output folder.",
         )
 
+        # ── Scrollable container (same pattern as Settings) ──
+        self._results_scroll_outer = tk.Frame(f)
+        self._results_scroll_outer.grid(row=2, column=0, sticky="nsew", padx=0, pady=(0, 0))
+        self._results_scroll_outer.grid_rowconfigure(0, weight=1)
+        self._results_scroll_outer.grid_columnconfigure(0, weight=1)
+
+        r_canvas = tk.Canvas(self._results_scroll_outer, bd=0, highlightthickness=0)
+        r_canvas.grid(row=0, column=0, sticky="nsew")
+        r_vsb = GlassScrollbar(self._results_scroll_outer, orient="vertical",
+                                command=r_canvas.yview)
+        r_vsb.grid(row=0, column=1, sticky="ns")
+        self._glass_scrollbars.append(r_vsb)
+        r_canvas.configure(yscrollcommand=r_vsb.set)
+
+        rc = tk.Frame(r_canvas)
+        self._results_canvas_window = r_canvas.create_window(
+            (0, 0), window=rc, anchor="nw")
+
+        def _on_rc_configure(event):
+            r_canvas.configure(scrollregion=r_canvas.bbox("all"))
+        def _on_rcanvas_configure(event):
+            r_canvas.itemconfig(self._results_canvas_window, width=event.width)
+        rc.bind("<Configure>", _on_rc_configure)
+        r_canvas.bind("<Configure>", _on_rcanvas_configure)
+
+        def _on_results_mousewheel(e):
+            r_canvas.yview_scroll(-1 * (e.delta // 120), "units")
+        self._results_scroll_outer.bind(
+            "<Enter>", lambda _e: r_canvas.bind_all("<MouseWheel>", _on_results_mousewheel))
+        self._results_scroll_outer.bind(
+            "<Leave>", lambda _e: r_canvas.unbind_all("<MouseWheel>"))
+
+        self._results_canvas = r_canvas
+        self._results_content = rc
+        rc.grid_columnconfigure(0, weight=1)
+
+        # All content below lives inside rc (the scrollable inner frame)
+        # instead of f (the screen frame).
+
         # ── Status banner ────────────────────────────────────
-        self._results_status_frame = tk.Frame(f, highlightthickness=1)
-        self._results_status_frame.grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_status_frame = tk.Frame(rc, highlightthickness=1)
+        self._results_status_frame.grid(row=0, column=0, sticky="ew", padx=32, pady=(8, 16))
         self._results_status_frame.grid_columnconfigure(0, weight=1)
 
         self._results_status_lbl = tk.Label(
@@ -939,8 +979,8 @@ class App:
         self._results_status_lbl.grid(row=0, column=0, sticky="ew")
 
         # ── Output location row ──────────────────────────────
-        self._results_out_row = tk.Frame(f)
-        self._results_out_row.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_out_row = tk.Frame(rc)
+        self._results_out_row.grid(row=1, column=0, sticky="ew", padx=32, pady=(0, 16))
         self._results_out_row.grid_columnconfigure(0, weight=1)
 
         self._results_out_path_frame = tk.Frame(self._results_out_row, highlightthickness=1)
@@ -969,15 +1009,15 @@ class App:
 
         # ── Confidence summary ───────────────────────────────
         self._results_conf_section_lbl = tk.Label(
-            f, text="CONFIDENCE SUMMARY", font=_FONT_SECTION, anchor="w")
+            rc, text="CONFIDENCE SUMMARY", font=_FONT_SECTION, anchor="w")
         self._results_conf_section_lbl.grid(
-            row=4, column=0, sticky="ew", padx=32, pady=(0, 2))
+            row=2, column=0, sticky="ew", padx=32, pady=(0, 2))
 
-        self._results_conf_div = tk.Frame(f, height=1)
-        self._results_conf_div.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 6))
+        self._results_conf_div = tk.Frame(rc, height=1)
+        self._results_conf_div.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 6))
 
-        self._results_conf_frame = tk.Frame(f)
-        self._results_conf_frame.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_conf_frame = tk.Frame(rc)
+        self._results_conf_frame.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 16))
         self._results_conf_frame.grid_columnconfigure(0, weight=1)
 
         self._results_conf_level_lbls: list[tk.Label] = []
@@ -991,12 +1031,81 @@ class App:
             lvl.grid(row=idx, column=1, sticky="e", pady=2)
             self._results_conf_level_lbls.append(lvl)
 
-        # ── Warnings ─────────────────────────────────────────
-        self._results_warn_lbl = tk.Label(f, text="Warnings", font=_FONT_SMALL, anchor="w")
-        self._results_warn_lbl.grid(row=7, column=0, sticky="w", padx=32, pady=(0, 4))
+        # ── Validation summary ────────────────────────────────
+        self._results_val_section_lbl = tk.Label(
+            rc, text="VALIDATION", font=_FONT_SECTION, anchor="w")
+        self._results_val_section_lbl.grid(
+            row=5, column=0, sticky="ew", padx=32, pady=(0, 2))
 
-        self._results_warn_frame = tk.Frame(f, highlightthickness=1)
-        self._results_warn_frame.grid(row=8, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._results_val_div = tk.Frame(rc, height=1)
+        self._results_val_div.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 6))
+
+        self._results_val_frame = tk.Frame(rc)
+        self._results_val_frame.grid(row=7, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_val_frame.grid_columnconfigure(1, weight=1)
+
+        _val_rows = [
+            ("Headings", "heading_count",
+             "Number of headings (H1–H6) found in the converted Markdown. "
+             "Skipped heading levels (e.g. H1 → H3) are flagged as issues below."),
+            ("Tables", "table_count",
+             "Number of Markdown tables detected in the output. Compares against "
+             "tables in the source document to check for extraction accuracy."),
+            ("Images", "image_count",
+             "Number of images referenced in the output Markdown. Missing alt-text "
+             "on any image is flagged as an accessibility issue below."),
+            ("Pages", "page_count",
+             "Number of page-break anchors inserted during conversion. Useful for "
+             "cross-referencing the Markdown against the original document by page."),
+            ("Words", "word_count",
+             "Total word count of the converted Markdown output, excluding code "
+             "blocks and front matter. Gives a quick sense of document size."),
+            ("Readability", "readability",
+             "Flesch-Kincaid Grade Level estimates the US school grade needed to "
+             "understand the text. Grade 5 = very easy, 8 = easy, 12 = standard, "
+             "16 = college level, 16+ = graduate level. Technical documents "
+             "typically score 12–16."),
+        ]
+        self._results_val_count_lbls: dict[str, tk.Label] = {}
+        for idx, (label, key, tip) in enumerate(_val_rows):
+            name_lbl = tk.Label(
+                self._results_val_frame, text=label, font=_FONT_SMALL, anchor="w",
+            )
+            name_lbl.grid(row=idx, column=0, sticky="w", pady=2)
+            Tooltip(name_lbl, tip, lambda: self._t)
+            val_lbl = tk.Label(
+                self._results_val_frame, text="—", font=_FONT_SMALL, anchor="e")
+            val_lbl.grid(row=idx, column=1, sticky="e", pady=2)
+            self._results_val_count_lbls[key] = val_lbl
+
+        # Validation issues (scrollable text box)
+        self._results_val_issues_frame = tk.Frame(rc, highlightthickness=1)
+        self._results_val_issues_frame.grid(
+            row=8, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._results_val_issues_frame.grid_rowconfigure(0, weight=1)
+        self._results_val_issues_frame.grid_columnconfigure(0, weight=1)
+
+        self._results_val_issues_text = tk.Text(
+            self._results_val_issues_frame,
+            bd=0, relief="flat", font=_FONT_SMALL,
+            state="disabled", highlightthickness=0,
+            wrap="word", padx=8, pady=6, height=5,
+        )
+        self._results_val_issues_sb = GlassScrollbar(
+            self._results_val_issues_frame, orient="vertical",
+            command=self._results_val_issues_text.yview)
+        self._glass_scrollbars.append(self._results_val_issues_sb)
+        self._results_val_issues_text.config(
+            yscrollcommand=self._results_val_issues_sb.set)
+        self._results_val_issues_text.grid(row=0, column=0, sticky="nsew")
+        self._results_val_issues_sb.grid(row=0, column=1, sticky="ns")
+
+        # ── Warnings ─────────────────────────────────────────
+        self._results_warn_lbl = tk.Label(rc, text="Warnings", font=_FONT_SMALL, anchor="w")
+        self._results_warn_lbl.grid(row=9, column=0, sticky="w", padx=32, pady=(0, 4))
+
+        self._results_warn_frame = tk.Frame(rc, highlightthickness=1)
+        self._results_warn_frame.grid(row=10, column=0, sticky="nsew", padx=32, pady=(0, 8))
         self._results_warn_frame.grid_rowconfigure(0, weight=1)
         self._results_warn_frame.grid_columnconfigure(0, weight=1)
 
@@ -1019,8 +1128,8 @@ class App:
         self._results_warn_sb.grid(row=0, column=1, sticky="ns")
 
         # ── Button row ───────────────────────────────────────
-        self._results_btn_row = tk.Frame(f)
-        self._results_btn_row.grid(row=9, column=0, sticky="ew", padx=32, pady=(0, 28))
+        self._results_btn_row = tk.Frame(rc)
+        self._results_btn_row.grid(row=11, column=0, sticky="ew", padx=32, pady=(0, 28))
 
         self._btn_open_output = PillButton(
             self._results_btn_row,
@@ -1052,7 +1161,7 @@ class App:
             padx=26, pady=10,
             command=self._show_preview_window,
         )
-        self._btn_preview.grid(row=0, column=2, padx=(12, 0))
+        self._btn_preview.grid(row=1, column=0, pady=(10, 0))
         self._secondary_pills.append(self._btn_preview)
 
         self._btn_debug_info = PillButton(
@@ -1063,7 +1172,7 @@ class App:
             padx=14, pady=7,
             command=self._show_debug_window,
         )
-        self._btn_debug_info.grid(row=0, column=3, padx=(12, 0))
+        self._btn_debug_info.grid(row=1, column=1, padx=(12, 0), pady=(10, 0))
         self._secondary_pills.append(self._btn_debug_info)
 
     # ── Watch Folder screen ─────────────────────────────────
@@ -2235,6 +2344,48 @@ class App:
         for lbl, score in zip(self._results_conf_level_lbls, scores):
             lbl.config(text=score)
 
+        # Validation panel
+        val_results = _validation_mod.validate_batch(result.output_root)
+        if val_results:
+            vr = _validation_mod.aggregate_validation(val_results)
+            self._results_val_count_lbls["heading_count"].config(text=str(vr.heading_count))
+            self._results_val_count_lbls["table_count"].config(text=str(vr.table_count))
+            self._results_val_count_lbls["image_count"].config(text=str(vr.image_count))
+            self._results_val_count_lbls["page_count"].config(text=str(vr.page_count))
+            self._results_val_count_lbls["word_count"].config(text=f"{vr.word_count:,}")
+            if vr.readability_label:
+                self._results_val_count_lbls["readability"].config(
+                    text=f"Grade {vr.readability_grade} — {vr.readability_label}")
+            else:
+                self._results_val_count_lbls["readability"].config(text="—")
+
+            issues = []
+            for issue in vr.heading_issues:
+                issues.append(f"⚠ Heading: {issue}")
+            for issue in vr.broken_links:
+                issues.append(f"⚠ Link: {issue}")
+            for issue in vr.missing_alt_texts:
+                issues.append(f"⚠ Alt text: {issue}")
+
+            self._results_val_issues_text.config(state="normal")
+            self._results_val_issues_text.delete("1.0", tk.END)
+            if issues:
+                self._results_val_issues_text.insert("1.0", "\n".join(issues))
+                self._results_val_issues_text.config(
+                    fg=t.get("accent_secondary", t["text_secondary"]))
+            else:
+                self._results_val_issues_text.insert("1.0", "✓ All checks passed")
+                self._results_val_issues_text.config(
+                    fg=t.get("accent", t["text"]))
+            self._results_val_issues_text.config(state="disabled")
+        else:
+            for key in self._results_val_count_lbls:
+                self._results_val_count_lbls[key].config(text="—")
+            self._results_val_issues_text.config(state="normal")
+            self._results_val_issues_text.delete("1.0", tk.END)
+            self._results_val_issues_text.insert("1.0", "No output files to validate.")
+            self._results_val_issues_text.config(fg=t["text_secondary"], state="disabled")
+
         # Warnings panel
         all_warnings = []
         for cr in result.all_confidence:
@@ -2556,6 +2707,11 @@ class App:
         self._lbl_output_path.config(bg=t["bg"], fg=t["text_secondary"])
 
         # ── Results-specific widgets ──────────────────────────
+        self._results_scroll_outer.config(bg=t["content_bg"])
+        self._results_canvas.config(bg=t["content_bg"])
+        self._results_content.config(bg=t["content_bg"])
+        self._style_screen_labels(self._results_content, t)
+
         self._results_status_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._results_status_lbl.config(bg=t["bg"], fg=t["text_secondary"])
 
@@ -2568,6 +2724,19 @@ class App:
         self._results_conf_frame.config(bg=t["content_bg"])
         for lbl in self._results_conf_level_lbls:
             lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._results_val_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._results_val_div.config(bg=t["border"])
+        self._results_val_frame.config(bg=t["content_bg"])
+        for lbl_pair in self._results_val_count_lbls.values():
+            pass  # value labels themed below
+        # Theme every child label inside the validation counts frame
+        for child in self._results_val_frame.winfo_children():
+            if child.winfo_class() == "Label":
+                child.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._results_val_issues_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._results_val_issues_text.config(bg=t["bg"], insertbackground=t["text"])
+        # fg is set dynamically by _populate_results (cyan for issues, accent for pass)
 
         self._results_warn_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
         self._results_warn_frame.config(bg=t["bg"], highlightbackground=t["border"])

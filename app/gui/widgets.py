@@ -317,9 +317,8 @@ class ToggleSwitch(tk.Canvas):
 
         # Track — interpolate between off and on colors
         track_fill = _lerp_color(self._off_fill, self._on_fill, t)
-        _draw_pill(self, 1, 1, w - 1, h - 1, fill=track_fill,
-                   outline=track_fill, outline_w=0, steps=self._STEPS,
-                   aa_bg=self._parent_bg)
+        _draw_pill_arcs(self, 1, 1, w - 1, h - 1, fill=track_fill,
+                        outline="", outline_w=0)
 
         # Thumb — interpolate position and color
         pad = self._thumb_pad
@@ -462,9 +461,8 @@ class GlassScrollbar(tk.Canvas):
         # Draw vertical pill thumb centred horizontally
         tw = self._thumb_w
         tx = (w - tw) / 2
-        _draw_pill(self, tx, ty, tx + tw, ty + thumb_h,
-                   fill=color, outline=color, outline_w=0, steps=24,
-                   aa_bg=self._parent_bg)
+        _draw_pill_arcs(self, tx, ty, tx + tw, ty + thumb_h,
+                        fill=color, outline="", outline_w=0)
 
     # ── Thumb geometry helper ───────────────────────────────
 
@@ -865,26 +863,89 @@ class PillProgressBar(tk.Canvas):
             return
 
         ins = _s(1)
-        r = (h - 2 * ins) / 2
 
-        # Track (full-width pill with border)
-        _draw_pill(self, ins, ins, w - ins, h - ins,
-                   fill=self._track_color, outline=self._border_color,
-                   outline_w=_sf(1), steps=48)
+        # ── Track (full-width pill with border) ──────────────
+        _draw_pill_arcs(self, ins, ins, w - ins, h - ins,
+                        fill=self._track_color, outline=self._border_color,
+                        outline_w=_sf(1))
 
-        # Fill (partial pill, inset from track border)
+        # ── Fill (partial pill, inset from track border) ─────
         if self._progress > 0.01:
             fi = ins + _sf(1.5)
             fill_r = (h - 2 * fi) / 2
             avail = w - 2 * fi
             fill_w = max(2 * fill_r + 2, avail * self._progress)
             fill_x2 = min(fi + fill_w, w - fi)
-            _draw_pill(self, fi, fi, fill_x2, h - fi,
-                       fill=self._fill_color, outline="",
-                       outline_w=0, steps=48)
+            _draw_pill_arcs(self, fi, fi, fill_x2, h - fi,
+                            fill=self._fill_color, outline="",
+                            outline_w=0)
 
 
 # ── Shared helpers ──────────────────────────────────────────
+
+def _draw_pill_arcs(canvas: tk.Canvas, x1, y1, x2, y2, *,
+                    fill, outline, outline_w=0):
+    """
+    Draw a pill (stadium) shape using native arcs + rectangle.
+
+    Unlike ``_draw_pill`` (polygon + smooth), this approach has no
+    Bezier interpolation artifacts — the middle section is a true
+    rectangle and the ends are native Tk arcs.
+
+    Automatically detects orientation: horizontal (width >= height) or
+    vertical (height > width).
+    """
+    w = x2 - x1
+    h = y2 - y1
+    if w < 2 or h < 2:
+        return
+    r = min(w, h) / 2
+    d = 2 * r  # arc bounding-box diameter
+    ol = outline if outline_w > 0 and outline else ""
+
+    if w >= h:
+        # ── Horizontal pill ──────────────────────────────────
+        # Left semicircle
+        canvas.create_arc(x1, y1, x1 + d, y2,
+                          start=90, extent=180, style="pieslice",
+                          fill=fill, outline=ol, width=outline_w)
+        # Right semicircle
+        canvas.create_arc(x2 - d, y1, x2, y2,
+                          start=-90, extent=180, style="pieslice",
+                          fill=fill, outline=ol, width=outline_w)
+        # Centre rectangle — overlaps arcs by 1px to hide seam
+        mid_x1 = x1 + r - 1
+        mid_x2 = x2 - r + 1
+        if mid_x2 > mid_x1:
+            canvas.create_rectangle(mid_x1, y1, mid_x2, y2,
+                                    fill=fill, outline=fill, width=0)
+            if ol:
+                canvas.create_line(mid_x1, y1, mid_x2, y1,
+                                   fill=ol, width=outline_w)
+                canvas.create_line(mid_x1, y2, mid_x2, y2,
+                                   fill=ol, width=outline_w)
+    else:
+        # ── Vertical pill ────────────────────────────────────
+        # Top semicircle
+        canvas.create_arc(x1, y1, x2, y1 + d,
+                          start=0, extent=180, style="pieslice",
+                          fill=fill, outline=ol, width=outline_w)
+        # Bottom semicircle
+        canvas.create_arc(x1, y2 - d, x2, y2,
+                          start=180, extent=180, style="pieslice",
+                          fill=fill, outline=ol, width=outline_w)
+        # Centre rectangle — overlaps arcs by 1px to hide seam
+        mid_y1 = y1 + r - 1
+        mid_y2 = y2 - r + 1
+        if mid_y2 > mid_y1:
+            canvas.create_rectangle(x1, mid_y1, x2, mid_y2,
+                                    fill=fill, outline=fill, width=0)
+            if ol:
+                canvas.create_line(x1, mid_y1, x1, mid_y2,
+                                   fill=ol, width=outline_w)
+                canvas.create_line(x2, mid_y1, x2, mid_y2,
+                                   fill=ol, width=outline_w)
+
 
 def _draw_pill(canvas: tk.Canvas, x1, y1, x2, y2, *,
                fill, outline, outline_w=0, steps=16, aa_bg=""):

@@ -47,7 +47,8 @@
       "Bash(py -3 app\\\\main.py)",
       "Bash(py -3 app/main.py)",
       "PowerShell(Start-Process python -ArgumentList \"app/main.py\" -WorkingDirectory \"C:\\\\Users\\\\klars\\\\Documents\\\\GitHub\\\\Document-to-Markdown-Tool\")",
-      "PowerShell(New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_input\" -Force | Out-Null; New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_output\" -Force | Out-Null; Write-Output \"Test folders created at $env:TEMP\\\\watch_test_input and $env:TEMP\\\\watch_test_output\")"
+      "PowerShell(New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_input\" -Force | Out-Null; New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_output\" -Force | Out-Null; Write-Output \"Test folders created at $env:TEMP\\\\watch_test_input and $env:TEMP\\\\watch_test_output\")",
+      "Bash(python -c \"import gui.app; print\\('OK'\\)\")"
     ]
   }
 }
