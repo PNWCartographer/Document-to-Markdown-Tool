@@ -359,13 +359,26 @@ def _extract_title_block(doc, msp) -> dict[str, str]:
 def _extract_layers(doc, msp) -> list[dict]:
     """List all layers with colour and entity counts."""
     # Count entities per layer in model space
+    # Note: some DXF exporters (IVREAD, mesh tools) pad layer names with
+    # leading whitespace (e.g. "  0" instead of "0").  We strip to match
+    # the canonical name stored in the layer table.
     entity_counts: dict[str, int] = {}
     try:
         for entity in msp:
-            layer = entity.dxf.layer if hasattr(entity.dxf, "layer") else "0"
+            layer = entity.dxf.layer.strip() if hasattr(entity.dxf, "layer") else "0"
             entity_counts[layer] = entity_counts.get(layer, 0) + 1
     except Exception:
         pass
+
+    # Fallback: some minimal DXF files have empty TABLES/BLOCKS sections.
+    # Entities may not enumerate through msp; count from doc.entities.
+    if not entity_counts:
+        try:
+            for entity in doc.entities:
+                layer = entity.dxf.layer.strip() if hasattr(entity.dxf, "layer") else "0"
+                entity_counts[layer] = entity_counts.get(layer, 0) + 1
+        except Exception:
+            pass
 
     layers = []
     _COLOR_NAMES = {
@@ -411,7 +424,7 @@ def _extract_text_entities(msp) -> dict[str, list[dict]]:
 
     try:
         for text in msp.query("TEXT"):
-            layer = text.dxf.layer
+            layer = text.dxf.layer.strip()
             content = text.dxf.text
             x = text.dxf.insert.x if hasattr(text.dxf, "insert") else 0
             y = text.dxf.insert.y if hasattr(text.dxf, "insert") else 0
@@ -423,7 +436,7 @@ def _extract_text_entities(msp) -> dict[str, list[dict]]:
 
     try:
         for mtext in msp.query("MTEXT"):
-            layer = mtext.dxf.layer
+            layer = mtext.dxf.layer.strip()
             content = mtext.plain_text()
             x = mtext.dxf.insert.x if hasattr(mtext.dxf, "insert") else 0
             y = mtext.dxf.insert.y if hasattr(mtext.dxf, "insert") else 0
@@ -583,7 +596,18 @@ def _render_svg_preview(
     source_file: str, alias: str,
     log_info, log_warn,
 ) -> str:
-    """Render the modelspace to SVG and save to assets. Return relative path."""
+    """
+    Render the modelspace to a preview image and save to assets.
+
+    Pipeline:
+      1. Render DXF → SVG via ezdxf SVGBackend
+      2. Fix SVG dimensions and stroke widths for display
+      3. Convert SVG → PNG via PyMuPDF (fitz) for Markdown compatibility
+      4. Save both SVG (vector) and PNG (raster) to assets
+      5. Return the PNG path (universal Markdown image support)
+
+    Falls back to SVG-only if PyMuPDF is unavailable.
+    """
     try:
         from ezdxf.addons.drawing import Frontend, RenderContext
         from ezdxf.addons.drawing import svg, layout
@@ -597,22 +621,174 @@ def _render_svg_preview(
         page = layout.Page(0, 0, layout.Units.mm)
         svg_string = backend.get_string(page)
 
+        # Post-process: fix dimensions and stroke widths for display
+        svg_string = _fix_svg_display(svg_string)
+
         stem = alias if alias else os.path.splitext(os.path.basename(source_file))[0]
+
+        # Save SVG (vector quality, kept for reference)
         svg_filename = f"{stem}_preview.svg"
         svg_path = os.path.join(assets_dir, svg_filename)
-
         with open(svg_path, "w", encoding="utf-8") as fh:
             fh.write(svg_string)
-
         log_info(f"SVG preview saved: {svg_filename}")
+
+        # Convert SVG → PNG via PyMuPDF for Markdown compatibility
+        png_ref = _svg_to_png(svg_path, assets_dir, rel_prefix, stem,
+                              log_info, log_warn)
+        if png_ref:
+            return png_ref
+
+        # Fallback: reference the SVG directly
+        log_info("PyMuPDF SVG→PNG conversion unavailable; using SVG reference.")
         return f"{rel_prefix}{svg_filename}"
 
     except ImportError:
-        log_warn("ezdxf drawing add-on not available; skipping SVG preview.")
+        log_warn("ezdxf drawing add-on not available; skipping drawing preview.")
         return ""
     except Exception as e:
-        log_warn(f"SVG rendering failed: {e}")
+        log_warn(f"Drawing preview rendering failed: {e}")
         return ""
+
+
+def _inline_svg_styles(svg_string: str) -> str:
+    """
+    Convert CSS class-based styles to inline attributes on each element.
+
+    ezdxf SVGBackend generates styles like:
+        <defs><style>.C1 {stroke: #fff; stroke-width: 2500;}</style></defs>
+        <path class="C1" d="..."/>
+
+    PyMuPDF's SVG renderer does not support CSS class selectors, so paths
+    render invisible.  This function parses the <style> block, extracts
+    each class's properties, and writes them as inline style="" attributes.
+    """
+    # Extract all CSS class definitions from <style> block
+    style_match = re.search(r'<style>(.*?)</style>', svg_string, re.DOTALL)
+    if not style_match:
+        return svg_string
+
+    style_text = style_match.group(1)
+
+    # Parse class rules:  .C1 { prop: val; prop: val; }
+    class_styles: dict[str, str] = {}
+    for m in re.finditer(r'\.(\w+)\s*\{([^}]*)\}', style_text):
+        class_name = m.group(1)
+        props = m.group(2).strip()
+        class_styles[class_name] = props
+
+    if not class_styles:
+        return svg_string
+
+    # Replace class="Cn" with style="..." on every element
+    def _replace_class(match):
+        class_name = match.group(1)
+        if class_name in class_styles:
+            return f'style="{class_styles[class_name]}"'
+        return match.group(0)
+
+    svg_string = re.sub(r'class="(\w+)"', _replace_class, svg_string)
+
+    return svg_string
+
+
+def _svg_to_png(
+    svg_path: str, assets_dir: str, rel_prefix: str,
+    stem: str, log_info, log_warn,
+) -> str:
+    """Convert an SVG file to PNG using PyMuPDF (fitz). Return relative path or ''."""
+    try:
+        import fitz
+
+        # Read SVG and inline CSS class styles for PyMuPDF compatibility
+        with open(svg_path, "r", encoding="utf-8") as fh:
+            svg_string = fh.read()
+        svg_inlined = _inline_svg_styles(svg_string)
+
+        # Open from string (PyMuPDF can open SVG from bytes)
+        svg_doc = fitz.open(stream=svg_inlined.encode("utf-8"), filetype="svg")
+        page = svg_doc[0]
+        # Render at 150 DPI for crisp output without excessive file size
+        pix = page.get_pixmap(dpi=150)
+
+        png_filename = f"{stem}_preview.png"
+        png_path = os.path.join(assets_dir, png_filename)
+        pix.save(png_path)
+        svg_doc.close()
+
+        log_info(f"PNG preview saved: {png_filename} "
+                 f"({pix.width}x{pix.height}px)")
+        return f"{rel_prefix}{png_filename}"
+
+    except ImportError:
+        return ""
+    except Exception as e:
+        log_warn(f"SVG→PNG conversion failed: {e}")
+        return ""
+
+
+def _fix_svg_display(svg_string: str) -> str:
+    """
+    Fix SVG dimensions and stroke widths for proper display.
+
+    ezdxf SVGBackend sets width/height in mm matching the DXF model units.
+    A 1-unit cube produces a 1mm-wide SVG (invisible in Markdown viewers).
+    Stroke widths are also proportional to model units, producing strokes
+    that can be 25–250% of the viewport width.
+
+    This function:
+      1. Replaces width/height with reasonable pixel values (800px wide)
+      2. Normalizes stroke-width to ~0.25% of viewBox for clean thin lines
+    """
+    # Extract viewBox dimensions
+    vb_match = re.search(r'viewBox="([^"]*)"', svg_string)
+    if not vb_match:
+        return svg_string
+
+    vb_parts = vb_match.group(1).split()
+    if len(vb_parts) != 4:
+        return svg_string
+
+    try:
+        vb_x, vb_y, vb_w, vb_h = [float(x) for x in vb_parts]
+    except ValueError:
+        return svg_string
+
+    if vb_w <= 0 or vb_h <= 0:
+        return svg_string
+
+    # Set reasonable pixel dimensions (800px wide, proportional height)
+    target_width = 800
+    aspect = vb_h / vb_w
+    target_height = max(200, min(int(target_width * aspect), 1200))
+
+    # Replace width and height attributes on the root <svg> element
+    svg_string = re.sub(
+        r'(<svg\s[^>]*?)width="[^"]*"',
+        f'\\1width="{target_width}"',
+        svg_string,
+        count=1,
+    )
+    svg_string = re.sub(
+        r'(<svg\s[^>]*?)height="[^"]*"',
+        f'\\1height="{target_height}"',
+        svg_string,
+        count=1,
+    )
+
+    # Normalize stroke-width to ~0.25% of the viewBox largest dimension.
+    # This produces clean thin lines (~2px at 800px display width)
+    # regardless of model scale.  Use .6g formatting so that small-viewBox
+    # models (e.g. a 1-unit cube) keep enough precision instead of
+    # rounding to "0.0" (which makes strokes invisible).
+    ideal_stroke = max(max(vb_w, vb_h) * 0.0025, 1e-6)
+    svg_string = re.sub(
+        r'stroke-width:\s*[\d.eE+\-]+',
+        f'stroke-width: {ideal_stroke:.6g}',
+        svg_string,
+    )
+
+    return svg_string
 
 
 def _detect_xrefs(doc, log_warn):
