@@ -50,7 +50,21 @@
       "PowerShell(New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_input\" -Force | Out-Null; New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_output\" -Force | Out-Null; Write-Output \"Test folders created at $env:TEMP\\\\watch_test_input and $env:TEMP\\\\watch_test_output\")",
       "Bash(python -c \"import gui.app; print\\('OK'\\)\")",
       "WebFetch(domain:ezdxf.readthedocs.io)",
-      "WebFetch(domain:pypi.org)"
+      "WebFetch(domain:pypi.org)",
+      "Bash(python -m py_compile app/engine/language_tools.py)",
+      "Bash(python -m py_compile app/engine/ocr_engine.py)",
+      "Bash(python -m py_compile app/engine/image_converter.py)",
+      "Bash(python -m py_compile app/engine/dxf_converter.py)",
+      "Bash(python -m py_compile app/engine/pdf_converter.py)",
+      "Bash(python -m py_compile app/engine/converter.py)",
+      "Bash(python -m py_compile app/engine/watch_folder.py)",
+      "Bash(python -m py_compile app/main.py)",
+      "Bash(python -c \"from engine import language_tools; print\\('language_tools import OK'\\); print\\(f'  langdetect: {language_tools.langdetect_available\\(\\)}'\\); print\\(f'  argos: {language_tools.argos_available\\(\\)}'\\)\")",
+      "Bash(python -c \"from engine import ocr_engine; print\\('ocr_engine import OK'\\); print\\(f'  paddle: {ocr_engine.paddle_available\\(\\)}'\\); print\\(f'  tesseract: {ocr_engine.tesseract_available\\(\\)}'\\)\")",
+      "Bash(python -c \"from engine import image_converter; print\\('image_converter import OK'\\)\")",
+      "Bash(echo \"EXIT_CHECK: $?\")",
+      "Bash(python main.py)",
+      "Bash(sleep 5 && cat \"/c/Users/klars/AppData/Local/Temp/claude/C--Users-klars-Documents-GitHub-Document-to-Markdown-Tool/318d334a-b327-4caa-b3d0-84800f1a1637/tasks/bcp23lblc.output\" 2>/dev/null || echo \"No errors yet - app likely running\")"
     ]
   }
 }

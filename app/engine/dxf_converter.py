@@ -92,6 +92,7 @@ def convert(
     output_root: str = "",
     preserve_images: bool = True,
     use_subfolder: bool = True,
+    render_svg: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -191,9 +192,11 @@ def convert(
     # ── 8. SVG preview ───────────────────────────────────────
     progress(0.70)
     svg_ref = ""
-    if assets_dir:
+    if assets_dir and render_svg:
         svg_ref = _render_svg_preview(doc, msp, assets_dir, rel_prefix,
                                        source_file, alias, log_info, log_warn)
+    elif not render_svg:
+        log_info("SVG preview disabled by settings — skipping render.")
 
     # ── 9. Detect XREFs ──────────────────────────────────────
     progress(0.80)

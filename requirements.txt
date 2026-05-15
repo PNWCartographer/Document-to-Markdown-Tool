@@ -67,6 +67,12 @@ beautifulsoup4>=4.12.0          # HTML content → Markdown conversion
 ezdxf>=1.4.0                    # AutoCAD DXF parsing, text extraction, SVG rendering
 
 # ---------------------------------------------------------------------------
+# Language detection & offline translation
+# ---------------------------------------------------------------------------
+fast-langdetect>=1.0.0          # FastText-based language detection (~1MB, 95% accuracy)
+argostranslate>=1.11.0          # Fully offline translation (~30 languages, pip-installable)
+
+# ---------------------------------------------------------------------------
 # Image processing
 # ---------------------------------------------------------------------------
 Pillow>=10.3.0                  # image open/save/crop/convert

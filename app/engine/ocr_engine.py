@@ -69,10 +69,23 @@ _tesseract_available: Optional[bool] = None
 
 
 @dataclass
+class OcrTextRegion:
+    """A single detected text region with spatial info."""
+    text: str = ""
+    confidence: float = 0.0
+    # Bounding box: list of 4 (x, y) points (polygon vertices)
+    bbox: list = field(default_factory=list)
+    # Centroid for spatial sorting
+    cx: float = 0.0
+    cy: float = 0.0
+
+
+@dataclass
 class OcrResult:
     text: str = ""
     lines: list[str] = field(default_factory=list)
     confidences: list[float] = field(default_factory=list)  # 0.0–1.0 per line
+    regions: list[OcrTextRegion] = field(default_factory=list)  # spatial data
     engine_used: str = ""
     confidence_label: str = "N/A"   # High | Medium | Low | Failed
 
@@ -90,6 +103,13 @@ class OcrResult:
             self.confidence_label = "Low"
         else:
             self.confidence_label = "Failed"
+
+    def text_sorted_spatially(self) -> str:
+        """Return text sorted top-to-bottom, left-to-right by region centroid."""
+        if not self.regions:
+            return self.text
+        sorted_regions = sorted(self.regions, key=lambda r: (r.cy, r.cx))
+        return "\n".join(r.text for r in sorted_regions if r.text.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -203,10 +223,12 @@ def _run_paddle(image, language: str) -> OcrResult:
 
         lines = []
         confidences = []
+        regions = []
 
         if raw and raw[0]:
             for line in raw[0]:
                 if line and len(line) >= 2:
+                    bbox = line[0]  # 4 polygon vertices: [[x,y], ...]
                     text_info = line[1]
                     if isinstance(text_info, (list, tuple)) and len(text_info) >= 2:
                         text = str(text_info[0])
@@ -217,9 +239,17 @@ def _run_paddle(image, language: str) -> OcrResult:
                     if text.strip():
                         lines.append(text)
                         confidences.append(conf)
+                        # Compute centroid from bbox polygon
+                        cx = sum(p[0] for p in bbox) / len(bbox) if bbox else 0
+                        cy = sum(p[1] for p in bbox) / len(bbox) if bbox else 0
+                        regions.append(OcrTextRegion(
+                            text=text, confidence=conf,
+                            bbox=bbox, cx=cx, cy=cy,
+                        ))
 
         result.lines = lines
         result.confidences = confidences
+        result.regions = regions
         result.text = "\n".join(lines)
         result.aggregate_confidence()
 

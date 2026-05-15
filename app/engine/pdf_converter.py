@@ -44,6 +44,9 @@ def convert(
     detect_code_blocks: bool = True,
     detect_footnotes: bool = True,
     detect_equations: bool = True,
+    auto_translate: bool = True,
+    prefer_engine: str = "paddle",
+    ocr_dpi_scale: float = 4.0,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -121,6 +124,7 @@ def convert(
                 rebuild_toc, preserve_page_numbers, language, use_subfolder,
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=False, pp_settings=pp_settings,
+                ocr_dpi_scale=ocr_dpi_scale, prefer_engine=prefer_engine,
             )
 
     # ------------------------------------------------------------------
@@ -133,6 +137,7 @@ def convert(
                 rebuild_toc, preserve_page_numbers, language, use_subfolder,
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=True, pp_settings=pp_settings,
+                ocr_dpi_scale=ocr_dpi_scale, prefer_engine=prefer_engine,
             )
 
     log_warn("No PDF conversion engine available.")
@@ -596,6 +601,8 @@ def _convert_pymupdf(
     preserve_page_numbers, language, use_subfolder, output, confidence,
     log_info, log_warn, progress, use_ocr: bool = False,
     pp_settings: Optional[dict] = None,
+    ocr_dpi_scale: float = 4.0,
+    prefer_engine: str = "paddle",
 ) -> ConversionOutput:
     import fitz
 
@@ -645,7 +652,9 @@ def _convert_pymupdf(
 
         # Text extraction
         if use_ocr:
-            page_text, ocr_conf = _ocr_page(page, language, log_info, log_warn)
+            page_text, ocr_conf = _ocr_page(page, language, log_info, log_warn,
+                                            ocr_dpi_scale=ocr_dpi_scale,
+                                            prefer_engine=prefer_engine)
             ocr_confidences.append(ocr_conf)
             if page_text.strip():
                 page_parts.append(page_text)
@@ -870,19 +879,22 @@ def _detect_columns(text_blocks: list, page_width: float) -> list[list]:
 # Page-level OCR
 # ---------------------------------------------------------------------------
 
-def _ocr_page(page, language: str, log_info, log_warn) -> tuple[str, str]:
+def _ocr_page(page, language: str, log_info, log_warn,
+              ocr_dpi_scale: float = 4.0,
+              prefer_engine: str = "paddle") -> tuple[str, str]:
     """Render a fitz page to an image and OCR it. Returns (text, confidence_label)."""
     try:
         import fitz
         from PIL import Image
         import io
 
-        mat = fitz.Matrix(2.0, 2.0)  # 2x scale for better OCR resolution
+        mat = fitz.Matrix(ocr_dpi_scale, ocr_dpi_scale)
         pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
         img_bytes = pix.tobytes("png")
         pil_image = Image.open(io.BytesIO(img_bytes))
 
-        result = ocr_engine.run_ocr(pil_image, language=language)
+        result = ocr_engine.run_ocr(pil_image, language=language,
+                                     prefer_engine=prefer_engine)
         return result.text, result.confidence_label
 
     except Exception as e:

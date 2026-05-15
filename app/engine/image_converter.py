@@ -3,10 +3,14 @@ Image converter.
 
 Pipeline:
   1. Load image with Pillow
-  2. Preprocess with OpenCV (deskew, denoise, contrast normalization)
-  3. Run OCR via ocr_engine (PaddleOCR primary, Tesseract fallback)
-  4. Save preprocessed image to assets/
-  5. Produce ConversionOutput with image reference + extracted text
+  2. Save ORIGINAL image to assets/ (full color, for Markdown output)
+  3. Preprocess with OpenCV for OCR (inversion, upscale, CLAHE, denoise,
+     deskew, threshold) — used only as OCR input, not saved
+  4. Run OCR via ocr_engine (PaddleOCR primary, Tesseract fallback)
+  5. Detect language of OCR'd text
+  6. Translate non-English text if possible (offline via Argos Translate)
+  7. Produce ConversionOutput with original image + spatially-sorted
+     extracted text + translation table
 
 Handles: .png .jpg .jpeg .bmp .tiff .tif .webp .gif
 """
@@ -16,9 +20,10 @@ import re
 from typing import Optional, Callable
 
 from .confidence import ConfidenceResult
-from .markdown_writer import ConversionOutput
+from .markdown_writer import ConversionOutput, rows_to_markdown_table
 from .logger import ConversionLogger
 from . import ocr_engine
+from . import language_tools
 
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp", ".gif"}
 
@@ -30,6 +35,8 @@ def convert(
     language: str = "en",
     preserve_images: bool = True,
     use_subfolder: bool = True,
+    auto_translate: bool = True,
+    prefer_engine: str = "paddle",
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -80,21 +87,22 @@ def convert(
     progress(0.15)
 
     # ------------------------------------------------------------------
-    # 2. Preprocess with OpenCV
-    # ------------------------------------------------------------------
-    processed_pil = _preprocess(pil_image, logger)
-    progress(0.35)
-
-    # ------------------------------------------------------------------
-    # 3. Save preprocessed image to assets/
+    # 2. Save ORIGINAL image to assets (full color, for output)
     # ------------------------------------------------------------------
     asset_rel_path = None
     if preserve_images and output_root:
-        asset_rel_path = _save_asset(processed_pil, source_file, alias, output_root, logger, use_subfolder)
+        asset_rel_path = _save_original_asset(
+            pil_image, source_file, alias, output_root, logger, use_subfolder)
         if asset_rel_path:
             output.asset_paths.append(asset_rel_path)
 
-    progress(0.45)
+    progress(0.25)
+
+    # ------------------------------------------------------------------
+    # 3. Preprocess for OCR (used as OCR input only, not saved)
+    # ------------------------------------------------------------------
+    processed_pil = _preprocess(pil_image, logger)
+    progress(0.40)
 
     # ------------------------------------------------------------------
     # 4. OCR
@@ -111,14 +119,49 @@ def convert(
         return output
 
     log_info("Running OCR...")
-    ocr_result = ocr_engine.run_ocr(processed_pil, language=language)
-    log_info(f"OCR complete | engine={ocr_result.engine_used} confidence={ocr_result.confidence_label}")
+    ocr_result = ocr_engine.run_ocr(processed_pil, language=language,
+                                     prefer_engine=prefer_engine)
+    log_info(f"OCR complete | engine={ocr_result.engine_used} "
+             f"confidence={ocr_result.confidence_label} "
+             f"regions={len(ocr_result.regions)}")
+    progress(0.70)
+
+    # ------------------------------------------------------------------
+    # 5. Language detection + translation
+    # ------------------------------------------------------------------
+    detected_lang = language
+    translation_pairs = []
+
+    extracted_text = ocr_result.text_sorted_spatially()
+
+    if extracted_text.strip() and language_tools.langdetect_available():
+        detected_lang, lang_score = language_tools.detect_language(
+            extracted_text, fallback=language)
+        if detected_lang != language and lang_score > 0.5:
+            lang_name = language_tools.language_name(detected_lang)
+            log_info(f"Language detected: {lang_name} ({detected_lang}) "
+                     f"confidence={lang_score:.2f}")
+
+            # Attempt translation to English (if enabled)
+            if detected_lang != "en" and auto_translate and language_tools.argos_available():
+                log_info(f"Translating {lang_name} → English (offline)...")
+                translation_pairs = language_tools.translate_lines(
+                    ocr_result.lines, detected_lang, "en",
+                    auto_install=True)
+                translated_count = sum(1 for _, t in translation_pairs if t)
+                log_info(f"Translated {translated_count}/{len(translation_pairs)} lines")
+            elif detected_lang != "en" and auto_translate:
+                log_info("Argos Translate not available — preserving original text")
+            elif detected_lang != "en":
+                log_info("Auto-translate disabled — preserving original text")
+
     progress(0.85)
 
     # ------------------------------------------------------------------
-    # 5. Assemble Markdown section
+    # 6. Assemble Markdown section
     # ------------------------------------------------------------------
-    _build_section(output, stem, asset_rel_path, ocr_result, source_file)
+    _build_section(output, stem, asset_rel_path, ocr_result, source_file,
+                   detected_lang=detected_lang, translation_pairs=translation_pairs)
     _finalize_confidence(confidence, ocr_result.confidence_label)
     confidence.derive_overall()
     progress(1.0)
@@ -132,8 +175,20 @@ def convert(
 
 def _preprocess(pil_image, logger):
     """
-    Apply OpenCV preprocessing: grayscale, denoise, deskew, threshold.
+    Apply enhanced OpenCV preprocessing for OCR.
+
+    Pipeline:
+      1. Color inversion check (white-on-dark → dark-on-white)
+      2. Upscale small images (< 1000px) via Lanczos for OCR legibility
+      3. Grayscale conversion
+      4. CLAHE contrast enhancement (helps faded scans, colored backgrounds)
+      5. Denoise
+      6. Deskew
+      7. Adaptive threshold
+
     Returns a PIL Image. Falls back to the original if OpenCV is unavailable.
+    The returned image is used ONLY for OCR input — the original full-color
+    image is saved separately for Markdown output.
     """
     try:
         import cv2
@@ -141,19 +196,47 @@ def _preprocess(pil_image, logger):
         from PIL import Image
 
         img = np.array(pil_image.convert("RGB"))
+
+        # 1. Color inversion — detect white-on-dark drawings
+        gray_check = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        mean_intensity = np.mean(gray_check)
+        if mean_intensity < 127:
+            img = cv2.bitwise_not(img)
+            if logger:
+                logger.info("Dark background detected — inverted colors for OCR.")
+
+        # 2. Upscale small images for better OCR on tiny text
+        h, w = img.shape[:2]
+        if max(h, w) < 1000:
+            scale = 2.0
+            img = cv2.resize(img, None, fx=scale, fy=scale,
+                             interpolation=cv2.INTER_LANCZOS4)
+            if logger:
+                logger.info(f"Upscaled small image 2x for OCR ({w}x{h} → {img.shape[1]}x{img.shape[0]})")
+
+        # 3. Grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-        # Denoise
-        denoised = cv2.fastNlMeansDenoising(gray, h=10)
+        # 4. CLAHE contrast enhancement — improves text-background contrast
+        #    on engineering drawings with colored backgrounds or faded scans
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
 
-        # Deskew
+        # 5. Denoise
+        denoised = cv2.fastNlMeansDenoising(enhanced, h=10)
+
+        # 6. Deskew
         deskewed = _deskew(denoised)
 
-        # Adaptive threshold — improves OCR on low-contrast or uneven backgrounds
+        # 7. Adaptive threshold
+        block_size = 31
+        # Scale block size for high-res images to maintain effectiveness
+        if deskewed.shape[0] > 3000 or deskewed.shape[1] > 3000:
+            block_size = 51
         thresh = cv2.adaptiveThreshold(
             deskewed, 255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 31, 2
+            cv2.THRESH_BINARY, block_size, 2
         )
 
         return Image.fromarray(thresh)
@@ -198,9 +281,13 @@ def _deskew(gray_array):
 # Asset saving
 # ---------------------------------------------------------------------------
 
-def _save_asset(pil_image, source_file: str, alias: str, output_root: str, logger, use_subfolder: bool = True) -> Optional[str]:
+def _save_original_asset(pil_image, source_file: str, alias: str, output_root: str, logger, use_subfolder: bool = True) -> Optional[str]:
     """
-    Save the processed image to assets/ and return the relative path for Markdown linking.
+    Save the ORIGINAL full-color image to assets/ as PNG.
+
+    This preserves graphical fidelity — wire colors, layer
+    differentiation, component highlighting are all retained.
+    The preprocessed (binarized) version is used for OCR only.
     """
     from .markdown_writer import assets_dir_for, assets_rel_prefix_for
 
@@ -209,16 +296,16 @@ def _save_asset(pil_image, source_file: str, alias: str, output_root: str, logge
         os.makedirs(assets_dir, exist_ok=True)
 
         stem = re.sub(r'[<>:"/\\|?*]', "_", os.path.splitext(os.path.basename(source_file))[0])
-        asset_filename = f"{stem}_processed.png"
+        asset_filename = f"{stem}.png"
         asset_path = os.path.join(assets_dir, asset_filename)
 
+        # Save as PNG (lossless) to preserve line sharpness in drawings
         pil_image.save(asset_path, format="PNG")
 
-        # Return relative path from the .md file location
         prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
         rel_path = f"{prefix}{asset_filename}"
         if logger:
-            logger.info(f"Image saved | path={asset_path}")
+            logger.info(f"Original image saved | path={asset_path}")
         return rel_path
 
     except Exception as e:
@@ -247,6 +334,8 @@ def _build_section(
     asset_rel_path: Optional[str],
     ocr_result,
     source_file: str,
+    detected_lang: str = "en",
+    translation_pairs: list = None,
 ) -> None:
     parts = [f"## {stem}", ""]
 
@@ -254,13 +343,49 @@ def _build_section(
         parts.append(f"![{stem}]({asset_rel_path})")
         parts.append("")
 
-    if ocr_result.text.strip():
-        parts += ["### Extracted Text", "", ocr_result.text.strip(), ""]
+    # Use spatially-sorted text for better reading order
+    sorted_text = ocr_result.text_sorted_spatially()
 
-    parts.append(f"*Confidence: {ocr_result.confidence_label}*")
+    has_translation = translation_pairs and any(t for _, t in translation_pairs)
+
+    if has_translation:
+        # Show side-by-side original + translated text as a table
+        lang_name = language_tools.language_name(detected_lang)
+        parts.append(f"### Extracted Text (Original: {lang_name})")
+        parts.append("")
+
+        rows = []
+        for original, translated in translation_pairs:
+            if original.strip():
+                rows.append([original.strip(), translated or "—"])
+        if rows:
+            table_md = rows_to_markdown_table(
+                ["Original", "Translation (English)"], rows)
+            parts.append(table_md)
+            parts.append("")
+            parts.append(f"*Translation: Argos Translate (offline) — "
+                         f"review recommended for technical accuracy.*")
+        parts.append("")
+
+    elif sorted_text.strip():
+        # No translation needed or available — show extracted text
+        if detected_lang != "en":
+            lang_name = language_tools.language_name(detected_lang)
+            parts.append(f"### Extracted Text (Language: {lang_name})")
+            parts.append("")
+            parts.append("*Original text preserved — manual translation "
+                         "may be needed.*")
+        else:
+            parts.append("### Extracted Text")
+        parts.append("")
+        parts.append(sorted_text.strip())
+        parts.append("")
+
+    parts.append(f"*OCR Engine: {ocr_result.engine_used} | "
+                 f"Confidence: {ocr_result.confidence_label}*")
 
     if ocr_result.confidence_label in ("Low", "Failed"):
-        parts.append("*Manual review recommended.*")
+        parts.append("*Manual review recommended for rotated or small text.*")
 
     output.add_section(body="\n".join(parts))
 

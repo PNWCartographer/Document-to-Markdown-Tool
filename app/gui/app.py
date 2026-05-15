@@ -176,8 +176,32 @@ _TIPS = {
     ),
     "quality_preset": (
         "Controls the tradeoff between conversion speed and output quality. "
-        "Fast skips OCR and advanced table detection. Balanced uses standard processing. "
-        "Quality enables all analysis engines for the most accurate results."
+        "Fast skips OCR and advanced table detection for maximum speed. "
+        "Balanced uses standard processing at medium OCR resolution. "
+        "Quality enables all analysis engines at maximum OCR resolution "
+        "for the most accurate results."
+    ),
+    "auto_translate": (
+        "Automatically translates non-English text found in images and "
+        "engineering drawings to English using offline translation (Argos "
+        "Translate). The original text is always preserved alongside the "
+        "translation in a side-by-side table. Turn this off if you only "
+        "need the original language text, or to speed up conversion."
+    ),
+    "dxf_svg_preview": (
+        "Generates a visual SVG preview of DXF engineering drawings and "
+        "embeds it in the Markdown output. The preview shows the full "
+        "drawing layout including geometry, dimensions, and annotations. "
+        "Turn this off to speed up conversion of very complex drawings, "
+        "or if you only need the extracted text and metadata."
+    ),
+    "ocr_engine": (
+        "Select the preferred OCR engine for text extraction from images "
+        "and scanned pages. Auto uses PaddleOCR (higher accuracy, deep "
+        "learning) with Tesseract as fallback. Choose PaddleOCR for best "
+        "results on engineering drawings, complex layouts, and non-Latin "
+        "scripts. Choose Tesseract for faster, lighter processing, or if "
+        "PaddleOCR is not installed."
     ),
 }
 
@@ -550,6 +574,9 @@ class App:
             "overwrite_existing":     tk.BooleanVar(value=self._cfg["overwrite_existing"]),
             "output_subfolder":       tk.BooleanVar(value=self._cfg["output_subfolder"]),
             "low_confidence_action":  tk.StringVar(value=self._cfg["low_confidence_action"]),
+            "auto_translate":         tk.BooleanVar(value=self._cfg["auto_translate"]),
+            "dxf_svg_preview":        tk.BooleanVar(value=self._cfg["dxf_svg_preview"]),
+            "ocr_engine":             tk.StringVar(value=self._cfg["ocr_engine"]),
             "rules_profile":          tk.StringVar(value=self._cfg.get("rules_profile", "None")),
         }
         self._rule_profiles: list[_rules_mod.RuleProfile] = _rules_mod.load_profiles()
@@ -655,6 +682,11 @@ class App:
             _TIPS["detect_equations"], row,
             default_hint="default: on",
         )
+        row = self._settings_add_checkbox(
+            self._settings_content, "dxf_svg_preview", "DXF Drawing Preview",
+            _TIPS["dxf_svg_preview"], row,
+            default_hint="default: on",
+        )
 
         # Section: Performance
         row = self._settings_add_section(self._settings_content, "Performance", row)
@@ -679,6 +711,17 @@ class App:
              "Dutch", "Auto-detect"],
             _TIPS["ocr_language"], row,
             default_hint="default: English",
+        )
+        row = self._settings_add_dropdown(
+            self._settings_content, "ocr_engine", "OCR Engine",
+            ["Auto", "PaddleOCR", "Tesseract"],
+            _TIPS["ocr_engine"], row,
+            default_hint="default: Auto",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "auto_translate", "Auto-Translate OCR Text",
+            _TIPS["auto_translate"], row,
+            default_hint="default: on",
         )
 
         # Section: Output

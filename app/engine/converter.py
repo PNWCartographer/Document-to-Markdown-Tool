@@ -366,8 +366,21 @@ class ConversionJob:
         rebuild_toc = cfg.get("rebuild_toc", False)
         preserve_pages = cfg.get("preserve_page_numbers", False)
 
+        # New settings
+        auto_translate = cfg.get("auto_translate", True)
+        dxf_svg_preview = cfg.get("dxf_svg_preview", True)
+        ocr_engine_pref = cfg.get("ocr_engine", "Auto")
+
+        # Map OCR engine setting → run_ocr prefer_engine parameter
+        _ENGINE_MAP = {"Auto": "paddle", "PaddleOCR": "paddle", "Tesseract": "tesseract"}
+        prefer_engine = _ENGINE_MAP.get(ocr_engine_pref, "paddle")
+
         # Quality preset overrides for PDF conversion
         quality = cfg.get("quality_preset", "Quality")
+        # Map quality preset → OCR render DPI scale
+        _DPI_MAP = {"Fast": 2.0, "Balanced": 3.0, "Quality": 4.0}
+        ocr_dpi_scale = _DPI_MAP.get(quality, 4.0)
+
         if quality == "Fast" and ext == ".pdf":
             # Fast: force pymupdf-only path, skip OCR
             mode = "Standard"
@@ -375,7 +388,7 @@ class ConversionJob:
                 logger.info("Quality preset: Fast — using standard extraction only, skipping OCR.")
         elif quality == "Balanced" and ext == ".pdf":
             if logger:
-                logger.info("Quality preset: Balanced — standard pipeline, limited fallbacks.")
+                logger.info("Quality preset: Balanced — standard pipeline, medium OCR resolution.")
 
         def progress(p: float):
             self._gui(self._on_file_progress, p)
@@ -405,6 +418,9 @@ class ConversionJob:
                 detect_code_blocks=cfg.get("detect_code_blocks", True),
                 detect_footnotes=cfg.get("detect_footnotes", True),
                 detect_equations=cfg.get("detect_equations", True),
+                auto_translate=auto_translate,
+                prefer_engine=prefer_engine,
+                ocr_dpi_scale=ocr_dpi_scale,
                 logger=logger,
                 progress_callback=progress,
             )
@@ -487,6 +503,7 @@ class ConversionJob:
                 output_root=self._output_root,
                 preserve_images=preserve_images,
                 use_subfolder=use_subfolder,
+                render_svg=dxf_svg_preview,
                 logger=logger,
                 progress_callback=progress,
             )
@@ -501,6 +518,8 @@ class ConversionJob:
                 language=lang,
                 preserve_images=preserve_images,
                 use_subfolder=use_subfolder,
+                auto_translate=auto_translate,
+                prefer_engine=prefer_engine,
                 logger=logger,
                 progress_callback=progress,
             )

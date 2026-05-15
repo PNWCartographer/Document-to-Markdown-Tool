@@ -24,6 +24,9 @@ DEFAULTS: dict = {
     "overwrite_existing":     False,
     "output_subfolder":       False,
     "low_confidence_action":  "Ask me",
+    "auto_translate":         True,
+    "dxf_svg_preview":        True,
+    "ocr_engine":             "Auto",
     "rules_profile":          "None",
     "theme":                  "dark",
 }
