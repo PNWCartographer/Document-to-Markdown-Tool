@@ -624,6 +624,12 @@ class GlassDropdown(tk.Canvas):
             self.config(bg=parent_bg)
         self._draw()
 
+    def set_values(self, values: list[str]):
+        """Replace the option list and resize."""
+        self._dd_options = list(values)
+        self._recompute_size()
+        self._draw()
+
     # ── Internal sizing ─────────────────────────────────────
 
     def _recompute_size(self):

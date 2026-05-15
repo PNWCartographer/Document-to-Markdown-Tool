@@ -211,6 +211,7 @@ def write_markdown(
     overwrite: bool = False,
     yaml_front_matter: bool = False,
     markdown_flavor: str = "GFM",
+    rules_profile=None,
 ) -> str:
     """
     Write the assembled Markdown to disk.
@@ -232,6 +233,10 @@ def write_markdown(
         yaml_front_matter=yaml_front_matter,
         markdown_flavor=markdown_flavor,
     )
+
+    if rules_profile is not None:
+        md = rules_profile.apply_all(md)
+
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(md)
 

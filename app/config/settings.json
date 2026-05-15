@@ -19,5 +19,6 @@
   "overwrite_existing": false,
   "output_subfolder": false,
   "low_confidence_action": "Ask me",
+  "rules_profile": "None",
   "theme": "dark"
 }

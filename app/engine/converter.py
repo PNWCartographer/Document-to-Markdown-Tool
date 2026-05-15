@@ -37,6 +37,7 @@ from .markdown_writer import (
     output_dir_for,
 )
 from .output_formats import write_output as write_alt_format, output_path_for
+from .rules_engine import load_profiles, get_profile_by_name
 
 
 # Language display names → ISO 639-1 codes used by ocr_engine
@@ -321,6 +322,12 @@ class ConversionJob:
         front_matter = self._cfg.get("yaml_front_matter", False)
         flavor = self._cfg.get("markdown_flavor", "GFM")
 
+        profile_name = self._cfg.get("rules_profile", "None")
+        rules_profile = None
+        if profile_name and profile_name != "None":
+            profiles = load_profiles()
+            rules_profile = get_profile_by_name(profiles, profile_name)
+
         if fmt == "Markdown":
             write_markdown(
                 output,
@@ -332,6 +339,7 @@ class ConversionJob:
                 overwrite=overwrite,
                 yaml_front_matter=front_matter,
                 markdown_flavor=flavor,
+                rules_profile=rules_profile,
             )
         else:
             write_alt_format(

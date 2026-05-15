@@ -10,6 +10,7 @@ from .widgets import (PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown,
 import config.settings as _cfg_mod
 import engine.converter as _converter_mod
 import engine.watch_folder as _watch_mod
+import engine.rules_engine as _rules_mod
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -547,7 +548,9 @@ class App:
             "overwrite_existing":     tk.BooleanVar(value=self._cfg["overwrite_existing"]),
             "output_subfolder":       tk.BooleanVar(value=self._cfg["output_subfolder"]),
             "low_confidence_action":  tk.StringVar(value=self._cfg["low_confidence_action"]),
+            "rules_profile":          tk.StringVar(value=self._cfg.get("rules_profile", "None")),
         }
+        self._rule_profiles: list[_rules_mod.RuleProfile] = _rules_mod.load_profiles()
         for var in self._setting_vars.values():
             var.trace_add("write", self._on_setting_changed)
 
@@ -711,6 +714,45 @@ class App:
             _TIPS["low_confidence_action"], row,
             default_hint="default: Ask me",
         )
+
+        # Section: Post-Processing Rules
+        row = self._settings_add_section(self._settings_content, "Post-Processing Rules", row)
+
+        info = tk.Label(self._settings_content, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
+        info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
+        Tooltip(info, (
+            "Apply regex find/replace rules to the converted output. Rules run after "
+            "conversion and can normalize text, strip unwanted patterns, or reformat "
+            "content. Create named profiles for different document types."
+        ), lambda: self._t)
+
+        lbl = tk.Label(self._settings_content, text="Active Profile", font=_FONT_SMALL, anchor="w")
+        lbl.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=4)
+
+        profile_names = ["None"] + [p.name for p in self._rule_profiles]
+        self._rules_profile_dd = GlassDropdown(
+            self._settings_content,
+            options=profile_names,
+            variable=self._setting_vars["rules_profile"],
+        )
+        self._rules_profile_dd.grid(row=row, column=2, sticky="e", pady=4, padx=(0, 8))
+        self._settings_dropdowns.append(self._rules_profile_dd)
+
+        self._settings_info_labels.append(info)
+        self._settings_name_labels.append(lbl)
+        row += 1
+
+        self._btn_manage_rules = PillButton(
+            self._settings_content,
+            text="Manage Rules…",
+            font=_FONT_SMALL,
+            style="secondary",
+            padx=14, pady=6,
+            command=self._show_rules_editor,
+        )
+        self._btn_manage_rules.grid(row=row, column=1, columnspan=3, sticky="w", pady=(4, 8))
+        self._secondary_pills.append(self._btn_manage_rules)
+        row += 1
 
         # ── Reset to Defaults button ──────────────────────────
         row = self._settings_add_section(self._settings_content, "Reset", row)
@@ -1289,6 +1331,7 @@ class App:
         win.title("Debug Info — Conversion Diagnostics")
         win.geometry("680x500")
         win.config(bg=t["bg"])
+        self._set_titlebar_dark(self._dark, win)
 
         # Scrollable text widget
         text_frame = tk.Frame(win, bg=t["bg"])
@@ -1361,6 +1404,317 @@ class App:
         text.insert("1.0", "\n".join(lines))
         text.config(state="disabled")
 
+    # ── Rules Editor dialog ────────────────────────────────
+
+    def _show_rules_editor(self):
+        t = self._t
+        win = tk.Toplevel(self.root)
+        win.title("Post-Processing Rules")
+        win.geometry("780x520")
+        win.config(bg=t["bg"])
+        self._set_titlebar_dark(self._dark, win)
+        win.transient(self.root)
+        win.grab_set()
+
+        profiles = list(self._rule_profiles)
+        selected_profile_idx = [None]
+        selected_rule_idx = [None]
+
+        # ── Top bar ──────────────────────────────────────────
+        top = tk.Frame(win, bg=t["bg"])
+        top.pack(fill="x", padx=16, pady=(12, 8))
+
+        tk.Label(top, text="Profiles", font=_FONT_TITLE, bg=t["bg"], fg=t["text"]).pack(
+            side="left")
+
+        def add_profile():
+            name = simpledialog.askstring("New Profile", "Profile name:", parent=win)
+            if not name or not name.strip():
+                return
+            name = name.strip()
+            if any(p.name == name for p in profiles):
+                messagebox.showwarning("Duplicate", f"Profile '{name}' already exists.", parent=win)
+                return
+            profiles.append(_rules_mod.RuleProfile(name=name))
+            refresh_profile_list()
+            profile_listbox.selection_set(len(profiles) - 1)
+            on_profile_select(None)
+
+        def delete_profile():
+            idx = selected_profile_idx[0]
+            if idx is None:
+                return
+            profiles.pop(idx)
+            selected_profile_idx[0] = None
+            selected_rule_idx[0] = None
+            refresh_profile_list()
+            refresh_rule_list()
+
+        btn_add_profile = PillButton(top, text="+ New", font=_FONT_SMALL, style="secondary",
+                                     padx=10, pady=4, command=add_profile)
+        btn_add_profile.pack(side="right", padx=(4, 0))
+        btn_add_profile.set_colors(
+            fill=t["bg"], fg=t["accent"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"])
+
+        btn_del_profile = PillButton(top, text="Delete", font=_FONT_SMALL, style="secondary",
+                                     padx=10, pady=4, command=delete_profile)
+        btn_del_profile.pack(side="right", padx=(4, 0))
+        btn_del_profile.set_colors(
+            fill=t["bg"], fg=t["accent"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"])
+
+        # ── Main paned area ──────────────────────────────────
+        body = tk.Frame(win, bg=t["bg"])
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(0, weight=0)
+        body.grid_columnconfigure(1, weight=1)
+
+        # Left: profile list
+        left = tk.Frame(body, bg=t["bg"], width=180)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.grid_rowconfigure(0, weight=1)
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_propagate(False)
+
+        profile_listbox = tk.Listbox(
+            left, bd=0, highlightthickness=1, font=_FONT_SMALL,
+            bg=t["bg"], fg=t["text"], selectbackground=t["accent"],
+            selectforeground=t["text_on_accent"],
+            highlightbackground=t["border"],
+        )
+        profile_listbox.grid(row=0, column=0, sticky="nsew")
+
+        # Right: rules panel
+        right = tk.Frame(body, bg=t["bg"])
+        right.grid(row=0, column=1, sticky="nsew")
+        right.grid_rowconfigure(1, weight=1)
+        right.grid_columnconfigure(0, weight=1)
+
+        # Rules toolbar
+        rules_toolbar = tk.Frame(right, bg=t["bg"])
+        rules_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+
+        tk.Label(rules_toolbar, text="Rules", font=_FONT_TITLE, bg=t["bg"], fg=t["text"]).pack(
+            side="left")
+
+        def add_rule():
+            idx = selected_profile_idx[0]
+            if idx is None:
+                messagebox.showinfo("Rules", "Select a profile first.", parent=win)
+                return
+            profiles[idx].rules.append(
+                _rules_mod.Rule(name=f"Rule {len(profiles[idx].rules) + 1}"))
+            refresh_rule_list()
+            rule_listbox.selection_set(len(profiles[idx].rules) - 1)
+            on_rule_select(None)
+
+        def delete_rule():
+            p_idx = selected_profile_idx[0]
+            r_idx = selected_rule_idx[0]
+            if p_idx is None or r_idx is None:
+                return
+            profiles[p_idx].rules.pop(r_idx)
+            selected_rule_idx[0] = None
+            refresh_rule_list()
+            clear_rule_editor()
+
+        btn_add_rule = PillButton(rules_toolbar, text="+ Add Rule", font=_FONT_SMALL,
+                                  style="secondary", padx=10, pady=4, command=add_rule)
+        btn_add_rule.pack(side="right", padx=(4, 0))
+        btn_add_rule.set_colors(
+            fill=t["bg"], fg=t["accent"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"])
+
+        btn_del_rule = PillButton(rules_toolbar, text="Delete Rule", font=_FONT_SMALL,
+                                  style="secondary", padx=10, pady=4, command=delete_rule)
+        btn_del_rule.pack(side="right", padx=(4, 0))
+        btn_del_rule.set_colors(
+            fill=t["bg"], fg=t["accent"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"])
+
+        # Rule listbox
+        rule_listbox = tk.Listbox(
+            right, bd=0, highlightthickness=1, font=_FONT_SMALL,
+            bg=t["bg"], fg=t["text"], selectbackground=t["accent"],
+            selectforeground=t["text_on_accent"],
+            highlightbackground=t["border"], height=6,
+        )
+        rule_listbox.grid(row=1, column=0, sticky="nsew")
+
+        # Rule editor fields
+        editor = tk.Frame(right, bg=t["bg"])
+        editor.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        editor.grid_columnconfigure(1, weight=1)
+
+        _entry_bg = t.get("sidebar_bg", t["bg"])
+
+        tk.Label(editor, text="Name:", font=_FONT_SMALL, bg=t["bg"], fg=t["text"]).grid(
+            row=0, column=0, sticky="w", pady=2)
+        rule_name_var = tk.StringVar()
+        rule_name_entry = tk.Entry(editor, textvariable=rule_name_var, font=_FONT_SMALL,
+                                   bg=_entry_bg, fg=t["text"], insertbackground=t["text"],
+                                   relief="flat", highlightthickness=1,
+                                   highlightbackground=t["border"])
+        rule_name_entry.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=2)
+
+        tk.Label(editor, text="Find:", font=_FONT_SMALL, bg=t["bg"], fg=t["text"]).grid(
+            row=1, column=0, sticky="w", pady=2)
+        rule_pattern_var = tk.StringVar()
+        rule_pattern_entry = tk.Entry(editor, textvariable=rule_pattern_var, font=_FONT_SMALL,
+                                      bg=_entry_bg, fg=t["text"], insertbackground=t["text"],
+                                      relief="flat", highlightthickness=1,
+                                      highlightbackground=t["border"])
+        rule_pattern_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=2)
+
+        tk.Label(editor, text="Replace:", font=_FONT_SMALL, bg=t["bg"], fg=t["text"]).grid(
+            row=2, column=0, sticky="w", pady=2)
+        rule_replace_var = tk.StringVar()
+        rule_replace_entry = tk.Entry(editor, textvariable=rule_replace_var, font=_FONT_SMALL,
+                                      bg=_entry_bg, fg=t["text"], insertbackground=t["text"],
+                                      relief="flat", highlightthickness=1,
+                                      highlightbackground=t["border"])
+        rule_replace_entry.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=2)
+
+        rule_opts_row = tk.Frame(editor, bg=t["bg"])
+        rule_opts_row.grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        rule_enabled_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(rule_opts_row, text="Enabled", variable=rule_enabled_var,
+                       bg=t["bg"], fg=t["text"], selectcolor=t["bg"],
+                       activebackground=t["bg"], activeforeground=t["text"],
+                       font=_FONT_SMALL).pack(side="left", padx=(0, 16))
+
+        rule_regex_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(rule_opts_row, text="Use Regex", variable=rule_regex_var,
+                       bg=t["bg"], fg=t["text"], selectcolor=t["bg"],
+                       activebackground=t["bg"], activeforeground=t["text"],
+                       font=_FONT_SMALL).pack(side="left")
+
+        def save_current_rule(*_):
+            p_idx = selected_profile_idx[0]
+            r_idx = selected_rule_idx[0]
+            if p_idx is None or r_idx is None:
+                return
+            rule = profiles[p_idx].rules[r_idx]
+            rule.name = rule_name_var.get()
+            rule.pattern = rule_pattern_var.get()
+            rule.replacement = rule_replace_var.get()
+            rule.enabled = rule_enabled_var.get()
+            rule.use_regex = rule_regex_var.get()
+            refresh_rule_list()
+
+        rule_name_var.trace_add("write", save_current_rule)
+        rule_pattern_var.trace_add("write", save_current_rule)
+        rule_replace_var.trace_add("write", save_current_rule)
+        rule_enabled_var.trace_add("write", save_current_rule)
+        rule_regex_var.trace_add("write", save_current_rule)
+
+        def clear_rule_editor():
+            rule_name_var.set("")
+            rule_pattern_var.set("")
+            rule_replace_var.set("")
+            rule_enabled_var.set(True)
+            rule_regex_var.set(True)
+
+        # ── List refresh helpers ─────────────────────────────
+        def refresh_profile_list():
+            profile_listbox.delete(0, "end")
+            for p in profiles:
+                profile_listbox.insert("end", f"{p.name} ({len(p.rules)} rules)")
+
+        def refresh_rule_list():
+            rule_listbox.delete(0, "end")
+            p_idx = selected_profile_idx[0]
+            if p_idx is None or p_idx >= len(profiles):
+                return
+            for rule in profiles[p_idx].rules:
+                prefix = "✓" if rule.enabled else "✗"
+                rule_listbox.insert("end", f" {prefix}  {rule.name}")
+
+        def on_profile_select(event):
+            sel = profile_listbox.curselection()
+            if not sel:
+                return
+            selected_profile_idx[0] = sel[0]
+            selected_rule_idx[0] = None
+            refresh_rule_list()
+            clear_rule_editor()
+
+        def on_rule_select(event):
+            sel = rule_listbox.curselection()
+            p_idx = selected_profile_idx[0]
+            if not sel or p_idx is None:
+                return
+            r_idx = sel[0]
+            selected_rule_idx[0] = r_idx
+            rule = profiles[p_idx].rules[r_idx]
+            rule_name_var.set(rule.name)
+            rule_pattern_var.set(rule.pattern)
+            rule_replace_var.set(rule.replacement)
+            rule_enabled_var.set(rule.enabled)
+            rule_regex_var.set(rule.use_regex)
+
+        profile_listbox.bind("<<ListboxSelect>>", on_profile_select)
+        rule_listbox.bind("<<ListboxSelect>>", on_rule_select)
+
+        # ── Bottom buttons ───────────────────────────────────
+        bottom = tk.Frame(win, bg=t["bg"])
+        bottom.pack(fill="x", padx=16, pady=(0, 12))
+
+        def preview_rules():
+            p_idx = selected_profile_idx[0]
+            if p_idx is None:
+                messagebox.showinfo("Preview", "Select a profile first.", parent=win)
+                return
+            profile = profiles[p_idx]
+            sample = (
+                "# Sample Document\n\n"
+                "CONFIDENTIAL — Internal Use Only\n\n"
+                "Page 1 of 5\n\n"
+                "This is sample text for testing rules.\n\n"
+                "Date: 01/15/2025\n\n"
+                "CONFIDENTIAL — Internal Use Only\n"
+            )
+            _after, changes = profile.preview(sample)
+            msg = "Rule preview (against sample text):\n\n"
+            for c in changes:
+                msg += f"  • {c}\n"
+            if not changes:
+                msg += "  No rules in this profile."
+            msg += f"\n--- Before ---\n{sample[:200]}\n\n--- After ---\n{_after[:200]}"
+            messagebox.showinfo("Rule Preview", msg, parent=win)
+
+        def save_and_close():
+            self._rule_profiles = profiles
+            _rules_mod.save_profiles(profiles)
+            profile_names = ["None"] + [p.name for p in profiles]
+            self._rules_profile_dd.set_values(profile_names)
+            win.destroy()
+
+        btn_preview = PillButton(bottom, text="Preview Rules", font=_FONT_SMALL,
+                                 style="secondary", padx=14, pady=6, command=preview_rules)
+        btn_preview.pack(side="left")
+        btn_preview.set_colors(
+            fill=t["bg"], fg=t["accent"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"])
+
+        btn_save = PillButton(bottom, text="Save & Close", font=_FONT_BTN,
+                              style="primary", padx=20, pady=8, command=save_and_close)
+        btn_save.pack(side="right")
+        btn_save.set_colors(
+            fill=t["accent"], fg=t["text_on_accent"],
+            hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+            parent_bg=t["bg"])
+
+        refresh_profile_list()
+
     # ── Preview window ─────────────────────────────────────
 
     def _show_preview_window(self):
@@ -1376,6 +1730,7 @@ class App:
         win.geometry(f"{int(1100 * self._dpi)}x{int(650 * self._dpi)}")
         win.minsize(int(800 * self._dpi), int(400 * self._dpi))
         win.config(bg=t["bg"])
+        self._set_titlebar_dark(self._dark, win)
 
         # Apply dark title bar to preview window
         try:
@@ -1634,6 +1989,7 @@ class App:
         dlg.geometry("520x400")
         dlg.resizable(True, True)
         dlg.minsize(400, 300)
+        self._set_titlebar_dark(self._dark, dlg)
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.config(bg=t["content_bg"])
@@ -2072,40 +2428,47 @@ class App:
         _draw_circle(c, cx, cy, r, fill=color, steps=64)
         _draw_circle(c, cx - r * 0.35, cy + r * 0.05, r * 1.0, fill=bg, steps=64)
 
-    def _set_titlebar_dark(self, dark: bool) -> None:
+    def _set_titlebar_dark(self, dark: bool, window=None) -> None:
         """
         Apply dark/light title bar on Windows via the DWM API.
 
-        Key details:
-        - winfo_id() returns the child (client-area) HWND, NOT the top-level
-          frame HWND.  GetParent() walks up to the real top-level window that
-          DWM controls the title bar of.
-        - update_idletasks() ensures the window is fully realised before we
-          query its handle.
-        - We try attribute 20 first (Windows 11 / Win10 20H1+), then fall back
-          to attribute 19 (older Win10 insider/preview builds).
+        Works on the root window or any Toplevel passed via *window*.
+        For Toplevel dialogs the call is deferred so the window is fully
+        mapped before we query its HWND.
         """
+        target = window or self.root
+        if window is not None:
+            target.after(50, lambda: self._apply_dwm_dark(dark, target))
+        else:
+            self._apply_dwm_dark(dark, target)
+
+    def _apply_dwm_dark(self, dark: bool, target) -> None:
         try:
             import ctypes
             from ctypes import c_int, byref, sizeof
 
-            self.root.update_idletasks()
+            target.update_idletasks()
 
-            # Get the actual top-level frame HWND (not the client-area child)
-            client_hwnd = self.root.winfo_id()
-            hwnd = ctypes.windll.user32.GetParent(client_hwnd)
+            # wm_frame() returns the hex string of the real top-level
+            # frame HWND that DWM controls.  For Toplevel dialogs
+            # GetParent() can return the owner instead of the frame,
+            # so wm_frame() is the reliable path.
+            frame_hex = target.wm_frame()
+            hwnd = int(frame_hex, 16) if frame_hex else 0
+
             if not hwnd:
-                hwnd = client_hwnd  # fallback if no parent (shouldn't happen)
+                client_hwnd = target.winfo_id()
+                hwnd = ctypes.windll.user32.GetParent(client_hwnd)
+                if not hwnd:
+                    hwnd = client_hwnd
 
             value = c_int(1 if dark else 0)
 
-            # Win10 20H1+ / Win11
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             ret = ctypes.windll.dwmapi.DwmSetWindowAttribute(
                 hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, byref(value), sizeof(value)
             )
 
-            # Fallback: older Windows 10 insider builds used attribute 19
             if ret != 0:
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(
                     hwnd, 19, byref(value), sizeof(value)

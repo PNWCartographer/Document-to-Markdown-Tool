@@ -24,6 +24,7 @@ DEFAULTS: dict = {
     "overwrite_existing":     False,
     "output_subfolder":       False,
     "low_confidence_action":  "Ask me",
+    "rules_profile":          "None",
     "theme":                  "dark",
 }
 
