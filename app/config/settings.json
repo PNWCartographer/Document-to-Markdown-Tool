@@ -14,6 +14,8 @@
   "quality_preset": "Quality",
   "ocr_language": "English",
   "output_format": "Markdown",
+  "markdown_flavor": "GFM",
+  "yaml_front_matter": true,
   "overwrite_existing": false,
   "output_subfolder": false,
   "low_confidence_action": "Ask me",

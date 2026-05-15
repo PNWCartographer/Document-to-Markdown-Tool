@@ -16,12 +16,22 @@ Output structure per file (matches CONVERSION_REQUIREMENTS.md):
             conversion_log.txt
 """
 
+import datetime
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 from .confidence import ConfidenceResult
+
+# Markdown flavor definitions
+FLAVORS = {
+    "GFM":      "GitHub Flavored Markdown",
+    "Obsidian": "Obsidian-compatible Markdown",
+    "Pandoc":   "Pandoc extended Markdown",
+}
+
+FLAVOR_NAMES = list(FLAVORS.keys())
 
 
 @dataclass
@@ -144,11 +154,18 @@ def build_markdown(
     include_confidence_summary: bool = True,
     include_page_numbers: bool = True,
     rebuild_toc: bool = True,
+    yaml_front_matter: bool = False,
+    markdown_flavor: str = "GFM",
 ) -> str:
     """
     Assemble the full Markdown string from a ConversionOutput.
     """
     parts: list[str] = []
+
+    # YAML front matter block
+    if yaml_front_matter:
+        parts.append(_build_front_matter(output, markdown_flavor))
+        parts.append("")
 
     # Confidence summary at top
     if include_confidence_summary and output.confidence:
@@ -157,7 +174,7 @@ def build_markdown(
 
     # Table of contents
     if rebuild_toc and output.toc_entries:
-        parts.append(_build_toc_block(output.toc_entries))
+        parts.append(_build_toc_block(output.toc_entries, markdown_flavor))
         parts.append("")
 
     # Body sections
@@ -174,7 +191,10 @@ def build_markdown(
             parts.append(section.heading)
 
         if section.body:
-            parts.append(section.body.strip())
+            body = section.body.strip()
+            if markdown_flavor == "Obsidian":
+                body = _apply_obsidian_flavor(body)
+            parts.append(body)
 
         parts.append("")
 
@@ -189,6 +209,8 @@ def write_markdown(
     include_page_numbers: bool = True,
     rebuild_toc: bool = True,
     overwrite: bool = False,
+    yaml_front_matter: bool = False,
+    markdown_flavor: str = "GFM",
 ) -> str:
     """
     Write the assembled Markdown to disk.
@@ -207,6 +229,8 @@ def write_markdown(
         include_confidence_summary=include_confidence_summary,
         include_page_numbers=include_page_numbers,
         rebuild_toc=rebuild_toc,
+        yaml_front_matter=yaml_front_matter,
+        markdown_flavor=markdown_flavor,
     )
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(md)
@@ -222,15 +246,61 @@ def _page_anchor(page: int) -> str:
     return f'<a id="page-{page}"></a>\n\n---\n*Page {page}*'
 
 
-def _build_toc_block(entries: list[tuple[int, str, Optional[int]]]) -> str:
+def _build_front_matter(output: ConversionOutput, flavor: str = "GFM") -> str:
+    """Build YAML front matter block from conversion metadata."""
+    source_name = os.path.basename(output.source_file) if output.source_file else "unknown"
+    title = os.path.splitext(source_name)[0]
+    lines = ["---"]
+    lines.append(f"title: \"{title}\"")
+    lines.append(f"source: \"{source_name}\"")
+    lines.append(f"converted: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    if output.engine_used:
+        lines.append(f"engine: \"{output.engine_used}\"")
+    lines.append(f"markdown_flavor: \"{flavor}\"")
+    if output.confidence:
+        lines.append(f"confidence: \"{output.confidence.overall or 'N/A'}\"")
+        if output.confidence.manual_review_recommended:
+            lines.append("review_recommended: true")
+    if flavor == "Obsidian":
+        tags = [_safe_tag(title)]
+        ext = os.path.splitext(source_name)[1].lower().lstrip(".")
+        if ext:
+            tags.append(f"converted/{ext}")
+        lines.append(f"tags: [{', '.join(tags)}]")
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def _safe_tag(text: str) -> str:
+    """Convert text to a safe Obsidian tag (no spaces or special chars)."""
+    return re.sub(r'[^a-zA-Z0-9_/-]', '_', text).strip('_').lower()
+
+
+def _build_toc_block(
+    entries: list[tuple[int, str, Optional[int]]],
+    flavor: str = "GFM",
+) -> str:
     lines = ["## Table of Contents", ""]
     for level, title, page in entries:
         indent = "  " * (level - 1)
-        anchor = f"#page-{page}" if page is not None else "#"
-        lines.append(f"{indent}- [{title}]({anchor})")
+        if flavor == "Obsidian" and page is not None:
+            lines.append(f"{indent}- [[#page-{page}|{title}]]")
+        else:
+            anchor = f"#page-{page}" if page is not None else "#"
+            lines.append(f"{indent}- [{title}]({anchor})")
     lines.append("")
     lines.append("---")
     return "\n".join(lines)
+
+
+def _apply_obsidian_flavor(body: str) -> str:
+    """Convert standard markdown links to Obsidian wikilinks where appropriate."""
+    def _replace_internal(m):
+        text, url = m.group(1), m.group(2)
+        if url.startswith("#") or url.startswith("assets/"):
+            return f"[[{url}|{text}]]"
+        return m.group(0)
+    return re.sub(r'\[([^\]]+)\]\(([^)]+)\)', _replace_internal, body)
 
 
 def _safe_stem(file_path: str) -> str:

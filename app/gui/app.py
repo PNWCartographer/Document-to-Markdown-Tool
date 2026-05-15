@@ -9,14 +9,22 @@ from .widgets import (PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown,
                       PillProgressBar, _draw_circle)
 import config.settings as _cfg_mod
 import engine.converter as _converter_mod
+import engine.watch_folder as _watch_mod
 
-SCREENS = ["Home", "Settings", "Conversion", "Results"]
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    _HAS_DND = True
+except ImportError:
+    _HAS_DND = False
+
+SCREENS = ["Home", "Settings", "Conversion", "Results", "Watch"]
 
 ICONS = {
     "Home":       "⌂",
     "Settings":   "⚙",
     "Conversion": "▶",
     "Results":    "✓",
+    "Watch":      "◉",
 }
 
 _SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
@@ -104,6 +112,19 @@ _TIPS = {
         "viewable in any browser. Plain Text strips all formatting for simple reading or "
         "search indexing."
     ),
+    "markdown_flavor": (
+        "Controls which Markdown dialect is used for the output file. GFM (GitHub Flavored "
+        "Markdown) is the most widely compatible and works in GitHub, VS Code, and most "
+        "viewers. Obsidian mode uses [[wikilinks]], adds tags in front matter, and formats "
+        "internal links for Obsidian vaults. Pandoc mode uses extended syntax with footnote "
+        "definitions and cross-reference support for academic workflows."
+    ),
+    "yaml_front_matter": (
+        "Adds a YAML metadata block at the top of the Markdown file containing the document "
+        "title, source filename, conversion date, engine used, and confidence level. This "
+        "metadata is used by tools like Obsidian, Hugo, Jekyll, and MkDocs for organizing "
+        "and displaying documents. Recommended for knowledge base workflows."
+    ),
     "embed_images": (
         "Encodes images directly inside the Markdown file. The output is fully self-contained "
         "— no separate assets folder needed, images appear in their original position.\n\n"
@@ -160,7 +181,7 @@ _TIPS = {
 
 class App:
     def __init__(self):
-        self.root = tk.Tk()
+        self.root = TkinterDnD.Tk() if _HAS_DND else tk.Tk()
 
         # ── High-fidelity DPI scaling ────────────────────────
         # With per-monitor DPI awareness (set in main.py), tkinter
@@ -214,9 +235,16 @@ class App:
         self._active_job: "Optional[_converter_mod.ConversionJob]" = None
         self._last_output_root: str = ""
 
+        # Watch folder state
+        self._watcher: "Optional[_watch_mod.FolderWatcher]" = None
+        self._watch_input_path: str = ""
+        self._watch_output_path: str = ""
+
         self._build_layout()
         self._apply_theme()
         self._show("Home")
+
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── Layout ──────────────────────────────────────────────
 
@@ -311,6 +339,7 @@ class App:
         self._build_settings()
         self._build_conversion()
         self._build_results()
+        self._build_watch()
 
     # ── Screens ─────────────────────────────────────────────
 
@@ -407,7 +436,7 @@ class App:
         # Empty state label (shown when no files are selected)
         self._lbl_empty = tk.Label(
             self._file_list_frame,
-            text="No files selected.\nUse '+ Add Files' or '+ Add Folder' to get started.",
+            text="No files selected.\nDrag files here, or use '+ Add Files' / '+ Add Folder'.",
             font=_FONT_SMALL,
             justify="center",
         )
@@ -480,6 +509,13 @@ class App:
         self._btn_start.grid(row=6, column=0, sticky="w", padx=32, pady=(0, 28))
         self._primary_pills.append(self._btn_start)
 
+        # ── Drag and drop ────────────────────────────────────
+        if _HAS_DND:
+            self._file_list_frame.drop_target_register(DND_FILES)
+            self._file_list_frame.dnd_bind("<<DropEnter>>", self._on_drop_enter)
+            self._file_list_frame.dnd_bind("<<DropLeave>>", self._on_drop_leave)
+            self._file_list_frame.dnd_bind("<<Drop>>", self._on_drop)
+
     def _build_settings(self):
         f = self._new_screen("Settings")
         f.grid_rowconfigure(2, weight=1)
@@ -506,6 +542,8 @@ class App:
             "quality_preset":         tk.StringVar(value=self._cfg["quality_preset"]),
             "ocr_language":           tk.StringVar(value=self._cfg["ocr_language"]),
             "output_format":          tk.StringVar(value=self._cfg["output_format"]),
+            "markdown_flavor":        tk.StringVar(value=self._cfg["markdown_flavor"]),
+            "yaml_front_matter":      tk.BooleanVar(value=self._cfg["yaml_front_matter"]),
             "overwrite_existing":     tk.BooleanVar(value=self._cfg["overwrite_existing"]),
             "output_subfolder":       tk.BooleanVar(value=self._cfg["output_subfolder"]),
             "low_confidence_action":  tk.StringVar(value=self._cfg["low_confidence_action"]),
@@ -645,6 +683,17 @@ class App:
             ["Markdown", "JSON", "HTML", "Plain Text", "RAG Chunks"],
             _TIPS["output_format"], row,
             default_hint="default: Markdown",
+        )
+        row = self._settings_add_dropdown(
+            self._settings_content, "markdown_flavor", "Markdown Flavor",
+            ["GFM", "Obsidian", "Pandoc"],
+            _TIPS["markdown_flavor"], row,
+            default_hint="default: GFM",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "yaml_front_matter", "YAML Front Matter",
+            _TIPS["yaml_front_matter"], row,
+            default_hint="default: on",
         )
         row = self._settings_add_checkbox(
             self._settings_content, "overwrite_existing", "Overwrite Existing Files",
@@ -953,6 +1002,17 @@ class App:
         self._btn_new_conv.grid(row=0, column=1, padx=(12, 0))
         self._secondary_pills.append(self._btn_new_conv)
 
+        self._btn_preview = PillButton(
+            self._results_btn_row,
+            text="Preview Output",
+            font=_FONT_BTN,
+            style="secondary",
+            padx=26, pady=10,
+            command=self._show_preview_window,
+        )
+        self._btn_preview.grid(row=0, column=2, padx=(12, 0))
+        self._secondary_pills.append(self._btn_preview)
+
         self._btn_debug_info = PillButton(
             self._results_btn_row,
             text="View Debug Info",
@@ -961,8 +1021,259 @@ class App:
             padx=14, pady=7,
             command=self._show_debug_window,
         )
-        self._btn_debug_info.grid(row=0, column=2, padx=(12, 0))
+        self._btn_debug_info.grid(row=0, column=3, padx=(12, 0))
         self._secondary_pills.append(self._btn_debug_info)
+
+    # ── Watch Folder screen ─────────────────────────────────
+
+    def _build_watch(self):
+        f = self._new_screen("Watch")
+        f.grid_rowconfigure(6, weight=1)
+
+        self._heading(
+            f, "Watch Folder",
+            "Monitor a folder for new files and auto-convert them using your current settings.",
+        )
+
+        # ── Folder selection rows ────────────────────────────
+        # Watch input folder
+        self._watch_input_row = tk.Frame(f)
+        self._watch_input_row.grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 8))
+        self._watch_input_row.grid_columnconfigure(1, weight=1)
+
+        tk.Label(
+            self._watch_input_row, text="Watch:", font=_FONT_SMALL, anchor="w", width=8,
+        ).grid(row=0, column=0, sticky="w")
+
+        self._watch_input_path_frame = tk.Frame(self._watch_input_row, highlightthickness=1)
+        self._watch_input_path_frame.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self._watch_input_path_frame.grid_columnconfigure(0, weight=1)
+
+        self._watch_input_path_lbl = tk.Label(
+            self._watch_input_path_frame,
+            text="No folder selected",
+            font=_FONT_SMALL, anchor="w", padx=10, pady=6,
+        )
+        self._watch_input_path_lbl.grid(row=0, column=0, sticky="ew")
+
+        self._btn_watch_browse_input = PillButton(
+            self._watch_input_row,
+            text="Browse",
+            font=_FONT_SMALL,
+            style="secondary",
+            padx=14, pady=6,
+            command=self._pick_watch_input,
+        )
+        self._btn_watch_browse_input.grid(row=0, column=2)
+        self._secondary_pills.append(self._btn_watch_browse_input)
+
+        # Watch output folder
+        self._watch_output_row = tk.Frame(f)
+        self._watch_output_row.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._watch_output_row.grid_columnconfigure(1, weight=1)
+
+        tk.Label(
+            self._watch_output_row, text="Output:", font=_FONT_SMALL, anchor="w", width=8,
+        ).grid(row=0, column=0, sticky="w")
+
+        self._watch_output_path_frame = tk.Frame(self._watch_output_row, highlightthickness=1)
+        self._watch_output_path_frame.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self._watch_output_path_frame.grid_columnconfigure(0, weight=1)
+
+        self._watch_output_path_lbl = tk.Label(
+            self._watch_output_path_frame,
+            text="No folder selected",
+            font=_FONT_SMALL, anchor="w", padx=10, pady=6,
+        )
+        self._watch_output_path_lbl.grid(row=0, column=0, sticky="ew")
+
+        self._btn_watch_browse_output = PillButton(
+            self._watch_output_row,
+            text="Browse",
+            font=_FONT_SMALL,
+            style="secondary",
+            padx=14, pady=6,
+            command=self._pick_watch_output,
+        )
+        self._btn_watch_browse_output.grid(row=0, column=2)
+        self._secondary_pills.append(self._btn_watch_browse_output)
+
+        # ── Controls row ─────────────────────────────────────
+        self._watch_ctrl_row = tk.Frame(f)
+        self._watch_ctrl_row.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 8))
+        self._watch_ctrl_row.grid_columnconfigure(2, weight=1)
+
+        self._btn_watch_start = PillButton(
+            self._watch_ctrl_row,
+            text="Start Watching",
+            font=_FONT_BTN,
+            style="primary",
+            padx=26, pady=10,
+            command=self._toggle_watch,
+        )
+        self._btn_watch_start.grid(row=0, column=0, padx=(0, 12))
+        self._primary_pills.append(self._btn_watch_start)
+
+        self._watch_status_lbl = tk.Label(
+            self._watch_ctrl_row,
+            text="Stopped",
+            font=_FONT_SMALL,
+            anchor="w",
+        )
+        self._watch_status_lbl.grid(row=0, column=1, sticky="w")
+
+        self._watch_counts_lbl = tk.Label(
+            self._watch_ctrl_row,
+            text="",
+            font=_FONT_SMALL,
+            anchor="e",
+        )
+        self._watch_counts_lbl.grid(row=0, column=3, sticky="e")
+
+        # ── Activity log section label ───────────────────────
+        self._watch_log_section_lbl = tk.Label(
+            f, text="ACTIVITY LOG", font=_FONT_SECTION, anchor="w")
+        self._watch_log_section_lbl.grid(
+            row=5, column=0, sticky="ew", padx=32, pady=(0, 2))
+
+        # ── Activity log ─────────────────────────────────────
+        self._watch_log_frame = tk.Frame(f, highlightthickness=1)
+        self._watch_log_frame.grid(row=6, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._watch_log_frame.grid_rowconfigure(0, weight=1)
+        self._watch_log_frame.grid_columnconfigure(0, weight=1)
+
+        self._watch_log = tk.Text(
+            self._watch_log_frame,
+            bd=0, relief="flat",
+            font=_FONT_SMALL,
+            state="disabled",
+            highlightthickness=0,
+            wrap="word",
+            padx=8, pady=6,
+        )
+        self._watch_log_sb = GlassScrollbar(
+            self._watch_log_frame, orient="vertical",
+            command=self._watch_log.yview)
+        self._glass_scrollbars.append(self._watch_log_sb)
+        self._watch_log.config(yscrollcommand=self._watch_log_sb.set)
+        self._watch_log.grid(row=0, column=0, sticky="nsew")
+        self._watch_log_sb.grid(row=0, column=1, sticky="ns")
+
+        # ── Bottom button row ────────────────────────────────
+        self._watch_btn_row = tk.Frame(f)
+        self._watch_btn_row.grid(row=7, column=0, sticky="ew", padx=32, pady=(0, 28))
+
+        self._btn_watch_clear_log = PillButton(
+            self._watch_btn_row,
+            text="Clear Log",
+            font=_FONT_SMALL,
+            style="secondary",
+            padx=14, pady=6,
+            command=self._clear_watch_log,
+        )
+        self._btn_watch_clear_log.grid(row=0, column=0)
+        self._secondary_pills.append(self._btn_watch_clear_log)
+
+    # ── Watch Folder handlers ───────────────────────────────
+
+    def _pick_watch_input(self):
+        path = filedialog.askdirectory(title="Select folder to watch")
+        if path:
+            self._watch_input_path = path
+            self._watch_input_path_lbl.config(text=path)
+
+    def _pick_watch_output(self):
+        path = filedialog.askdirectory(title="Select output folder")
+        if path:
+            self._watch_output_path = path
+            self._watch_output_path_lbl.config(text=path)
+
+    def _toggle_watch(self):
+        if self._watcher and self._watcher.is_running:
+            self._stop_watch()
+        else:
+            self._start_watch()
+
+    def _start_watch(self):
+        if not self._watch_input_path:
+            messagebox.showwarning("Watch Folder", "Please select a folder to watch.")
+            return
+        if not self._watch_output_path:
+            messagebox.showwarning("Watch Folder", "Please select an output folder.")
+            return
+
+        cfg = dict(self._cfg)
+
+        self._watcher = _watch_mod.FolderWatcher(
+            watch_path=self._watch_input_path,
+            output_path=self._watch_output_path,
+            cfg=cfg,
+            root=self.root,
+            on_file_queued=self._watch_on_queued,
+            on_file_started=self._watch_on_started,
+            on_file_done=self._watch_on_done,
+            on_error=self._watch_on_error,
+        )
+        self._watcher.start()
+
+        self._btn_watch_start.set_text("Stop Watching")
+        self._watch_status_lbl.config(text="Watching...", fg=self._t.get("accent", "#7c3aed"))
+        self._watch_log_append(f"Started watching: {self._watch_input_path}")
+        self._watch_log_append(f"Output folder: {self._watch_output_path}")
+
+    def _stop_watch(self):
+        if self._watcher:
+            self._watcher.stop()
+        self._btn_watch_start.set_text("Start Watching")
+        self._watch_status_lbl.config(text="Stopped", fg=self._t["text_secondary"])
+        self._watch_log_append("Stopped watching.")
+
+    def _watch_on_queued(self, path: str):
+        filename = os.path.basename(path)
+        self._watch_log_append(f"Detected: {filename}")
+        self._update_watch_counts()
+
+    def _watch_on_started(self, path: str):
+        filename = os.path.basename(path)
+        self._watch_log_append(f"Converting: {filename}...")
+
+    def _watch_on_done(self, path: str, success: bool, message: str):
+        prefix = "  ✓" if success else "  ✗"
+        self._watch_log_append(f"{prefix} {message}")
+        self._update_watch_counts()
+        if success:
+            self._watch_notify(os.path.basename(path))
+
+    def _watch_on_error(self, message: str):
+        self._watch_log_append(f"Error: {message}")
+
+    def _watch_log_append(self, text: str):
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self._watch_log.config(state="normal")
+        self._watch_log.insert("end", f"[{timestamp}] {text}\n")
+        self._watch_log.see("end")
+        self._watch_log.config(state="disabled")
+
+    def _clear_watch_log(self):
+        self._watch_log.config(state="normal")
+        self._watch_log.delete("1.0", "end")
+        self._watch_log.config(state="disabled")
+
+    def _update_watch_counts(self):
+        if self._watcher:
+            c = self._watcher.completed_count
+            f = self._watcher.failed_count
+            self._watch_counts_lbl.config(
+                text=f"Converted: {c}    Failed: {f}")
+
+    def _watch_notify(self, filename: str):
+        """Flash the Watch nav button briefly to signal a completed file."""
+        btn = self._nav_btns.get("Watch")
+        if btn and self._current != "Watch":
+            original_fg = btn.cget("fg")
+            btn.config(fg=self._t.get("accent", "#7c3aed"))
+            self.root.after(2000, lambda: btn.config(fg=original_fg))
 
     # ── Debug / Preview window ──────────────────────────────
 
@@ -1049,6 +1360,235 @@ class App:
 
         text.insert("1.0", "\n".join(lines))
         text.config(state="disabled")
+
+    # ── Preview window ─────────────────────────────────────
+
+    def _show_preview_window(self):
+        """Open a side-by-side preview: source info on the left, converted markdown on the right."""
+        result = getattr(self, "_last_batch_result", None)
+        if result is None or not result.output_root:
+            messagebox.showinfo("Preview", "No conversion results available yet.")
+            return
+
+        t = self._t
+        win = tk.Toplevel(self.root)
+        win.title("Preview — Source vs. Converted Output")
+        win.geometry(f"{int(1100 * self._dpi)}x{int(650 * self._dpi)}")
+        win.minsize(int(800 * self._dpi), int(400 * self._dpi))
+        win.config(bg=t["bg"])
+
+        # Apply dark title bar to preview window
+        try:
+            import ctypes
+            from ctypes import c_int, byref, sizeof
+            win.update_idletasks()
+            client_hwnd = win.winfo_id()
+            hwnd = ctypes.windll.user32.GetParent(client_hwnd)
+            if not hwnd:
+                hwnd = client_hwnd
+            value = c_int(1 if self._dark else 0)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 20, byref(value), sizeof(value))
+        except Exception:
+            pass
+
+        # ── File selector at top ─────────────────────────────
+        top_bar = tk.Frame(win, bg=t["content_bg"])
+        top_bar.pack(fill="x", padx=12, pady=(12, 6))
+
+        tk.Label(top_bar, text="File:", font=_FONT_SMALL,
+                 bg=t["content_bg"], fg=t["text"]).pack(side="left", padx=(0, 8))
+
+        # Collect output files
+        output_files = []
+        if os.path.isdir(result.output_root):
+            for root_dir, dirs, files in os.walk(result.output_root):
+                for fname in files:
+                    if fname.endswith((".md", ".json", ".html", ".txt", ".jsonl")):
+                        output_files.append(os.path.join(root_dir, fname))
+        output_files.sort()
+
+        if not output_files:
+            messagebox.showinfo("Preview", "No output files found in the output folder.")
+            win.destroy()
+            return
+
+        file_display_names = [os.path.relpath(f, result.output_root) for f in output_files]
+        file_var = tk.StringVar(value=file_display_names[0])
+        file_selector = GlassDropdown(
+            top_bar, variable=file_var, options=file_display_names,
+            font=_FONT_SMALL)
+        file_selector.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        # Theme the dropdown
+        file_selector.set_colors(
+            fill=t["content_bg"],
+            fg=t["text"],
+            outline=t["border"],
+            hover_fill=t["content_bg"],
+            hover_fg=t["accent"],
+            hover_outline=t["accent"],
+            parent_bg=t["content_bg"],
+        )
+
+        # ── Paned window: left = source info, right = preview ─
+        paned = tk.PanedWindow(
+            win, orient="horizontal", bg=t["border"],
+            sashwidth=4, sashrelief="flat")
+        paned.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        # ── Left panel: source info ──────────────────────────
+        left_frame = tk.Frame(paned, bg=t["bg"])
+        paned.add(left_frame, width=int(340 * self._dpi), minsize=int(200 * self._dpi))
+
+        tk.Label(left_frame, text="SOURCE INFO", font=_FONT_SECTION,
+                 bg=t["bg"], fg=t["text_secondary"], anchor="w"
+                 ).pack(fill="x", padx=12, pady=(12, 4))
+        tk.Frame(left_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
+
+        source_text = tk.Text(
+            left_frame, font=_FONT_SMALL, wrap="word",
+            bg=t["bg"], fg=t["text"],
+            bd=0, highlightthickness=0,
+            padx=12, pady=8, state="disabled",
+        )
+        source_text.pack(fill="both", expand=True)
+
+        # ── Right panel: markdown preview ────────────────────
+        right_frame = tk.Frame(paned, bg=t["bg"])
+        paned.add(right_frame, minsize=int(300 * self._dpi))
+
+        tk.Label(right_frame, text="CONVERTED OUTPUT", font=_FONT_SECTION,
+                 bg=t["bg"], fg=t["text_secondary"], anchor="w"
+                 ).pack(fill="x", padx=12, pady=(12, 4))
+        tk.Frame(right_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
+
+        preview_frame = tk.Frame(right_frame, bg=t["bg"])
+        preview_frame.pack(fill="both", expand=True)
+        preview_frame.grid_rowconfigure(0, weight=1)
+        preview_frame.grid_columnconfigure(0, weight=1)
+
+        preview_text = tk.Text(
+            preview_frame, font=("Consolas", 11), wrap="word",
+            bg=t["bg"], fg=t["text"],
+            bd=0, highlightthickness=0,
+            padx=12, pady=8, state="disabled",
+        )
+        preview_sb = GlassScrollbar(
+            preview_frame, orient="vertical", command=preview_text.yview)
+        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
+        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        preview_sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
+        preview_text.config(yscrollcommand=preview_sb.set)
+        preview_text.grid(row=0, column=0, sticky="nsew")
+        preview_sb.grid(row=0, column=1, sticky="ns")
+
+        # Configure text tags for syntax highlighting
+        preview_text.tag_configure("heading", font=("Segoe UI", 14, "bold"), foreground=t["accent"])
+        preview_text.tag_configure("heading2", font=("Segoe UI", 12, "bold"), foreground=t["accent"])
+        preview_text.tag_configure("bold", font=("Consolas", 11, "bold"))
+        preview_text.tag_configure("frontmatter", foreground=t["text_secondary"], font=("Consolas", 10))
+        preview_text.tag_configure("table", foreground="#8be9fd" if self._dark else "#0969da")
+        preview_text.tag_configure("page_marker", foreground=t["text_secondary"], font=("Consolas", 10, "italic"))
+
+        def load_file(rel_path):
+            idx = file_display_names.index(rel_path)
+            full_path = output_files[idx]
+
+            # Load source info
+            source_info_lines = []
+            # Find the matching source file
+            stem = os.path.splitext(os.path.basename(full_path))[0]
+            matched_source = None
+            for src in self._selected_files:
+                if os.path.splitext(os.path.basename(src))[0] == stem:
+                    matched_source = src
+                    break
+
+            if matched_source and os.path.exists(matched_source):
+                size = os.path.getsize(matched_source)
+                size_str = f"{size / 1024:.1f} KB" if size < 1048576 else f"{size / 1048576:.1f} MB"
+                ext = os.path.splitext(matched_source)[1].upper()
+                source_info_lines.append(f"File: {os.path.basename(matched_source)}")
+                source_info_lines.append(f"Type: {ext}")
+                source_info_lines.append(f"Size: {size_str}")
+                source_info_lines.append(f"Path: {matched_source}")
+            else:
+                source_info_lines.append(f"Source: {stem}")
+
+            source_info_lines.append("")
+
+            # Show confidence for this file
+            if result.all_confidence:
+                for conf in result.all_confidence:
+                    conf_stem = os.path.splitext(os.path.basename(
+                        conf.source_file))[0] if conf.source_file else ""
+                    if conf_stem == stem:
+                        source_info_lines.append("── Confidence ──")
+                        source_info_lines.append(f"  Overall:         {conf.overall or 'N/A'}")
+                        source_info_lines.append(f"  Text extraction: {conf.text_extraction or 'N/A'}")
+                        source_info_lines.append(f"  Table structure: {conf.table_structure or 'N/A'}")
+                        source_info_lines.append(f"  Image extraction:{conf.image_extraction or 'N/A'}")
+                        source_info_lines.append(f"  Document order:  {conf.document_order or 'N/A'}")
+                        if conf.ocr_confidence:
+                            source_info_lines.append(f"  OCR confidence:  {conf.ocr_confidence}")
+                        if conf.notes:
+                            source_info_lines.append("")
+                            source_info_lines.append("── Notes ──")
+                            for n in conf.notes:
+                                source_info_lines.append(f"  • {n}")
+                        if conf.warnings:
+                            source_info_lines.append("")
+                            source_info_lines.append("── Warnings ──")
+                            for w in conf.warnings:
+                                source_info_lines.append(f"  ⚠ {w}")
+                        break
+
+            source_text.config(state="normal")
+            source_text.delete("1.0", tk.END)
+            source_text.insert("1.0", "\n".join(source_info_lines))
+            source_text.config(state="disabled")
+
+            # Load converted output with syntax highlighting
+            try:
+                with open(full_path, "r", encoding="utf-8") as fh:
+                    content = fh.read()
+            except Exception as e:
+                content = f"Error reading file: {e}"
+
+            preview_text.config(state="normal")
+            preview_text.delete("1.0", tk.END)
+
+            in_frontmatter = False
+            for line in content.split("\n"):
+                if line.strip() == "---" and preview_text.index("end-1c") == "1.0":
+                    in_frontmatter = True
+                    preview_text.insert(tk.END, line + "\n", "frontmatter")
+                    continue
+                if in_frontmatter:
+                    preview_text.insert(tk.END, line + "\n", "frontmatter")
+                    if line.strip() == "---":
+                        in_frontmatter = False
+                    continue
+
+                if line.startswith("# "):
+                    preview_text.insert(tk.END, line + "\n", "heading")
+                elif line.startswith("## ") or line.startswith("### "):
+                    preview_text.insert(tk.END, line + "\n", "heading2")
+                elif line.strip().startswith("|"):
+                    preview_text.insert(tk.END, line + "\n", "table")
+                elif line.strip().startswith("*Page ") or '<a id="page-' in line:
+                    preview_text.insert(tk.END, line + "\n", "page_marker")
+                else:
+                    preview_text.insert(tk.END, line + "\n")
+
+            preview_text.config(state="disabled")
+
+        # Load first file
+        load_file(file_display_names[0])
+
+        # Bind file selector changes
+        file_var.trace_add("write", lambda *_: load_file(file_var.get()))
 
     # ── File picker logic ────────────────────────────────────
 
@@ -1408,6 +1948,69 @@ class App:
             self._file_aliases.pop(path, None)
         self._update_file_list()
 
+    # ── Drag and drop handlers ──────────────────────────────
+
+    def _on_drop_enter(self, event=None):
+        t = self._t
+        self._file_list_frame.config(highlightbackground=t["accent"], highlightthickness=2)
+
+    def _on_drop_leave(self, event=None):
+        t = self._t
+        self._file_list_frame.config(highlightbackground=t["border"], highlightthickness=1)
+
+    def _on_drop(self, event):
+        self._on_drop_leave()
+        raw = event.data
+        # tkdnd delivers paths as a Tcl list; braces wrap paths with spaces
+        paths = self._parse_drop_paths(raw)
+        added = 0
+        skipped_exts = set()
+        for p in paths:
+            p = os.path.normpath(p)
+            if os.path.isdir(p):
+                for entry in sorted(os.listdir(p)):
+                    full = os.path.join(p, entry)
+                    if os.path.isfile(full) and os.path.splitext(entry)[1].lower() in _SUPPORTED_EXTS:
+                        if full not in self._selected_files:
+                            self._selected_files.append(full)
+                            added += 1
+            elif os.path.isfile(p):
+                ext = os.path.splitext(p)[1].lower()
+                if ext in _SUPPORTED_EXTS:
+                    if p not in self._selected_files:
+                        self._selected_files.append(p)
+                        added += 1
+                else:
+                    skipped_exts.add(ext)
+        if added:
+            self._update_file_list()
+        if skipped_exts:
+            messagebox.showinfo(
+                "Unsupported Files Skipped",
+                f"Skipped files with unsupported extensions:\n{', '.join(sorted(skipped_exts))}\n\n"
+                f"Added {added} supported file(s).",
+            )
+
+    @staticmethod
+    def _parse_drop_paths(data: str) -> list[str]:
+        """Parse Tcl list of dropped file paths (handles braces and spaces)."""
+        paths = []
+        i = 0
+        while i < len(data):
+            if data[i] == '{':
+                end = data.index('}', i)
+                paths.append(data[i + 1:end])
+                i = end + 2
+            elif data[i] == ' ':
+                i += 1
+            else:
+                end = data.find(' ', i)
+                if end == -1:
+                    end = len(data)
+                paths.append(data[i:end])
+                i = end + 1
+        return paths
+
     # ── Navigation ──────────────────────────────────────────
 
     def _show(self, name: str):
@@ -1610,6 +2213,27 @@ class App:
 
         self._results_btn_row.config(bg=t["content_bg"])
 
+        # ── Watch-specific widgets ────────────────────────────
+        self._watch_input_row.config(bg=t["content_bg"])
+        self._watch_input_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._watch_input_path_lbl.config(bg=t["bg"], fg=t["text_secondary"])
+
+        self._watch_output_row.config(bg=t["content_bg"])
+        self._watch_output_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._watch_output_path_lbl.config(bg=t["bg"], fg=t["text_secondary"])
+
+        self._watch_ctrl_row.config(bg=t["content_bg"])
+        self._watch_status_lbl.config(bg=t["content_bg"])
+        if not (self._watcher and self._watcher.is_running):
+            self._watch_status_lbl.config(fg=t["text_secondary"])
+        self._watch_counts_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._watch_log_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._watch_log_frame.config(bg=t["bg"], highlightbackground=t["border"])
+        self._watch_log.config(bg=t["bg"], fg=t["text"], insertbackground=t["text"])
+
+        self._watch_btn_row.config(bg=t["content_bg"])
+
         # ── Conversion-specific widgets ───────────────────────
         self._conv_overall_row.config(bg=t["content_bg"])
         self._conv_overall_lbl.config(bg=t["content_bg"], fg=t["text"])
@@ -1692,6 +2316,13 @@ class App:
             widget.config(bg=t["content_bg"])
             for child in widget.winfo_children():
                 self._style_screen_labels(child, t)
+
+    # ── Cleanup ──────────────────────────────────────────────
+
+    def _on_close(self):
+        if self._watcher and self._watcher.is_running:
+            self._watcher.stop()
+        self.root.destroy()
 
     # ── Run ──────────────────────────────────────────────────
 

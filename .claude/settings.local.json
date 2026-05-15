@@ -46,7 +46,8 @@
       "Bash(python -c \"import sys; sys.path.insert\\(0, 'app'\\); from gui.widgets import PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown, set_dpi_scale, _s, _sf; set_dpi_scale\\(1.5\\); print\\(f'_s\\(44\\)={_s\\(44\\)}, _s\\(10\\)={_s\\(10\\)}, _sf\\(1.5\\)={_sf\\(1.5\\)}'\\); print\\('All imports + DPI scaling OK'\\)\")",
       "Bash(py -3 app\\\\main.py)",
       "Bash(py -3 app/main.py)",
-      "PowerShell(Start-Process python -ArgumentList \"app/main.py\" -WorkingDirectory \"C:\\\\Users\\\\klars\\\\Documents\\\\GitHub\\\\Document-to-Markdown-Tool\")"
+      "PowerShell(Start-Process python -ArgumentList \"app/main.py\" -WorkingDirectory \"C:\\\\Users\\\\klars\\\\Documents\\\\GitHub\\\\Document-to-Markdown-Tool\")",
+      "PowerShell(New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_input\" -Force | Out-Null; New-Item -ItemType Directory -Path \"$env:TEMP\\\\watch_test_output\" -Force | Out-Null; Write-Output \"Test folders created at $env:TEMP\\\\watch_test_input and $env:TEMP\\\\watch_test_output\")"
     ]
   }
 }

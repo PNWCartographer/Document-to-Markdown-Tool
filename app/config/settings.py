@@ -19,6 +19,8 @@ DEFAULTS: dict = {
     "quality_preset":         "Quality",
     "ocr_language":           "English",
     "output_format":          "Markdown",
+    "markdown_flavor":        "GFM",
+    "yaml_front_matter":      True,
     "overwrite_existing":     False,
     "output_subfolder":       False,
     "low_confidence_action":  "Ask me",

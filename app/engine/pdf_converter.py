@@ -651,7 +651,7 @@ def _convert_pymupdf(
                 page_parts.append(page_text)
             text_quality_flags.append(bool(page_text.strip()))
         else:
-            text = page.get_text("markdown") or page.get_text("text")
+            text = _extract_page_text_columns(page, page_num, log_info)
             text = text.strip()
             if text:
                 page_parts.append(text)
@@ -748,6 +748,122 @@ def _convert_pymupdf(
     log_info(f"pymupdf conversion complete | pages={total_pages} extracted={extracted_pages}")
     progress(1.0)
     return output
+
+
+# ---------------------------------------------------------------------------
+# Multi-column layout detection and text extraction
+# ---------------------------------------------------------------------------
+
+def _extract_page_text_columns(page, page_num: int, log_info) -> str:
+    """
+    Extract text from a PDF page with multi-column layout awareness.
+
+    Uses text block bounding boxes to detect columns: if blocks cluster
+    into 2-3 distinct horizontal bands with a vertical gap between them,
+    reorder blocks left-to-right by column, then top-to-bottom within
+    each column.
+    """
+    blocks = page.get_text("blocks")
+    # blocks: list of (x0, y0, x1, y1, text, block_no, block_type)
+    # block_type 0 = text, 1 = image
+    text_blocks = [b for b in blocks if b[6] == 0 and b[4].strip()]
+
+    if not text_blocks:
+        return page.get_text("text")
+
+    page_width = page.rect.width
+    if page_width < 1:
+        return page.get_text("text")
+
+    # Find the horizontal midpoints of each block
+    midpoints = [(b[0] + b[2]) / 2 for b in text_blocks]
+
+    # Detect columns by clustering block midpoints
+    cols = _detect_columns(text_blocks, page_width)
+
+    if len(cols) <= 1:
+        # Single column — use default extraction order
+        return page.get_text("text")
+
+    log_info(f"Page {page_num}: detected {len(cols)}-column layout")
+
+    # Sort blocks within each column top-to-bottom by y0
+    ordered_text = []
+    for col_blocks in cols:
+        col_blocks.sort(key=lambda b: b[1])  # sort by y0
+        for b in col_blocks:
+            ordered_text.append(b[4].strip())
+
+    return "\n\n".join(ordered_text)
+
+
+def _detect_columns(text_blocks: list, page_width: float) -> list[list]:
+    """
+    Cluster text blocks into columns based on their x-position.
+
+    Algorithm: sort blocks by x0, then detect gaps wider than 5% of page
+    width between adjacent block groups. Each gap boundary defines a
+    column split.
+    """
+    if len(text_blocks) < 2:
+        return [text_blocks]
+
+    # Collect all block left edges and right edges to find column boundaries
+    blocks_by_x = sorted(text_blocks, key=lambda b: b[0])
+
+    # Build x-ranges for each block
+    x_ranges = [(b[0], b[2], b) for b in blocks_by_x]
+
+    # Find distinct x-position clusters using a gap threshold
+    gap_threshold = page_width * 0.05
+    columns: list[list] = [[]]
+
+    # Sort by center-x to cluster
+    x_ranges.sort(key=lambda r: (r[0] + r[1]) / 2)
+
+    # Use the right edge of blocks to detect column gaps
+    # Group blocks where the center-x values cluster together
+    centers = sorted([(r[0] + r[1]) / 2 for r in x_ranges])
+
+    if len(centers) < 2:
+        return [text_blocks]
+
+    # Find large gaps in center-x positions
+    gaps = []
+    for i in range(len(centers) - 1):
+        gap = centers[i + 1] - centers[i]
+        if gap > gap_threshold:
+            gaps.append((i, gap, (centers[i] + centers[i + 1]) / 2))
+
+    if not gaps:
+        return [text_blocks]
+
+    # Use the largest gap(s) as column boundaries
+    # For 2-column: 1 gap. For 3-column: 2 gaps. Cap at 3 columns.
+    gaps.sort(key=lambda g: g[1], reverse=True)
+    boundaries = sorted([g[2] for g in gaps[:2]])
+
+    # Assign blocks to columns based on their center-x relative to boundaries
+    columns = [[] for _ in range(len(boundaries) + 1)]
+    for b in text_blocks:
+        cx = (b[0] + b[2]) / 2
+        assigned = False
+        for col_idx, boundary in enumerate(boundaries):
+            if cx < boundary:
+                columns[col_idx].append(b)
+                assigned = True
+                break
+        if not assigned:
+            columns[-1].append(b)
+
+    # Filter out empty columns
+    columns = [c for c in columns if c]
+
+    # Only treat as multi-column if each column has at least 2 blocks
+    if all(len(c) >= 2 for c in columns) and len(columns) >= 2:
+        return columns
+
+    return [text_blocks]
 
 
 # ---------------------------------------------------------------------------

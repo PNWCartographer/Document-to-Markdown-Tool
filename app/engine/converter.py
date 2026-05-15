@@ -318,6 +318,8 @@ class ConversionJob:
         overwrite = self._cfg.get("overwrite_existing", False)
         inc_pages = self._cfg.get("preserve_page_numbers", False)
         inc_toc = self._cfg.get("rebuild_toc", False)
+        front_matter = self._cfg.get("yaml_front_matter", False)
+        flavor = self._cfg.get("markdown_flavor", "GFM")
 
         if fmt == "Markdown":
             write_markdown(
@@ -328,6 +330,8 @@ class ConversionJob:
                 include_page_numbers=inc_pages,
                 rebuild_toc=inc_toc,
                 overwrite=overwrite,
+                yaml_front_matter=front_matter,
+                markdown_flavor=flavor,
             )
         else:
             write_alt_format(
