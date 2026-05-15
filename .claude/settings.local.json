@@ -65,7 +65,10 @@
       "Bash(echo \"EXIT_CHECK: $?\")",
       "Bash(python main.py)",
       "Bash(sleep 5 && cat \"/c/Users/klars/AppData/Local/Temp/claude/C--Users-klars-Documents-GitHub-Document-to-Markdown-Tool/318d334a-b327-4caa-b3d0-84800f1a1637/tasks/bcp23lblc.output\" 2>/dev/null || echo \"No errors yet - app likely running\")",
-      "Bash(python -m py_compile engine/dxf_converter.py)"
+      "Bash(python -m py_compile engine/dxf_converter.py)",
+      "Bash(python -m py_compile \"app/gui/app.py\")",
+      "Bash(python -u -c ' *)",
+      "Bash(python -m py_compile \"app/main.py\")"
     ]
   }
 }

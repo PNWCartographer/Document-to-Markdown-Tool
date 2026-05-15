@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
@@ -266,6 +267,31 @@ class App:
         self._watcher: "Optional[_watch_mod.FolderWatcher]" = None
         self._watch_input_path: str = ""
         self._watch_output_path: str = ""
+
+        # ── Global error handler — show crashes instead of dying silently ─
+        def _on_tk_error(exc_type, exc_value, exc_tb):
+            import traceback as _tb
+            msg = "".join(_tb.format_exception(exc_type, exc_value, exc_tb))
+            # Log to stderr (visible when console isn't hidden)
+            import sys as _sys
+            _sys.stderr.write(f"Unhandled error:\n{msg}\n")
+            # Also log to the app log file
+            try:
+                from engine.logger import AppLogger
+                AppLogger().error(f"GUI callback error: {msg}")
+            except Exception:
+                pass
+            # Show a non-blocking messagebox so the app can continue
+            try:
+                messagebox.showerror(
+                    "Unexpected Error",
+                    f"An error occurred:\n\n{exc_value}\n\n"
+                    "The error has been logged. The app will try to continue.",
+                )
+            except Exception:
+                pass
+
+        self.root.report_callback_exception = _on_tk_error
 
         self._build_layout()
         self._apply_theme()
@@ -1557,6 +1583,41 @@ class App:
         text.insert("1.0", "\n".join(lines))
         text.config(state="disabled")
 
+        # ── Export Log button ────────────────────────────────
+        btn_frame = tk.Frame(win, bg=t["bg"])
+        btn_frame.pack(fill="x", padx=12, pady=(4, 12))
+
+        def _export_log():
+            from datetime import datetime
+            default_name = f"conversion_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            path = filedialog.asksaveasfilename(
+                parent=win,
+                title="Save Debug Log",
+                initialfile=default_name,
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            )
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(text.get("1.0", tk.END))
+                btn_export.set_text("✓ Saved")
+                win.after(1500, lambda: btn_export.set_text("Export Log"))
+            except Exception as e:
+                messagebox.showerror("Export Failed", f"Could not save log:\n{e}", parent=win)
+
+        btn_export = PillButton(
+            btn_frame, text="Export Log", font=_FONT_SMALL,
+            style="secondary", padx=14, pady=6,
+            command=_export_log,
+        )
+        btn_export.pack(side="right")
+        btn_export.set_colors(
+            fill=t["bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["bg"],
+        )
+
     # ── Rules Editor dialog ────────────────────────────────
 
     def _show_rules_editor(self):
@@ -1923,19 +1984,39 @@ class App:
 
         file_display_names = [os.path.relpath(f, result.output_root) for f in output_files]
         file_var = tk.StringVar(value=file_display_names[0])
+
+        # ── Copy to clipboard button (pack BEFORE expanding selector) ─
+        current_content = [""]  # mutable container for raw markdown
+
+        def _copy_to_clipboard():
+            win.clipboard_clear()
+            win.clipboard_append(current_content[0])
+            btn_copy.set_text("✓ Copied")
+            win.after(1500, lambda: btn_copy.set_text("Copy Markdown"))
+
+        btn_copy = PillButton(
+            top_bar, text="Copy Markdown", font=_FONT_SMALL,
+            style="secondary", padx=12, pady=5,
+            command=_copy_to_clipboard,
+        )
+        btn_copy.pack(side="right", padx=(4, 0))
+        btn_copy.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        # File selector (packed after right-side buttons so it expands into remaining space)
         file_selector = GlassDropdown(
             top_bar, variable=file_var, options=file_display_names,
             font=_FONT_SMALL)
         file_selector.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        # Theme the dropdown
+        # Theme the dropdown (GlassDropdown uses 'border', not 'outline')
         file_selector.set_colors(
             fill=t["content_bg"],
             fg=t["text"],
-            outline=t["border"],
+            border=t["border"],
             hover_fill=t["content_bg"],
-            hover_fg=t["accent"],
-            hover_outline=t["accent"],
             parent_bg=t["content_bg"],
         )
 
@@ -1971,16 +2052,71 @@ class App:
                  ).pack(fill="x", padx=12, pady=(12, 4))
         tk.Frame(right_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
 
+        # ── Search bar (hidden by default) ───────────────────
+        search_bar = tk.Frame(right_frame, bg=t["content_bg"])
+        # Not packed initially — toggled by Ctrl+F
+
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(
+            search_bar, textvariable=search_var, font=_FONT_SMALL,
+            bg=t["bg"], fg=t["text"], insertbackground=t["text"],
+            bd=0, highlightthickness=1, highlightcolor=t["accent"],
+            highlightbackground=t["border"],
+        )
+        search_entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=4)
+
+        search_count_lbl = tk.Label(
+            search_bar, text="", font=_FONT_SMALL,
+            bg=t["content_bg"], fg=t["text_secondary"],
+        )
+        search_count_lbl.pack(side="left", padx=(0, 4))
+
+        btn_prev_match = PillButton(
+            search_bar, text="Prev", font=_FONT_SMALL,
+            style="secondary", padx=8, pady=3, command=lambda: _prev_match(),
+        )
+        btn_prev_match.pack(side="left", padx=2, pady=4)
+        btn_prev_match.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        btn_next_match = PillButton(
+            search_bar, text="Next", font=_FONT_SMALL,
+            style="secondary", padx=8, pady=3, command=lambda: _next_match(),
+        )
+        btn_next_match.pack(side="left", padx=2, pady=4)
+        btn_next_match.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        btn_close_search = PillButton(
+            search_bar, text="✕", font=_FONT_SMALL,
+            style="secondary", padx=6, pady=3, command=lambda: _close_search(),
+        )
+        btn_close_search.pack(side="right", padx=(2, 8), pady=4)
+        btn_close_search.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        search_matches = []      # list of "line.col" positions
+        search_current_idx = [0]  # mutable index
+        search_visible = [False]
+        search_debounce_id = [None]  # pending after() id for debounce
+
         preview_frame = tk.Frame(right_frame, bg=t["bg"])
         preview_frame.pack(fill="both", expand=True)
         preview_frame.grid_rowconfigure(0, weight=1)
         preview_frame.grid_columnconfigure(0, weight=1)
 
         preview_text = tk.Text(
-            preview_frame, font=("Consolas", 11), wrap="word",
+            preview_frame, font=("Consolas", 11), wrap="none",
             bg=t["bg"], fg=t["text"],
             bd=0, highlightthickness=0,
             padx=12, pady=8, state="disabled",
+            maxundo=0, undo=False,
         )
         preview_sb = GlassScrollbar(
             preview_frame, orient="vertical", command=preview_text.yview)
@@ -1988,24 +2124,96 @@ class App:
         _sb_hover = "#5a5a72" if self._dark else "#9896a8"
         preview_sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
         preview_text.config(yscrollcommand=preview_sb.set)
+
+        # Horizontal scroll via Shift+MouseWheel (no visible scrollbar)
+        def _hscroll(e):
+            preview_text.xview_scroll(-1 * (e.delta // 120), "units")
+            return "break"
+        preview_text.bind("<Shift-MouseWheel>", _hscroll)
         preview_text.grid(row=0, column=0, sticky="nsew")
         preview_sb.grid(row=0, column=1, sticky="ns")
 
-        # Configure text tags for syntax highlighting
+        # ── Text tags for syntax highlighting ────────────────
         preview_text.tag_configure("heading", font=("Segoe UI", 14, "bold"), foreground=t["accent"])
         preview_text.tag_configure("heading2", font=("Segoe UI", 12, "bold"), foreground=t["accent"])
+        preview_text.tag_configure("heading3", font=("Segoe UI", 11, "bold"), foreground=t["accent"])
         preview_text.tag_configure("bold", font=("Consolas", 11, "bold"))
         preview_text.tag_configure("frontmatter", foreground=t["text_secondary"], font=("Consolas", 10))
         preview_text.tag_configure("table", foreground="#8be9fd" if self._dark else "#0969da")
         preview_text.tag_configure("page_marker", foreground=t["text_secondary"], font=("Consolas", 10, "italic"))
+        # New tags
+        _code_bg = "#2a2a3d" if self._dark else "#eef0f4"
+        preview_text.tag_configure("code_block", font=("Consolas", 10),
+                                   background=_code_bg,
+                                   foreground="#a9dc76" if self._dark else "#22863a",
+                                   lmargin1=12, lmargin2=12, rmargin=12)
+        preview_text.tag_configure("inline_code", font=("Consolas", 10),
+                                   background=_code_bg)
+        preview_text.tag_configure("blockquote", font=("Segoe UI", 11, "italic"),
+                                   foreground=t["text_secondary"],
+                                   lmargin1=24, lmargin2=24)
+        preview_text.tag_configure("link", foreground=t["accent"], underline=True)
+        preview_text.tag_configure("hr", foreground=t["border"],
+                                   justify="center", font=("Consolas", 10))
+        preview_text.tag_configure("list_bullet", foreground=t["accent"])
+        preview_text.tag_configure("image_ref",
+                                   foreground=t.get("accent_secondary", t["accent"]))
+        # Search tags (higher priority — raised above other tags)
+        preview_text.tag_configure("search_match",
+                                   background="#ffd700" if self._dark else "#ffeaa7",
+                                   foreground="#000000")
+        preview_text.tag_configure("search_active",
+                                   background=t["accent"],
+                                   foreground=t["text_on_accent"])
+        preview_text.tag_raise("search_match")
+        preview_text.tag_raise("search_active")
+
+        # Image reference list (prevent GC of PhotoImages)
+        preview_images: list = []
+
+        # ── Inline formatting regexes ────────────────────────
+        _RE_INLINE_CODE = re.compile(r'`([^`]+)`')
+        _RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
+        _RE_LINK = re.compile(r'\[([^\]]+)\]\([^)]+\)')
+
+        # ── Image thumbnail helper ───────────────────────────
+        _RE_IMAGE = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+        _IMG_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
+        _RE_LIST = re.compile(r'^(\s*)([-*]|\d+\.)\s')
+
+        def _load_thumbnail(file_dir: str, img_rel: str):
+            """Load an image, return PhotoImage or None."""
+            if img_rel.startswith("data:"):
+                return None
+            abs_path = os.path.normpath(os.path.join(file_dir, img_rel))
+            ext = os.path.splitext(abs_path)[1].lower()
+            if ext not in _IMG_EXTS or not os.path.isfile(abs_path):
+                return None
+            try:
+                from PIL import Image, ImageTk
+                img = Image.open(abs_path)
+                max_w = 400
+                if img.width > max_w:
+                    ratio = max_w / img.width
+                    img = img.resize(
+                        (max_w, int(img.height * ratio)), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                preview_images.append(photo)  # prevent GC
+                return photo
+            except Exception:
+                return None
+
+        # ── load_file — two-pass bulk parser ─────────────────
+        # Pass 1: classify lines (pure Python, no widget calls)
+        # Pass 2: single bulk insert + batch tag application
+        # Images deferred to after_idle for instant window render
 
         def load_file(rel_path):
             idx = file_display_names.index(rel_path)
             full_path = output_files[idx]
 
-            # Load source info
+            # ── Left panel: source info ──────────────────────
             source_info_lines = []
-            # Find the matching source file
             stem = os.path.splitext(os.path.basename(full_path))[0]
             matched_source = None
             for src in self._selected_files:
@@ -2026,7 +2234,6 @@ class App:
 
             source_info_lines.append("")
 
-            # Show confidence for this file
             if result.all_confidence:
                 for conf in result.all_confidence:
                     conf_stem = os.path.splitext(os.path.basename(
@@ -2057,40 +2264,250 @@ class App:
             source_text.insert("1.0", "\n".join(source_info_lines))
             source_text.config(state="disabled")
 
-            # Load converted output with syntax highlighting
+            # ── Right panel: converted markdown ──────────────
             try:
                 with open(full_path, "r", encoding="utf-8") as fh:
                     content = fh.read()
             except Exception as e:
                 content = f"Error reading file: {e}"
 
-            preview_text.config(state="normal")
-            preview_text.delete("1.0", tk.END)
+            current_content[0] = content
+            file_dir = os.path.dirname(full_path)
+
+            # ── Pass 1: classify every line (no widget calls) ─
+            lines = content.split("\n")
+            # Each entry: (tag_or_None, display_text)
+            classified: list[tuple] = []
+            img_entries: list[tuple] = []  # (line_index, img_rel_path)
 
             in_frontmatter = False
-            for line in content.split("\n"):
-                if line.strip() == "---" and preview_text.index("end-1c") == "1.0":
+            in_code_block = False
+            first_line = True
+
+            for line in lines:
+                stripped = line.strip()
+
+                if stripped == "---" and first_line:
                     in_frontmatter = True
-                    preview_text.insert(tk.END, line + "\n", "frontmatter")
+                    classified.append(("frontmatter", line))
+                    first_line = False
                     continue
+                first_line = False
+
                 if in_frontmatter:
-                    preview_text.insert(tk.END, line + "\n", "frontmatter")
-                    if line.strip() == "---":
+                    classified.append(("frontmatter", line))
+                    if stripped == "---":
                         in_frontmatter = False
                     continue
 
+                if stripped.startswith("```"):
+                    in_code_block = not in_code_block
+                    classified.append(("code_block", line))
+                    continue
+                if in_code_block:
+                    classified.append(("code_block", line))
+                    continue
+
+                if (len(stripped) >= 3
+                        and stripped[0] in "-*_"
+                        and stripped == stripped[0] * len(stripped)):
+                    classified.append(("hr", "─" * 50))
+                    continue
+
                 if line.startswith("# "):
-                    preview_text.insert(tk.END, line + "\n", "heading")
-                elif line.startswith("## ") or line.startswith("### "):
-                    preview_text.insert(tk.END, line + "\n", "heading2")
-                elif line.strip().startswith("|"):
-                    preview_text.insert(tk.END, line + "\n", "table")
-                elif line.strip().startswith("*Page ") or '<a id="page-' in line:
-                    preview_text.insert(tk.END, line + "\n", "page_marker")
+                    classified.append(("heading", line))
+                elif line.startswith(("## ", "### ")):
+                    classified.append(("heading2", line))
+                elif line.startswith(("#### ", "##### ", "###### ")):
+                    classified.append(("heading3", line))
+                elif stripped.startswith("|"):
+                    classified.append(("table", line))
+                elif stripped.startswith("*Page ") or '<a id="page-' in line:
+                    classified.append(("page_marker", line))
+                elif stripped.startswith("> ") or stripped == ">":
+                    classified.append(("blockquote", line))
                 else:
-                    preview_text.insert(tk.END, line + "\n")
+                    img_m = _RE_IMAGE.match(stripped)
+                    if img_m:
+                        classified.append(("image_ref", line))
+                        img_entries.append((len(classified) - 1, img_m.group(2)))
+                    else:
+                        classified.append((None, line))
+
+            # ── Pass 2: single bulk insert ────────────────────
+            preview_text.config(state="normal")
+            preview_text.delete("1.0", tk.END)
+            preview_images.clear()
+
+            full_text = "\n".join(disp for _, disp in classified)
+            if full_text:
+                preview_text.insert("1.0", full_text + "\n")
+
+            # ── Pass 3: merge contiguous same-tag lines into runs ─
+            # e.g. 50 frontmatter lines → 1 interval instead of 50
+            tag_runs: dict[str, list[str]] = {}
+            prev_tag = None
+            run_start = 0
+            run_end = 0
+
+            for i, (tag, _) in enumerate(classified):
+                ln = i + 1
+                if tag is not None and tag == prev_tag:
+                    run_end = ln              # extend current run
+                else:
+                    if prev_tag is not None:   # close previous run
+                        tag_runs.setdefault(prev_tag, []).extend(
+                            [f"{run_start}.0", f"{run_end}.end+1c"])
+                    if tag is not None:        # start new run
+                        run_start = ln
+                        run_end = ln
+                    prev_tag = tag
+
+            if prev_tag is not None:           # close final run
+                tag_runs.setdefault(prev_tag, []).extend(
+                    [f"{run_start}.0", f"{run_end}.end+1c"])
+
+            for tag, ranges in tag_runs.items():
+                preview_text.tag_add(tag, *ranges)
+
+            # ── Pass 4: batch inline formatting (one Tcl call per format)
+            inline_ranges: dict[str, list[str]] = {}
+            for i, (tag, text) in enumerate(classified):
+                if tag is not None:
+                    continue
+                ln = i + 1
+                list_m = _RE_LIST.match(text)
+                if list_m:
+                    inline_ranges.setdefault("list_bullet", []).extend(
+                        [f"{ln}.0", f"{ln}.{list_m.end()}"])
+                if "`" in text:
+                    for m in _RE_INLINE_CODE.finditer(text):
+                        inline_ranges.setdefault("inline_code", []).extend(
+                            [f"{ln}.{m.start()}", f"{ln}.{m.end()}"])
+                if "**" in text:
+                    for m in _RE_BOLD.finditer(text):
+                        inline_ranges.setdefault("bold", []).extend(
+                            [f"{ln}.{m.start()}", f"{ln}.{m.end()}"])
+                if "](" in text:
+                    for m in _RE_LINK.finditer(text):
+                        inline_ranges.setdefault("link", []).extend(
+                            [f"{ln}.{m.start()}", f"{ln}.{m.end()}"])
+            for tag, ranges in inline_ranges.items():
+                preview_text.tag_add(tag, *ranges)
 
             preview_text.config(state="disabled")
+            _clear_search_highlights()
+
+            # ── Deferred: image thumbnails (non-blocking) ─────
+            if img_entries:
+                def _load_images():
+                    preview_text.config(state="normal")
+                    offset = 0
+                    for idx, img_rel in img_entries:
+                        photo = _load_thumbnail(file_dir, img_rel)
+                        if photo:
+                            ins_ln = idx + 1 + offset + 1
+                            preview_text.insert(f"{ins_ln}.0", " \n")
+                            preview_text.image_create(
+                                f"{ins_ln}.0", image=photo)
+                            offset += 1
+                    preview_text.config(state="disabled")
+                win.after(50, _load_images)
+
+        # ── Search functions ─────────────────────────────────
+        def _toggle_search(_event=None):
+            if search_visible[0]:
+                _close_search()
+            else:
+                search_bar.pack(fill="x", before=preview_frame)
+                search_visible[0] = True
+                search_entry.focus_set()
+                search_entry.select_range(0, tk.END)
+            return "break"
+
+        def _close_search(_event=None):
+            search_bar.pack_forget()
+            search_visible[0] = False
+            _clear_search_highlights()
+            preview_text.focus_set()
+            return "break"
+
+        def _clear_search_highlights():
+            if search_matches:
+                preview_text.config(state="normal")
+                preview_text.tag_remove("search_match", "1.0", tk.END)
+                preview_text.tag_remove("search_active", "1.0", tk.END)
+                preview_text.config(state="disabled")
+                search_matches.clear()
+            search_current_idx[0] = 0
+            search_count_lbl.config(text="")
+
+        def _do_search(_event=None):
+            _clear_search_highlights()
+            query = search_var.get()
+            if not query:
+                return
+
+            preview_text.config(state="normal")
+            # Collect all matches first, then apply tags in one call
+            start = "1.0"
+            match_ranges: list[str] = []
+            while True:
+                pos = preview_text.search(query, start, stopindex=tk.END, nocase=True)
+                if not pos:
+                    break
+                end = f"{pos}+{len(query)}c"
+                search_matches.append(pos)
+                match_ranges.extend([pos, end])
+                start = end
+            if match_ranges:
+                preview_text.tag_add("search_match", *match_ranges)
+            preview_text.config(state="disabled")
+
+            if search_matches:
+                search_current_idx[0] = 0
+                _highlight_active()
+                search_count_lbl.config(text=f"1/{len(search_matches)}")
+            else:
+                search_count_lbl.config(text="0 results")
+
+        def _highlight_active():
+            preview_text.config(state="normal")
+            preview_text.tag_remove("search_active", "1.0", tk.END)
+            if search_matches:
+                pos = search_matches[search_current_idx[0]]
+                end = f"{pos}+{len(search_var.get())}c"
+                preview_text.tag_add("search_active", pos, end)
+                preview_text.see(pos)
+            preview_text.config(state="disabled")
+
+        def _next_match():
+            if not search_matches:
+                return
+            search_current_idx[0] = (search_current_idx[0] + 1) % len(search_matches)
+            _highlight_active()
+            search_count_lbl.config(
+                text=f"{search_current_idx[0] + 1}/{len(search_matches)}")
+
+        def _prev_match():
+            if not search_matches:
+                return
+            search_current_idx[0] = (search_current_idx[0] - 1) % len(search_matches)
+            _highlight_active()
+            search_count_lbl.config(
+                text=f"{search_current_idx[0] + 1}/{len(search_matches)}")
+
+        # Debounced live search — fires 300ms after last keystroke
+        def _on_search_key(_event=None):
+            if search_debounce_id[0] is not None:
+                win.after_cancel(search_debounce_id[0])
+            search_debounce_id[0] = win.after(300, _do_search)
+
+        # Search bindings
+        search_entry.bind("<Return>", _do_search)
+        search_entry.bind("<Escape>", _close_search)
+        search_var.trace_add("write", _on_search_key)
+        win.bind("<Control-f>", _toggle_search)
 
         # Load first file
         load_file(file_display_names[0])
@@ -2357,7 +2774,10 @@ class App:
         self._log_write(result.status_text)
 
         # Populate Results screen
-        self._populate_results(result)
+        try:
+            self._populate_results(result)
+        except Exception as e:
+            self._log_write(f"Error populating results: {e}")
         self._show("Results")
 
     def _populate_results(self, result: "_converter_mod.BatchResult") -> None:

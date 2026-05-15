@@ -23,5 +23,33 @@ sys.path.insert(0, os.path.dirname(__file__))
 from gui.app import App
 
 if __name__ == "__main__":
-    app = App()
-    app.run()
+    try:
+        app = App()
+        app.run()
+    except Exception:
+        import traceback
+        msg = traceback.format_exc()
+        # Try to show error even if tkinter is not available
+        try:
+            import tkinter as _tk
+            from tkinter import messagebox as _mb
+            _root = _tk.Tk()
+            _root.withdraw()
+            _mb.showerror("Startup Error", f"Failed to start:\n\n{msg}")
+            _root.destroy()
+        except Exception:
+            pass
+        # Also try writing to a log file
+        try:
+            import os, datetime
+            log_dir = os.path.join(
+                os.environ.get("APPDATA", os.path.expanduser("~")),
+                "DocToMarkdown",
+            )
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, "crash.log"), "a", encoding="utf-8") as fh:
+                fh.write(f"\n{'='*60}\n")
+                fh.write(f"Crash at {datetime.datetime.now()}\n")
+                fh.write(msg)
+        except Exception:
+            pass
