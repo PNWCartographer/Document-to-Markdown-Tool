@@ -737,8 +737,11 @@ def _fix_svg_display(svg_string: str) -> str:
     that can be 25–250% of the viewport width.
 
     This function:
-      1. Replaces width/height with reasonable pixel values (800px wide)
-      2. Normalizes stroke-width to ~0.25% of viewBox for clean thin lines
+      1. Adds 3% padding to the viewBox so geometry at the boundary
+         isn't clipped (common for 3D projections where edges land
+         exactly on the extents).
+      2. Replaces width/height with reasonable pixel values (800px wide)
+      3. Normalizes stroke-width to ~0.25% of viewBox for clean thin lines
     """
     # Extract viewBox dimensions
     vb_match = re.search(r'viewBox="([^"]*)"', svg_string)
@@ -757,9 +760,30 @@ def _fix_svg_display(svg_string: str) -> str:
     if vb_w <= 0 or vb_h <= 0:
         return svg_string
 
-    # Set reasonable pixel dimensions (800px wide, proportional height)
+    # ── 1. Add padding to the viewBox ──────────────────────────
+    # ezdxf computes the viewBox from exact geometry extents.
+    # Entities on the boundary (e.g. a 3D cube projected top-down)
+    # have their strokes half-clipped.  A 3% margin on each side
+    # ensures full stroke visibility and a clean inset.
+    pad_x = vb_w * 0.03
+    pad_y = vb_h * 0.03
+    new_vb_x = vb_x - pad_x
+    new_vb_y = vb_y - pad_y
+    new_vb_w = vb_w + 2 * pad_x
+    new_vb_h = vb_h + 2 * pad_y
+
+    # Use .2f (never scientific notation) — MuPDF's SVG parser
+    # cannot handle exponent forms like "1.06e+06" in viewBox.
+    svg_string = re.sub(
+        r'viewBox="[^"]*"',
+        f'viewBox="{new_vb_x:.2f} {new_vb_y:.2f} {new_vb_w:.2f} {new_vb_h:.2f}"',
+        svg_string,
+        count=1,
+    )
+
+    # ── 2. Set reasonable pixel dimensions (800px wide) ────────
     target_width = 800
-    aspect = vb_h / vb_w
+    aspect = new_vb_h / new_vb_w
     target_height = max(200, min(int(target_width * aspect), 1200))
 
     # Replace width and height attributes on the root <svg> element
@@ -776,12 +800,12 @@ def _fix_svg_display(svg_string: str) -> str:
         count=1,
     )
 
-    # Normalize stroke-width to ~0.25% of the viewBox largest dimension.
-    # This produces clean thin lines (~2px at 800px display width)
-    # regardless of model scale.  Use .6g formatting so that small-viewBox
-    # models (e.g. a 1-unit cube) keep enough precision instead of
+    # ── 3. Normalize stroke-width ──────────────────────────────
+    # ~0.25% of the viewBox largest dimension produces clean thin
+    # lines (~2px at 800px display width).  Use .6g formatting so
+    # small-viewBox models keep enough precision instead of
     # rounding to "0.0" (which makes strokes invisible).
-    ideal_stroke = max(max(vb_w, vb_h) * 0.0025, 1e-6)
+    ideal_stroke = max(max(new_vb_w, new_vb_h) * 0.0025, 1e-6)
     svg_string = re.sub(
         r'stroke-width:\s*[\d.eE+\-]+',
         f'stroke-width: {ideal_stroke:.6g}',
