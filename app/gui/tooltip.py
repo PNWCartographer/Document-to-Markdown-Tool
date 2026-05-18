@@ -29,14 +29,25 @@ class Tooltip:
 
     def _cancel(self, _event=None):
         if self._job:
-            self._widget.after_cancel(self._job)
+            try:
+                self._widget.after_cancel(self._job)
+            except Exception:
+                pass
             self._job = None
         if self._win:
-            self._win.destroy()
+            try:
+                self._win.destroy()
+            except Exception:
+                pass
             self._win = None
 
     def _show(self):
         self._job = None
+        try:
+            if not self._widget.winfo_exists():
+                return
+        except Exception:
+            return
         t = self._get_theme()
 
         wx = self._widget.winfo_rootx()

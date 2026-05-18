@@ -8,6 +8,7 @@
 # Primary document conversion engine
 # ---------------------------------------------------------------------------
 docling>=2.0.0                  # PDF, DOCX, XLSX, images — AI-powered layout analysis
+                                # NOTE: optional — the app works without it using fallback engines
 
 # ---------------------------------------------------------------------------
 # PDF support (fast fallback + image extraction)
@@ -71,6 +72,11 @@ ezdxf>=1.4.0                    # AutoCAD DXF parsing, text extraction, SVG rend
 # ---------------------------------------------------------------------------
 fast-langdetect>=1.0.0          # FastText-based language detection (~1MB, 95% accuracy)
 argostranslate>=1.11.0          # Fully offline translation (~30 languages, pip-installable)
+
+# ---------------------------------------------------------------------------
+# File-system watching
+# ---------------------------------------------------------------------------
+watchdog>=4.0.0                 # file-system event monitoring (output folder watch, live reload)
 
 # ---------------------------------------------------------------------------
 # Image processing

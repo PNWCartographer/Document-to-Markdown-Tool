@@ -68,7 +68,12 @@
       "Bash(python -m py_compile engine/dxf_converter.py)",
       "Bash(python -m py_compile \"app/gui/app.py\")",
       "Bash(python -u -c ' *)",
-      "Bash(python -m py_compile \"app/main.py\")"
+      "Bash(python -m py_compile \"app/main.py\")",
+      "Bash(python -m py_compile app/engine/pptx_converter.py)",
+      "Bash(python -m py_compile app/engine/docx_converter.py)",
+      "Bash(python -m py_compile app/engine/epub_converter.py)",
+      "Bash(python -m py_compile app/engine/table_extractor.py)",
+      "Bash(python -m py_compile app/engine/post_processors.py)"
     ]
   }
 }

@@ -11,7 +11,6 @@ The caller (pdf_converter) decides when to invoke these based on whether
 docling already extracted a satisfactory table.
 """
 
-import os
 from dataclasses import dataclass, field
 from typing import Optional
 

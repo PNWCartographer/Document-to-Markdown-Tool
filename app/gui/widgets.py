@@ -133,11 +133,18 @@ class PillButton(tk.Canvas):
 
     # ── Public API ──────────────────────────────────────────
 
-    def set_colors(self, *, fill="", fg="#fff", outline="",
+    def set_colors(self, *, fill="", fg="#fff", outline="", border="",
                    hover_fill="", hover_fg="", hover_outline="",
                    disabled_fill="", disabled_fg="#555",
                    parent_bg=None):
-        """Set all colour slots and redraw."""
+        """Set all colour slots and redraw.
+
+        Both ``outline`` and ``border`` are accepted for the outline
+        colour.  If only ``border`` is supplied it is used as
+        ``outline``, keeping the API consistent with GlassDropdown.
+        """
+        if border and not outline:
+            outline = border
         self._fill = fill
         self._fg = fg
         self._outline_c = outline
@@ -289,10 +296,21 @@ class ToggleSwitch(tk.Canvas):
 
         self.bind("<ButtonRelease-1>", self._on_click)
 
+        self._trace_name = None
         if self._var:
-            self._var.trace_add("write", self._on_var_changed)
+            self._trace_name = self._var.trace_add("write", self._on_var_changed)
 
         self.after_idle(self._draw)
+
+    def destroy(self):
+        """Remove the variable trace before destroying the widget."""
+        if self._var and self._trace_name is not None:
+            try:
+                self._var.trace_remove("write", self._trace_name)
+            except Exception:
+                pass
+            self._trace_name = None
+        super().destroy()
 
     # ── Public API ──────────────────────────────────────────
 
@@ -604,10 +622,18 @@ class GlassDropdown(tk.Canvas):
 
     # ── Public API ──────────────────────────────────────────
 
-    def set_colors(self, *, fill="", fg="", border="", hover_fill="",
+    def set_colors(self, *, fill="", fg="", border="", outline="",
+                   hover_fill="",
                    popup_bg="", popup_fg="", popup_hover_bg="",
                    popup_accent="", chevron="", parent_bg=None):
-        """Set all colour slots and redraw."""
+        """Set all colour slots and redraw.
+
+        Both ``border`` and ``outline`` are accepted for the border
+        colour.  If only ``outline`` is supplied it is used as
+        ``border``, keeping the API consistent with PillButton.
+        """
+        if outline and not border:
+            border = outline
         if fill:           self._fill = fill
         if fg:             self._fg = fg
         if border:         self._border_c = border

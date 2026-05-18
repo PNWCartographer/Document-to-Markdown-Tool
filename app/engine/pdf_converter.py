@@ -80,19 +80,19 @@ def convert(
 
     progress(0.06)
 
+    pp_settings = dict(
+        remove_headers_footers=remove_headers_footers,
+        skip_blank_pages=skip_blank_pages,
+        strip_line_numbers=strip_line_numbers,
+        detect_code_blocks=detect_code_blocks,
+        detect_footnotes=detect_footnotes,
+        detect_equations=detect_equations,
+    )
+
     # ------------------------------------------------------------------
     # Standard path: docling → pymupdf4llm → pymupdf
     # ------------------------------------------------------------------
     if conversion_mode == "Standard":
-
-        pp_settings = dict(
-            remove_headers_footers=remove_headers_footers,
-            skip_blank_pages=skip_blank_pages,
-            strip_line_numbers=strip_line_numbers,
-            detect_code_blocks=detect_code_blocks,
-            detect_footnotes=detect_footnotes,
-            detect_equations=detect_equations,
-        )
 
         if _docling_available():
             try:
@@ -783,9 +783,6 @@ def _extract_page_text_columns(page, page_num: int, log_info) -> str:
     page_width = page.rect.width
     if page_width < 1:
         return page.get_text("text")
-
-    # Find the horizontal midpoints of each block
-    midpoints = [(b[0] + b[2]) / 2 for b in text_blocks]
 
     # Detect columns by clustering block midpoints
     cols = _detect_columns(text_blocks, page_width)

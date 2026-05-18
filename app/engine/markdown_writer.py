@@ -63,6 +63,7 @@ class ConversionOutput:
     confidence: Optional[ConfidenceResult] = None
     warnings: list[str] = field(default_factory=list)
     engine_used: str = ""
+    metadata: dict = field(default_factory=dict)  # converter-specific extras (e.g. DXF title block)
 
     def add_section(
         self,

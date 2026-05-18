@@ -15,6 +15,8 @@ DARK = {
     "nav_active_bg":    "#1e1e30",      # Active nav item
     "nav_hover_bg":     "#1a1a2c",      # Nav hover
     "content_bg":       "#121220",      # Content area
+    "scrollbar_thumb":  "#3a3a52",      # Scrollbar thumb default
+    "scrollbar_hover":  "#5a5a72",      # Scrollbar thumb hover
 }
 
 LIGHT = {
@@ -30,4 +32,6 @@ LIGHT = {
     "nav_active_bg":    "#ffffff",      # White active nav
     "nav_hover_bg":     "#e4e2ee",      # Light hover
     "content_bg":       "#f6f4fe",      # Content area
+    "scrollbar_thumb":  "#b5b3c4",      # Scrollbar thumb default
+    "scrollbar_hover":  "#9896a8",      # Scrollbar thumb hover
 }

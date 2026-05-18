@@ -310,7 +310,7 @@ def convert(
     confidence.derive_overall()
 
     # Store title block metadata for front-matter enrichment
-    output._dxf_metadata = title_block
+    output.metadata["dxf_title_block"] = title_block
 
     progress(1.0)
     log_info("DXF conversion complete.")

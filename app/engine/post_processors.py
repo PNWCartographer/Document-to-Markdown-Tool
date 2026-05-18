@@ -351,48 +351,6 @@ def _guess_language(lines: list[str]) -> str:
     return ""
 
 
-def detect_code_blocks_by_font(blocks: list[dict]) -> list[dict]:
-    """
-    For pymupdf path: analyze fitz block metadata to detect code blocks.
-
-    Each block dict should have at minimum:
-      - "text": str
-      - "font": str (font name)
-
-    Marks blocks with monospace fonts as code. Contiguous monospace blocks
-    are merged into a single code fence.
-
-    Returns modified blocks with code content wrapped in ``` fences.
-    """
-    if not blocks:
-        return blocks
-
-    result: list[dict] = []
-    code_buffer: list[dict] = []
-
-    def flush_code():
-        if code_buffer:
-            code_text = "\n".join(b["text"] for b in code_buffer)
-            lang = _guess_language(code_text.splitlines())
-            merged = dict(code_buffer[0])
-            merged["text"] = f"```{lang}\n{code_text}\n```"
-            result.append(merged)
-            code_buffer.clear()
-
-    for block in blocks:
-        font = block.get("font", "").lower()
-        is_mono = any(mf in font for mf in _MONOSPACE_FONTS)
-
-        if is_mono and block.get("text", "").strip():
-            code_buffer.append(block)
-        else:
-            flush_code()
-            result.append(block)
-
-    flush_code()
-    return result
-
-
 # ---------------------------------------------------------------------------
 # 5. Footnote Handling
 # ---------------------------------------------------------------------------
@@ -487,49 +445,6 @@ def detect_footnotes_in_markdown(text: str) -> str:
         footnote_defs.append(f"[^{num}]: {definitions[num]}")
 
     return body_text + "\n\n" + "\n".join(footnote_defs)
-
-
-def detect_footnotes_pymupdf(
-    blocks: list[dict],
-    page_height: float,
-    body_font_size: float = 12.0,
-) -> tuple[list[dict], list[str]]:
-    """
-    For pymupdf path: detect footnotes based on position and font size.
-
-    Footnotes are typically:
-      - In the bottom 15-20% of the page
-      - Rendered in a smaller font size than body text
-      - Preceded by a horizontal separator line
-
-    Parameters:
-      blocks: list of dicts with "text", "y" (vertical position), "font_size"
-      page_height: height of the page in points
-      body_font_size: estimated body text font size
-
-    Returns:
-      (body_blocks, footnote_texts) where footnotes are extracted as strings.
-    """
-    if not blocks:
-        return blocks, []
-
-    footnote_zone_y = page_height * 0.80  # bottom 20%
-    footnote_size_threshold = body_font_size * 0.85  # noticeably smaller
-
-    body_blocks = []
-    footnotes = []
-
-    for block in blocks:
-        y = block.get("y", 0)
-        size = block.get("font_size", body_font_size)
-        text = block.get("text", "").strip()
-
-        if y >= footnote_zone_y and size <= footnote_size_threshold and text:
-            footnotes.append(text)
-        else:
-            body_blocks.append(block)
-
-    return body_blocks, footnotes
 
 
 # ---------------------------------------------------------------------------

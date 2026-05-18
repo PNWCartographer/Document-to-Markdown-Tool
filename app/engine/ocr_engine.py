@@ -64,6 +64,7 @@ _configure_tesseract()
 
 # Cached engine instances (initialized once per process)
 _paddle_engine = None
+_paddle_lang: Optional[str] = None
 _paddle_available: Optional[bool] = None
 _tesseract_available: Optional[bool] = None
 
@@ -200,15 +201,16 @@ _PADDLE_LANG_MAP = {
 
 
 def _get_paddle_engine(language: str):
-    global _paddle_engine
-    if _paddle_engine is None:
+    global _paddle_engine, _paddle_lang
+    lang = _PADDLE_LANG_MAP.get(language, "en")
+    if _paddle_engine is None or _paddle_lang != lang:
         from paddleocr import PaddleOCR
-        lang = _PADDLE_LANG_MAP.get(language, "en")
         _paddle_engine = PaddleOCR(
             use_angle_cls=True,
             lang=lang,
             show_log=False,
         )
+        _paddle_lang = lang
     return _paddle_engine
 
 

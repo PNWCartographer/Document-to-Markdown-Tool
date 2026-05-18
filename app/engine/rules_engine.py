@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 
-_PROFILES_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "rule_profiles.json")
+_PROFILES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "rule_profiles.json")
 
 
 @dataclass

@@ -32,7 +32,6 @@ def convert(
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
     from pptx import Presentation
-    from pptx.util import Emu
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
     output = ConversionOutput(source_file=source_file, alias=alias)

@@ -24,7 +24,7 @@ import re
 from typing import Optional, Callable
 
 from .confidence import ConfidenceResult
-from .markdown_writer import ConversionOutput, DocumentSection, rows_to_markdown_table
+from .markdown_writer import ConversionOutput, rows_to_markdown_table
 from .logger import ConversionLogger
 
 

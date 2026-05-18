@@ -121,7 +121,6 @@ def _convert_docling(
     pp_settings: Optional[dict] = None,
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
-    from docling.datamodel.base_models import InputFormat
 
     log_info("Using docling engine for DOCX.")
     progress(0.1)

@@ -23,6 +23,7 @@ DEFAULTS: dict = {
     "yaml_front_matter":      True,
     "overwrite_existing":     False,
     "output_subfolder":       False,
+    # Consumed by the GUI layer (gui/app.py), not the conversion engine.
     "low_confidence_action":  "Ask me",
     "auto_translate":         True,
     "dxf_svg_preview":        True,

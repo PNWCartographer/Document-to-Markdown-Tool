@@ -13,9 +13,10 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 | PDF | `.pdf` | docling (AI layout analysis) with pymupdf4llm and pymupdf+OCR fallbacks |
 | Word | `.docx`, `.doc` | docling with mammoth and python-docx fallbacks |
 | Excel | `.xlsx`, `.xls` | openpyxl / xlrd with pandas table building |
-| CSV | `.csv` | pandas |
+| CSV | `.csv` | pandas with stdlib csv fallback |
 | PowerPoint | `.pptx` | python-pptx (slides, tables, images, speaker notes) |
 | EPUB | `.epub` | ebooklib + BeautifulSoup (chapters, images, TOC) |
+| DXF | `.dxf` | ezdxf (layers, text, dimensions, title block, SVG preview) |
 | Images | `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.gif` | PaddleOCR with Tesseract fallback |
 
 ### Output Formats
@@ -34,7 +35,8 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Multi-engine pipeline with automatic fallback chains
 - OCR support for scanned documents and images (PaddleOCR + Tesseract)
 - Auto-detection of file types and best conversion method
-- Batch conversion with cancel support
+- Batch conversion with parallel workers and cancel support
+- DXF engineering drawing conversion with SVG preview rendering
 
 ### Content Handling
 - Image preservation with asset extraction and Markdown links
@@ -47,12 +49,23 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Code block detection (monospace font and pattern analysis)
 - Footnote handling (converts to Markdown footnote syntax)
 - Equation detection (preserves math as LaTeX notation)
+- Offline translation of non-English OCR text
 
 ### Output
 - Five output formats: Markdown, JSON, HTML, Plain Text, RAG Chunks
+- Markdown flavor selection (GFM, CommonMark, Basic)
+- Optional YAML front matter with conversion metadata
 - Confidence reporting across six dimensions
 - Per-file conversion logging
 - Organized subfolder output structure
+- Post-processing rules engine with named profiles
+
+### Quality Validation
+- Structural summary (heading, table, image, page, word counts)
+- Heading hierarchy validation (detects skipped levels)
+- Broken link detection
+- Missing alt-text flagging
+- Flesch-Kincaid readability scoring
 
 ### Performance
 - Parallel workers (1, 2, 4, or Auto) for batch processing
@@ -61,10 +74,18 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Quality mode enables all engines for maximum accuracy
 
 ### Interface
-- Light and dark themes with Windows title bar integration
+- Darksquare light and dark themes with Windows title bar integration
+- Drag-and-drop file input (tkinterdnd2)
+- Preview window with syntax-highlighted Markdown output
+  - Code blocks, inline code, blockquotes, links, headings, tables, lists
+  - Image thumbnails rendered inline
+  - Ctrl+F search with live debounced highlighting
+  - Copy Markdown to clipboard
+- Debug Info window with Export Log
+- Watch Folder mode for automated conversion
 - Tooltip system for every setting
-- Debug/preview mode on the Results screen
 - Settings persistence across sessions
+- Global error handler with visible crash reporting
 
 ## Quick Start
 
@@ -85,7 +106,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 3. Launch the application:
 
    ```
-   python -m app.gui.app
+   python app/main.py
    ```
 
 The first run may download AI models for docling and PaddleOCR (approximately 1-2 GB). Models are cached locally after download and all processing remains offline.
@@ -105,12 +126,19 @@ The first run may download AI models for docling and PaddleOCR (approximately 1-
 | Detect Code Blocks | On | Wrap source code sections in code fences |
 | Detect Footnotes | On | Convert footnotes to Markdown footnote syntax |
 | Detect Equations | On | Preserve math expressions as LaTeX notation |
+| Auto Translate | On | Translate non-English OCR text to English offline |
+| DXF SVG Preview | On | Render SVG preview images for DXF drawings |
+| OCR Engine | Auto | Preferred OCR engine (Auto, PaddleOCR, Tesseract) |
 | Parallel Workers | 1 | Number of files to convert simultaneously (1, 2, 4, Auto) |
 | Quality Preset | Quality | Speed vs. accuracy tradeoff (Fast, Balanced, Quality) |
 | OCR Language | English | Language for OCR text recognition |
+| Markdown Flavor | GFM | Markdown output style (GFM, CommonMark, Basic) |
+| YAML Front Matter | Off | Prepend metadata block to output files |
 | Output Format | Markdown | Output file format |
 | Overwrite Existing | Off | Replace existing output files |
 | Output Subfolder | Off | Create per-document subfolders in output |
+| Rules Profile | None | Post-processing rules profile to apply |
+| Theme | Dark | Interface theme (Dark, Light) |
 | Low Confidence Action | Ask me | What to do when conversion confidence is low |
 
 ## Output Structure
@@ -132,23 +160,35 @@ output/
 
 ```
 app/
+  main.py               # Entry point: DPI awareness, console hide, crash guard
   gui/
-    app.py              # tkinter GUI (Home, Settings, Conversion, Results screens)
+    app.py               # tkinter GUI (Home, Settings, Conversion, Results screens)
+    widgets.py           # Custom widgets (PillButton, ToggleSwitch, GlassScrollbar,
+                         #   GlassDropdown, PillProgressBar, Tooltip)
+    theme.py             # Dark and light theme color definitions
   config/
-    settings.py         # Settings persistence and defaults
+    settings.py          # Settings persistence, defaults, and load/save
   engine/
-    converter.py        # Conversion job orchestration, parallel workers, quality presets
-    pdf_converter.py    # PDF conversion (docling -> pymupdf4llm -> pymupdf+OCR)
-    docx_converter.py   # DOCX conversion (docling -> mammoth -> python-docx)
-    xlsx_converter.py   # Excel/CSV conversion
-    pptx_converter.py   # PowerPoint conversion
-    epub_converter.py   # EPUB e-book conversion
-    image_converter.py  # Image OCR conversion
-    post_processors.py  # Text cleaning pipeline (headers, code blocks, footnotes, etc.)
-    output_formats.py   # Output format builders (Markdown, JSON, HTML, Text, RAG Chunks)
-    markdown_writer.py  # Markdown assembly and asset management
-    confidence.py       # Confidence scoring and reporting
-    logger.py           # Per-file conversion logging
+    converter.py         # Conversion job orchestration, parallel workers, quality presets
+    pdf_converter.py     # PDF conversion (docling -> pymupdf4llm -> pymupdf+OCR)
+    docx_converter.py    # DOCX conversion (docling -> mammoth -> python-docx)
+    xlsx_converter.py    # Excel conversion (openpyxl -> pandas fallback)
+    csv_converter.py     # CSV conversion (pandas -> stdlib csv fallback)
+    pptx_converter.py    # PowerPoint conversion
+    epub_converter.py    # EPUB e-book conversion
+    dxf_converter.py     # DXF engineering drawing conversion (ezdxf + SVG preview)
+    image_converter.py   # Image OCR conversion
+    ocr_engine.py        # OCR orchestration (PaddleOCR + Tesseract)
+    language_tools.py    # Offline translation (argostranslate)
+    table_extractor.py   # Advanced table structure extraction
+    post_processors.py   # Text cleaning pipeline (headers, code blocks, footnotes, etc.)
+    rules_engine.py      # Named post-processing rule profiles
+    output_formats.py    # Output format builders (Markdown, JSON, HTML, Text, RAG Chunks)
+    markdown_writer.py   # Markdown assembly and asset management
+    confidence.py        # Confidence scoring and reporting
+    validation.py        # Output quality validation (structure, links, readability)
+    logger.py            # Per-file conversion logging and app-level logging
+    watch_folder.py      # Watch Folder automated conversion (watchdog)
 ```
 
 The conversion pipeline flows: **GUI -> ConversionJob -> Engine Converters -> Post-Processors -> Output Writers**.

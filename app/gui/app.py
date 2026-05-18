@@ -268,6 +268,11 @@ class App:
         self._watch_input_path: str = ""
         self._watch_output_path: str = ""
 
+        # Centralized scroll target to avoid bind_all/unbind_all conflicts.
+        # Each scrollable area sets this on <Enter>; the single global
+        # mousewheel handler scrolls whichever canvas is active.
+        self._scroll_target = None
+
         # ── Global error handler — show crashes instead of dying silently ─
         def _on_tk_error(exc_type, exc_value, exc_tb):
             import traceback as _tb
@@ -292,6 +297,20 @@ class App:
                 pass
 
         self.root.report_callback_exception = _on_tk_error
+
+        # ── Global mousewheel: scroll whichever canvas owns focus ──
+        def _global_mousewheel(e):
+            target = self._scroll_target
+            if target:
+                target.yview_scroll(self._scroll_units(e), "units")
+        self.root.bind_all("<MouseWheel>", _global_mousewheel)
+        # Linux uses Button-4 / Button-5 for scroll events
+        self.root.bind_all("<Button-4>",
+                           lambda e: self._scroll_target.yview_scroll(-3, "units")
+                           if self._scroll_target else None)
+        self.root.bind_all("<Button-5>",
+                           lambda e: self._scroll_target.yview_scroll(3, "units")
+                           if self._scroll_target else None)
 
         self._build_layout()
         self._apply_theme()
@@ -409,16 +428,6 @@ class App:
         tk.Label(parent, text=subtitle, font=_FONT_BODY, anchor="w",
                  wraplength=560, justify="left").grid(
             row=sub_row, column=0, sticky="w", padx=32, pady=(0, 20))
-
-    def _placeholder(self, parent, text: str, row: int, height: int = 120):
-        box = tk.Frame(parent, height=height, highlightthickness=1)
-        box.grid(row=row, column=0, sticky="ew", padx=32, pady=6)
-        box.grid_propagate(False)
-        box.grid_rowconfigure(0, weight=1)
-        box.grid_columnconfigure(0, weight=1)
-        lbl = tk.Label(box, text=text, font=_FONT_SMALL, anchor="center")
-        lbl.grid(row=0, column=0, sticky="nsew")
-        return box, lbl
 
     def _build_home(self):
         f = self._new_screen("Home")
@@ -633,12 +642,11 @@ class App:
         self._settings_content.bind("<Configure>", _on_content_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
 
-        def _on_mousewheel(e):
-            canvas.yview_scroll(-1 * (e.delta // 120), "units")
         self._settings_scroll_outer.bind(
-            "<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', canvas))
         self._settings_scroll_outer.bind(
-            "<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
+            if self._scroll_target is canvas else None)
 
         self._settings_canvas = canvas
 
@@ -1020,12 +1028,11 @@ class App:
         rc.bind("<Configure>", _on_rc_configure)
         r_canvas.bind("<Configure>", _on_rcanvas_configure)
 
-        def _on_results_mousewheel(e):
-            r_canvas.yview_scroll(-1 * (e.delta // 120), "units")
         self._results_scroll_outer.bind(
-            "<Enter>", lambda _e: r_canvas.bind_all("<MouseWheel>", _on_results_mousewheel))
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', r_canvas))
         self._results_scroll_outer.bind(
-            "<Leave>", lambda _e: r_canvas.unbind_all("<MouseWheel>"))
+            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
+            if self._scroll_target is r_canvas else None)
 
         self._results_canvas = r_canvas
         self._results_content = rc
@@ -1525,8 +1532,8 @@ class App:
             padx=12, pady=10,
         )
         sb = GlassScrollbar(text_frame, orient="vertical", command=text.yview)
-        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
-        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        _sb_thumb = t["scrollbar_thumb"]
+        _sb_hover = t["scrollbar_hover"]
         sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
         text.config(yscrollcommand=sb.set)
         text.grid(row=0, column=0, sticky="nsew")
@@ -1946,21 +1953,6 @@ class App:
         win.config(bg=t["bg"])
         self._set_titlebar_dark(self._dark, win)
 
-        # Apply dark title bar to preview window
-        try:
-            import ctypes
-            from ctypes import c_int, byref, sizeof
-            win.update_idletasks()
-            client_hwnd = win.winfo_id()
-            hwnd = ctypes.windll.user32.GetParent(client_hwnd)
-            if not hwnd:
-                hwnd = client_hwnd
-            value = c_int(1 if self._dark else 0)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, 20, byref(value), sizeof(value))
-        except Exception:
-            pass
-
         # ── File selector at top ─────────────────────────────
         top_bar = tk.Frame(win, bg=t["content_bg"])
         top_bar.pack(fill="x", padx=12, pady=(12, 6))
@@ -2120,14 +2112,14 @@ class App:
         )
         preview_sb = GlassScrollbar(
             preview_frame, orient="vertical", command=preview_text.yview)
-        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
-        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        _sb_thumb = t["scrollbar_thumb"]
+        _sb_hover = t["scrollbar_hover"]
         preview_sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
         preview_text.config(yscrollcommand=preview_sb.set)
 
         # Horizontal scroll via Shift+MouseWheel (no visible scrollbar)
         def _hscroll(e):
-            preview_text.xview_scroll(-1 * (e.delta // 120), "units")
+            preview_text.xview_scroll(self._scroll_units(e), "units")
             return "break"
         preview_text.bind("<Shift-MouseWheel>", _hscroll)
         preview_text.grid(row=0, column=0, sticky="nsew")
@@ -2412,6 +2404,10 @@ class App:
                                 f"{ins_ln}.0", image=photo)
                             offset += 1
                     preview_text.config(state="disabled")
+                    # Image insertion shifts line numbers — refresh search
+                    # results so match positions stay correct.
+                    if search_visible[0] and search_var.get():
+                        _do_search()
                 win.after(50, _load_images)
 
         # ── Search functions ─────────────────────────────────
@@ -2603,8 +2599,8 @@ class App:
                         bg=t["bg"], fg=t["text"], highlightthickness=0,
                         selectmode=tk.EXTENDED, activestyle="none")
         sb = GlassScrollbar(list_frame, orient="vertical", command=lb.yview)
-        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
-        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        _sb_thumb = t["scrollbar_thumb"]
+        _sb_hover = t["scrollbar_hover"]
         sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
         lb.config(yscrollcommand=sb.set)
         lb.grid(row=0, column=0, sticky="nsew", padx=(4, 0), pady=4)
@@ -2692,8 +2688,13 @@ class App:
                 "Complete a conversion to open the output folder.",
             )
             return
-        import subprocess
-        subprocess.Popen(f'explorer "{path}"')
+        import subprocess, sys as _sys
+        if _sys.platform == "win32":
+            os.startfile(path)
+        elif _sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
 
     def _on_cancel_conversion(self):
         if self._active_job and self._active_job.is_running():
@@ -3158,8 +3159,8 @@ class App:
             selectforeground=t["text_on_accent"],
         )
         # GlassScrollbar theming
-        _sb_thumb = "#3a3a52" if self._dark else "#b5b3c4"
-        _sb_hover = "#5a5a72" if self._dark else "#9896a8"
+        _sb_thumb = t["scrollbar_thumb"]
+        _sb_hover = t["scrollbar_hover"]
         for sb in self._glass_scrollbars:
             sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover,
                           parent_bg=t["bg"])
@@ -3313,9 +3314,21 @@ class App:
             for child in widget.winfo_children():
                 self._style_screen_labels(child, t)
 
+    @staticmethod
+    def _scroll_units(event) -> int:
+        """Normalize mousewheel delta to scroll units across platforms."""
+        import sys as _sys
+        if event.delta:
+            if _sys.platform == "darwin":
+                return -event.delta
+            return -1 * (event.delta // 120)
+        return 0
+
     # ── Cleanup ──────────────────────────────────────────────
 
     def _on_close(self):
+        if self._active_job and self._active_job.is_running():
+            self._active_job.cancel()
         if self._watcher and self._watcher.is_running:
             self._watcher.stop()
         self.root.destroy()

@@ -235,15 +235,19 @@ def translate_lines(
 
     translated_lines = translated_batch.split(separator)
 
+    # Safety check: if line count doesn't match, fall back to returning
+    # the full translated block as a single entry rather than crashing
+    if len(translated_lines) != len(lines):
+        return [(lines[0], translated_batch.strip())] + [
+            (line, None) for line in lines[1:]
+        ]
+
     results = []
     for i, original in enumerate(lines):
-        if i < len(translated_lines):
-            trans = translated_lines[i].strip()
-            # Only include translation if it's meaningfully different
-            if trans and trans.lower() != original.lower():
-                results.append((original, trans))
-            else:
-                results.append((original, None))
+        trans = translated_lines[i].strip()
+        # Only include translation if it's meaningfully different
+        if trans and trans.lower() != original.lower():
+            results.append((original, trans))
         else:
             results.append((original, None))
 

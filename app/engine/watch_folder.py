@@ -13,8 +13,16 @@ import threading
 import time
 from typing import Callable, Optional
 
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+    _HAS_WATCHDOG = True
+except ImportError:
+    _HAS_WATCHDOG = False
+    Observer = None  # type: ignore[assignment,misc]
+    FileSystemEventHandler = object  # type: ignore[assignment,misc]
+    FileCreatedEvent = None  # type: ignore[assignment,misc]
+    FileMovedEvent = None  # type: ignore[assignment,misc]
 
 from .converter import ConversionJob
 
@@ -78,6 +86,11 @@ class FolderWatcher:
         on_file_done: Callable[[str, bool, str], None],
         on_error: Callable[[str], None],
     ):
+        if not _HAS_WATCHDOG:
+            raise RuntimeError(
+                "Watch-folder requires the 'watchdog' package. "
+                "Install it with: pip install watchdog"
+            )
         self._watch_path = watch_path
         self._output_path = output_path
         self._cfg = dict(cfg)

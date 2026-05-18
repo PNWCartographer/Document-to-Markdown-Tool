@@ -218,7 +218,8 @@ def build_html(
                 prev_page = section.page_number
 
         if section.heading:
-            lvl = min(section.heading.count("#", 0, 7), 6) or 2
+            m = re.match(r'^(#{1,6})\s', section.heading)
+            lvl = len(m.group(1)) if m else 2
             clean = section.heading.lstrip("#").strip()
             parts.append(f"<h{lvl}>{_esc(clean)}</h{lvl}>\n")
 
