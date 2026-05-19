@@ -79,7 +79,8 @@
       "Bash(python -m py_compile app/engine/rules_engine.py)",
       "Bash(python -m py_compile app/engine/markdown_writer.py)",
       "Bash(python -m py_compile app/engine/validation.py)",
-      "Bash(python -m py_compile app/engine/logger.py)"
+      "Bash(python -m py_compile app/engine/logger.py)",
+      "Bash(dir /b \"C:\\\\Users\\\\klars\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-klars-Documents-GitHub-Document-to-Markdown-Tool\\\\318d334a-b327-4caa-b3d0-84800f1a1637\\\\tasks\\\\\")"
     ]
   }
 }

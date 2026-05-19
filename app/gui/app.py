@@ -1267,7 +1267,7 @@ class App:
 
     def _build_watch(self):
         f = self._new_screen("Watch")
-        f.grid_rowconfigure(6, weight=1)
+        f.grid_rowconfigure(8, weight=1)
 
         self._heading(
             f, "Watch Folder",
@@ -1369,15 +1369,31 @@ class App:
         )
         self._watch_counts_lbl.grid(row=0, column=3, sticky="e")
 
+        # ── Per-file progress section ────────────────────────
+        self._watch_progress_row = tk.Frame(f)
+        self._watch_progress_row.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 4))
+        self._watch_progress_row.grid_columnconfigure(0, weight=1)
+
+        self._watch_file_lbl = tk.Label(
+            self._watch_progress_row, text="", font=_FONT_SMALL, anchor="w")
+        self._watch_file_lbl.grid(row=0, column=0, sticky="w")
+
+        self._watch_stage_lbl = tk.Label(
+            self._watch_progress_row, text="", font=_FONT_SMALL, anchor="e")
+        self._watch_stage_lbl.grid(row=0, column=1, sticky="e")
+
+        self._watch_progress_bar = PillProgressBar(f, height=6)
+        self._watch_progress_bar.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 12))
+
         # ── Activity log section label ───────────────────────
         self._watch_log_section_lbl = tk.Label(
             f, text="ACTIVITY LOG", font=_FONT_SECTION, anchor="w")
         self._watch_log_section_lbl.grid(
-            row=5, column=0, sticky="ew", padx=32, pady=(0, 2))
+            row=7, column=0, sticky="ew", padx=32, pady=(0, 2))
 
         # ── Activity log ─────────────────────────────────────
         self._watch_log_frame = tk.Frame(f, highlightthickness=1)
-        self._watch_log_frame.grid(row=6, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._watch_log_frame.grid(row=8, column=0, sticky="nsew", padx=32, pady=(0, 8))
         self._watch_log_frame.grid_rowconfigure(0, weight=1)
         self._watch_log_frame.grid_columnconfigure(0, weight=1)
 
@@ -1400,7 +1416,7 @@ class App:
 
         # ── Bottom button row ────────────────────────────────
         self._watch_btn_row = tk.Frame(f)
-        self._watch_btn_row.grid(row=7, column=0, sticky="ew", padx=32, pady=(0, 28))
+        self._watch_btn_row.grid(row=9, column=0, sticky="ew", padx=32, pady=(0, 28))
 
         self._btn_watch_clear_log = PillButton(
             self._watch_btn_row,
@@ -1451,6 +1467,8 @@ class App:
             on_file_queued=self._watch_on_queued,
             on_file_started=self._watch_on_started,
             on_file_done=self._watch_on_done,
+            on_file_progress=self._watch_on_progress,
+            on_stage=self._watch_on_stage,
             on_error=self._watch_on_error,
         )
         self._watcher.start()
@@ -1465,6 +1483,9 @@ class App:
             self._watcher.stop()
         self._btn_watch_start.set_text("Start Watching")
         self._watch_status_lbl.config(text="Stopped", fg=self._t["text_secondary"])
+        self._watch_file_lbl.config(text="")
+        self._watch_stage_lbl.config(text="")
+        self._watch_progress_bar.set_progress(0.0)
         self._watch_log_append("Stopped watching.")
 
     def _watch_on_queued(self, path: str):
@@ -1474,14 +1495,26 @@ class App:
 
     def _watch_on_started(self, path: str):
         filename = os.path.basename(path)
+        self._watch_file_lbl.config(text=filename)
+        self._watch_stage_lbl.config(text="Starting…")
+        self._watch_progress_bar.set_progress(0.0)
         self._watch_log_append(f"Converting: {filename}...")
 
     def _watch_on_done(self, path: str, success: bool, message: str):
         prefix = "  ✓" if success else "  ✗"
         self._watch_log_append(f"{prefix} {message}")
+        self._watch_progress_bar.set_progress(1.0 if success else 0.0)
+        self._watch_file_lbl.config(text="")
+        self._watch_stage_lbl.config(text="")
         self._update_watch_counts()
         if success:
             self._watch_notify(os.path.basename(path))
+
+    def _watch_on_progress(self, fraction: float):
+        self._watch_progress_bar.set_progress(fraction)
+
+    def _watch_on_stage(self, stage: str):
+        self._watch_stage_lbl.config(text=stage)
 
     def _watch_on_error(self, message: str):
         self._watch_log_append(f"Error: {message}")
@@ -3263,6 +3296,13 @@ class App:
         if not (self._watcher and self._watcher.is_running):
             self._watch_status_lbl.config(fg=t["text_secondary"])
         self._watch_counts_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+
+        self._watch_progress_row.config(bg=t["content_bg"])
+        self._watch_file_lbl.config(bg=t["content_bg"], fg=t["text"])
+        self._watch_stage_lbl.config(bg=t["content_bg"], fg=t["accent_secondary"])
+        self._watch_progress_bar.set_colors(
+            track=t["bg"], fill=t["accent"], border=t["border"],
+            parent_bg=t["content_bg"])
 
         self._watch_log_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
         self._watch_log_frame.config(bg=t["bg"], highlightbackground=t["border"])

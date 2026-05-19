@@ -72,6 +72,10 @@ class FolderWatcher:
         Called when conversion begins for a file.
     on_file_done : callback(path, success, message)
         Called when a file finishes (success=True/False).
+    on_file_progress : callback(fraction)
+        Called with 0.0–1.0 as file conversion progresses.
+    on_stage : callback(stage_text)
+        Called with a short description of the current stage.
     on_error : callback(message)
         Called on watcher-level errors.
     """
@@ -85,6 +89,8 @@ class FolderWatcher:
         on_file_queued: Callable[[str], None],
         on_file_started: Callable[[str], None],
         on_file_done: Callable[[str, bool, str], None],
+        on_file_progress: Callable[[float], None],
+        on_stage: Callable[[str], None],
         on_error: Callable[[str], None],
     ):
         if not _HAS_WATCHDOG:
@@ -100,6 +106,8 @@ class FolderWatcher:
         self._on_file_queued = on_file_queued
         self._on_file_started = on_file_started
         self._on_file_done = on_file_done
+        self._on_file_progress = on_file_progress
+        self._on_stage = on_stage
         self._on_error = on_error
 
         self._observer: Optional[Observer] = None
@@ -220,10 +228,10 @@ class FolderWatcher:
                 cfg=self._cfg,
                 root=self._root,
                 on_log=lambda msg: None,
-                on_file_progress=lambda f: None,
+                on_file_progress=self._on_file_progress,
                 on_overall_progress=lambda f: None,
                 on_file_start=lambda name, idx, total: None,
-                on_stage=lambda s: None,
+                on_stage=self._on_stage,
                 on_done=on_done,
             )
             job.start()
