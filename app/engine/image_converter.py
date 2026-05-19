@@ -253,8 +253,11 @@ def _preprocess(pil_image, logger):
 
 def _deskew(gray_array):
     """Correct image skew using OpenCV moments."""
-    import cv2
-    import numpy as np
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return gray_array
 
     try:
         coords = np.column_stack(np.where(gray_array < 128))

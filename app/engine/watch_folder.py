@@ -11,6 +11,7 @@ ReadDirectoryChangesW (Windows).
 import os
 import threading
 import time
+from collections import deque
 from typing import Callable, Optional
 
 try:
@@ -102,7 +103,8 @@ class FolderWatcher:
         self._on_error = on_error
 
         self._observer: Optional[Observer] = None
-        self._queue: list[str] = []
+        self._queue: deque[str] = deque()
+        self._queue_set: set[str] = set()
         self._lock = threading.Lock()
         self._processing = False
         self._stop_event = threading.Event()
@@ -153,6 +155,7 @@ class FolderWatcher:
             self._observer = None
         with self._lock:
             self._queue.clear()
+            self._queue_set.clear()
 
     def _enqueue_file(self, path: str) -> None:
         ext = os.path.splitext(path)[1].lower()
@@ -160,8 +163,9 @@ class FolderWatcher:
             return
 
         with self._lock:
-            if path not in self._queue:
+            if path not in self._queue_set:
                 self._queue.append(path)
+                self._queue_set.add(path)
         self._gui(self._on_file_queued, path)
 
     def _process_loop(self) -> None:
@@ -169,7 +173,8 @@ class FolderWatcher:
             path = None
             with self._lock:
                 if self._queue:
-                    path = self._queue.pop(0)
+                    path = self._queue.popleft()
+                    self._queue_set.discard(path)
 
             if path is None:
                 time.sleep(0.5)
@@ -194,7 +199,7 @@ class FolderWatcher:
                 return True
             prev_size = size
             time.sleep(_SETTLE_SECONDS)
-        return True
+        return False
 
     def _convert_file(self, path: str) -> None:
         filename = os.path.basename(path)

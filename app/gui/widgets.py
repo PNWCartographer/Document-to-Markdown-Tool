@@ -303,7 +303,10 @@ class ToggleSwitch(tk.Canvas):
         self.after_idle(self._draw)
 
     def destroy(self):
-        """Remove the variable trace before destroying the widget."""
+        """Cancel pending animation and remove the variable trace before destroying."""
+        if self._anim_id is not None:
+            self.after_cancel(self._anim_id)
+            self._anim_id = None
         if self._var and self._trace_name is not None:
             try:
                 self._var.trace_remove("write", self._trace_name)
@@ -466,7 +469,9 @@ class GlassScrollbar(tk.Canvas):
 
         # Thumb y-position
         scrollable = track_h - thumb_h
-        if scrollable > 0 and (1.0 - visible) > 0:
+        if scrollable <= 0:
+            return
+        if (1.0 - visible) > 0:
             ratio = self._first / (1.0 - visible)
         else:
             ratio = 0.0
@@ -615,10 +620,21 @@ class GlassDropdown(tk.Canvas):
         self.bind("<Leave>", self._on_leave)
         self.bind("<ButtonRelease-1>", self._on_click)
 
+        self._trace_name = None
         if self._var:
-            self._var.trace_add("write", lambda *_: self.after_idle(self._draw))
+            self._trace_name = self._var.trace_add("write", lambda *_: self.after_idle(self._draw))
 
         self.after_idle(self._draw)
+
+    def destroy(self):
+        """Remove the variable trace before destroying the widget."""
+        if self._var and self._trace_name is not None:
+            try:
+                self._var.trace_remove("write", self._trace_name)
+            except Exception:
+                pass
+            self._trace_name = None
+        super().destroy()
 
     # ── Public API ──────────────────────────────────────────
 

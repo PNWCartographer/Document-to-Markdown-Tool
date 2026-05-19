@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 
 _PATH = os.path.join(os.path.dirname(__file__), "settings.json")
 
@@ -15,7 +16,7 @@ DEFAULTS: dict = {
     "detect_code_blocks":     True,
     "detect_footnotes":       True,
     "detect_equations":       True,
-    "parallel_workers":       "1",
+    "parallel_workers":       1,
     "quality_preset":         "Quality",
     "ocr_language":           "English",
     "output_format":          "Markdown",
@@ -40,6 +41,11 @@ def load() -> dict:
                 data = json.load(fh)
             out = dict(DEFAULTS)
             out.update({k: v for k, v in data.items() if k in DEFAULTS})
+            # Ensure parallel_workers is always an int
+            try:
+                out["parallel_workers"] = int(out["parallel_workers"])
+            except (ValueError, TypeError):
+                out["parallel_workers"] = DEFAULTS["parallel_workers"]
             return out
         except Exception:
             pass
@@ -47,5 +53,22 @@ def load() -> dict:
 
 
 def save(cfg: dict) -> None:
-    with open(_PATH, "w", encoding="utf-8") as fh:
-        json.dump({k: cfg[k] for k in DEFAULTS if k in cfg}, fh, indent=2)
+    dir_path = os.path.dirname(_PATH)
+    try:
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".tmp", dir=dir_path,
+            delete=False, encoding="utf-8",
+        )
+        try:
+            json.dump({k: cfg[k] for k in DEFAULTS if k in cfg}, fd, indent=2)
+            fd.flush()
+            os.fsync(fd.fileno())
+        finally:
+            fd.close()
+        os.replace(fd.name, _PATH)
+    except OSError:
+        # Clean up temp file on failure if it still exists
+        try:
+            os.unlink(fd.name)
+        except Exception:
+            pass

@@ -441,13 +441,23 @@ def _para_to_md(para) -> str:
         elif run.italic:
             text = f"*{text}*"
         parts.append(text)
-    return "".join(parts)
+    result = "".join(parts)
+    # Safety net: if runs produced significantly less text than para.text,
+    # non-run content (hyperlinks, field codes, smart tags) was lost — fall back.
+    full_text = para.text
+    if full_text and len(result) < len(full_text) * 0.5:
+        return full_text
+    return result
 
 
 def _docx_table_to_md(tbl) -> str:
     all_rows = []
     for row in tbl.rows:
-        cells = [cell.text.replace("\n", " ").strip() for cell in row.cells]
+        # Deduplicate adjacent cells that share the same underlying XML element
+        # (merged cells repeat the same Cell object for each spanned column)
+        cells_deduped = [cell for i, cell in enumerate(row.cells)
+                         if i == 0 or cell._tc is not row.cells[i - 1]._tc]
+        cells = [cell.text.replace("\n", " ").strip() for cell in cells_deduped]
         all_rows.append(cells)
     if not all_rows:
         return ""

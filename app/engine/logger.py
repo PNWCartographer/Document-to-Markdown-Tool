@@ -11,21 +11,43 @@ to the shared app log on flush().
 
 import datetime
 import os
+import sys
 from typing import Callable, Optional
 
 # ---------------------------------------------------------------------------
-# Shared app-data directory and log path
+# Shared app-data directory and log path (cross-platform)
 # ---------------------------------------------------------------------------
 
-_APPDATA_DIR = os.path.join(
-    os.environ.get("APPDATA", os.path.expanduser("~")),
-    "DocToMarkdown",
-)
+_MAX_LOG_SIZE = 5 * 1024 * 1024  # 5 MB
+
+if sys.platform == "win32":
+    _APPDATA_DIR = os.path.join(
+        os.environ.get("APPDATA", os.path.expanduser("~")),
+        "DocToMarkdown",
+    )
+elif sys.platform == "darwin":
+    _APPDATA_DIR = os.path.join(
+        os.path.expanduser("~"), "Library", "Application Support", "DocToMarkdown",
+    )
+else:
+    _APPDATA_DIR = os.path.join(
+        os.path.expanduser("~"), ".local", "share", "DocToMarkdown",
+    )
 APP_LOG_PATH = os.path.join(_APPDATA_DIR, "app.log")
 
 
 def _ensure_appdata_dir() -> None:
     os.makedirs(_APPDATA_DIR, exist_ok=True)
+    # Simple log rotation: if app.log exceeds 5 MB, rename to app.log.old
+    try:
+        if os.path.isfile(APP_LOG_PATH) and os.path.getsize(APP_LOG_PATH) > _MAX_LOG_SIZE:
+            old_path = APP_LOG_PATH + ".old"
+            try:
+                os.replace(APP_LOG_PATH, old_path)
+            except OSError:
+                pass
+    except OSError:
+        pass
 
 
 def appdata_dir() -> str:

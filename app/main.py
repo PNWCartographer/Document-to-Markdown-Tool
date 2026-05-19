@@ -1,22 +1,19 @@
 import sys
 import os
 
-# Hide the console window on Windows when launched via python.exe
-# instead of pythonw.exe.  Has no effect on Linux / macOS.
-try:
-    from ctypes import windll
-    windll.user32.ShowWindow(windll.kernel32.GetConsoleWindow(), 0)
-except Exception:
-    pass
-
-# Enable Per-Monitor DPI awareness on Windows before any tkinter calls.
-# Level 2 (Per Monitor DPI Aware) gives the sharpest rendering on every
-# display, including multi-monitor setups with different DPI values.
-# Must run before tk.Tk() is created.
-try:
-    windll.shcore.SetProcessDpiAwareness(2)   # PROCESS_PER_MONITOR_DPI_AWARE
-except Exception:
-    pass
+# Windows-only early setup: hide console window and enable Per-Monitor DPI.
+# Has no effect on Linux / macOS.
+if sys.platform == "win32":
+    try:
+        from ctypes import windll
+        # Hide the console window when launched via python.exe
+        windll.user32.ShowWindow(windll.kernel32.GetConsoleWindow(), 0)
+        # Enable Per-Monitor DPI awareness before any tkinter calls.
+        # Level 2 (Per Monitor DPI Aware) gives the sharpest rendering on
+        # every display, including multi-monitor setups with different DPI.
+        windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except Exception:
+        pass
 
 sys.path.insert(0, os.path.dirname(__file__))
 

@@ -67,7 +67,25 @@ def convert(
     df = None
     errors = []
 
-    for sep in (",", ";", "\t", "|"):
+    # Try csv.Sniffer first for fast, accurate delimiter detection
+    import csv as _csv
+    _sniffed_sep = None
+    try:
+        with open(source_file, newline="", encoding="utf-8", errors="replace") as _fh:
+            sample = _fh.read(8192)
+        dialect = _csv.Sniffer().sniff(sample)
+        _sniffed_sep = dialect.delimiter
+        log_info(f"csv.Sniffer detected delimiter: {repr(_sniffed_sep)}")
+    except Exception:
+        pass
+
+    # Build delimiter list: sniffed first (if found), then the usual suspects
+    _delimiters = [_sniffed_sep] if _sniffed_sep else []
+    for _s in (",", ";", "\t", "|"):
+        if _s not in _delimiters:
+            _delimiters.append(_s)
+
+    for sep in _delimiters:
         for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
             try:
                 df = pd.read_csv(
@@ -77,7 +95,7 @@ def convert(
                     dtype=str,
                     keep_default_na=False,
                 )
-                if df.shape[1] > 1:
+                if df.shape[1] >= 1:
                     log_info(f"Loaded CSV | sep={repr(sep)} encoding={enc} "
                              f"rows={len(df)} cols={df.shape[1]}")
                     break

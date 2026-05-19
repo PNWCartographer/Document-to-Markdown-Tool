@@ -506,7 +506,6 @@ def detect_equations(text: str) -> str:
     lines = text.split("\n")
     result: list[str] = []
     in_code_block = False
-    in_math_block = False
 
     for line in lines:
         stripped = line.strip()

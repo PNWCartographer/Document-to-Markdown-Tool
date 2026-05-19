@@ -73,7 +73,13 @@
       "Bash(python -m py_compile app/engine/docx_converter.py)",
       "Bash(python -m py_compile app/engine/epub_converter.py)",
       "Bash(python -m py_compile app/engine/table_extractor.py)",
-      "Bash(python -m py_compile app/engine/post_processors.py)"
+      "Bash(python -m py_compile app/engine/post_processors.py)",
+      "Bash(python -m py_compile app/engine/csv_converter.py)",
+      "Bash(python -m py_compile app/engine/output_formats.py)",
+      "Bash(python -m py_compile app/engine/rules_engine.py)",
+      "Bash(python -m py_compile app/engine/markdown_writer.py)",
+      "Bash(python -m py_compile app/engine/validation.py)",
+      "Bash(python -m py_compile app/engine/logger.py)"
     ]
   }
 }

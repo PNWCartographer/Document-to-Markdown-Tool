@@ -89,6 +89,7 @@ class ConversionJob:
         self._on_done = on_done
 
         self._cancel_event = threading.Event()
+        self._write_lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
@@ -249,7 +250,8 @@ class ConversionJob:
 
             try:
                 output = self._convert_file(source_file, alias, logger)
-                self._write_output(output, use_subfolder)
+                with self._write_lock:
+                    self._write_output(output, use_subfolder)
 
                 if output.confidence:
                     write_confidence_report(output.confidence)

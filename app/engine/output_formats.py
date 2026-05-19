@@ -5,6 +5,7 @@ Markdown is handled by markdown_writer.py — this module covers the rest.
 Each builder takes a ConversionOutput and returns a formatted string.
 """
 
+import html as _html_mod
 import json
 import os
 import re
@@ -525,9 +526,9 @@ def _md_body_to_html(body: str) -> str:
         img_m = re.match(r"!\[([^\]]*)\]\(([^)]+)\)", stripped)
         if img_m:
             alt, src = img_m.groups()
-            # base64 src can be very long — pass through as-is
-            safe_src = src if src.startswith("data:") else _esc(src)
-            out.append(f'<img src="{safe_src}" alt="{_esc(alt)}">')
+            # Use html.escape with quote=True to properly escape src attributes
+            safe_src = src if src.startswith("data:") else _html_mod.escape(src, quote=True)
+            out.append(f'<img src="{safe_src}" alt="{_html_mod.escape(alt, quote=True)}">')
             continue
 
         # Headings (rare in body, but handle gracefully)

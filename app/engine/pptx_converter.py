@@ -14,6 +14,7 @@ Conversion approach:
 Dependency: python-pptx >= 1.0.0
 """
 
+import hashlib
 import os
 from typing import Optional, Callable
 
@@ -78,6 +79,7 @@ def convert(
 
     img_counter = 0
     table_count = 0
+    seen_hashes: set[str] = set()  # track image blob hashes for deduplication
 
     for slide_idx, slide in enumerate(prs.slides):
         slide_num = slide_idx + 1
@@ -120,15 +122,23 @@ def convert(
                         img_ref = _extract_image(
                             shape, img_counter, slide_num,
                             assets_dir, rel_prefix, output, log_info,
+                            seen_hashes=seen_hashes,
                         )
                         if img_ref:
                             parts.append(img_ref)
 
-                # Group shape — recurse for text
+                # Group shape — recurse for text and images
                 elif shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                    group_text = _extract_group_text(shape)
-                    if group_text.strip():
-                        parts.append(group_text)
+                    group_text = _extract_group_text(
+                        shape, MSO_SHAPE_TYPE=MSO_SHAPE_TYPE,
+                        preserve_images=preserve_images, assets_dir=assets_dir,
+                        rel_prefix=rel_prefix, output=output, log_info=log_info,
+                        slide_num=slide_num, img_counter_ref=[img_counter],
+                        seen_hashes=seen_hashes,
+                    )
+                    img_counter = group_text[1]
+                    if group_text[0].strip():
+                        parts.append(group_text[0])
 
                 # Regular text frame
                 elif shape.has_text_frame:
@@ -247,10 +257,21 @@ def _table_to_markdown(table) -> str:
 
 def _extract_image(shape, counter: int, slide_num: int,
                    assets_dir: str, rel_prefix: str,
-                   output: ConversionOutput, log_info) -> str:
+                   output: ConversionOutput, log_info,
+                   seen_hashes: Optional[set] = None) -> str:
     """Extract an image from a picture shape, save it, return a Markdown reference."""
     try:
         image = shape.image
+        blob = image.blob
+
+        # Deduplicate: skip if we've already saved an identical image blob
+        blob_hash = hashlib.md5(blob).hexdigest()
+        if seen_hashes is not None:
+            if blob_hash in seen_hashes:
+                log_info(f"Slide {slide_num}: skipping duplicate image (hash={blob_hash[:8]}…)")
+                return ""
+            seen_hashes.add(blob_hash)
+
         ext = image.content_type.split("/")[-1]
         if ext == "jpeg":
             ext = "jpg"
@@ -258,28 +279,54 @@ def _extract_image(shape, counter: int, slide_num: int,
         img_path = os.path.join(assets_dir, filename)
 
         with open(img_path, "wb") as fh:
-            fh.write(image.blob)
+            fh.write(blob)
 
         rel_path = f"{rel_prefix}{filename}"
         output.asset_paths.append(rel_path)
-        log_info(f"Saved image: {filename} ({len(image.blob)} bytes)")
+        log_info(f"Saved image: {filename} ({len(blob)} bytes)")
         return f"![Image from slide {slide_num}]({rel_path})"
 
     except Exception:
         return ""
 
 
-def _extract_group_text(group_shape) -> str:
-    """Recursively extract text from a grouped shape."""
+def _extract_group_text(group_shape, **kwargs) -> tuple[str, int]:
+    """Recursively extract text and images from a grouped shape.
+
+    Returns (markdown_text, updated_img_counter).
+    """
+    MSO_SHAPE_TYPE = kwargs.get("MSO_SHAPE_TYPE")
+    preserve_images = kwargs.get("preserve_images", False)
+    assets_dir = kwargs.get("assets_dir")
+    rel_prefix = kwargs.get("rel_prefix", "assets/")
+    output = kwargs.get("output")
+    log_info = kwargs.get("log_info")
+    slide_num = kwargs.get("slide_num", 0)
+    img_counter_ref = kwargs.get("img_counter_ref", [0])
+    seen_hashes = kwargs.get("seen_hashes")
+
     parts = []
     for shape in group_shape.shapes:
         if hasattr(shape, 'shapes'):
-            parts.append(_extract_group_text(shape))
+            inner_text, img_counter_ref[0] = _extract_group_text(shape, **kwargs)
+            if inner_text:
+                parts.append(inner_text)
+        elif (MSO_SHAPE_TYPE is not None
+              and shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+              and preserve_images and assets_dir):
+            img_counter_ref[0] += 1
+            img_ref = _extract_image(
+                shape, img_counter_ref[0], slide_num,
+                assets_dir, rel_prefix, output, log_info,
+                seen_hashes=seen_hashes,
+            )
+            if img_ref:
+                parts.append(img_ref)
         elif shape.has_text_frame:
             text = shape.text_frame.text.strip()
             if text:
                 parts.append(text)
-    return "\n".join(p for p in parts if p)
+    return "\n".join(p for p in parts if p), img_counter_ref[0]
 
 
 def _pad(lst: list, length: int) -> list:

@@ -235,6 +235,9 @@ def _run_paddle(image, language: str) -> OcrResult:
                     if isinstance(text_info, (list, tuple)) and len(text_info) >= 2:
                         text = str(text_info[0])
                         conf = float(text_info[1])
+                        # Guard against NaN or out-of-range confidence
+                        if not (0.0 <= conf <= 1.0):
+                            conf = 0.5
                     else:
                         text = str(text_info)
                         conf = 0.5

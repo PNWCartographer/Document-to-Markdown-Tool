@@ -187,16 +187,15 @@ def _detect_scanned(pdf_path: str, log_info) -> bool:
         return False
     try:
         import fitz
-        doc = fitz.open(pdf_path)
-        sample_pages = min(3, len(doc))
-        total_chars = 0
-        for i in range(sample_pages):
-            page = doc[i]
-            total_chars += len(page.get_text("text").strip())
-        doc.close()
-        avg_chars = total_chars / max(sample_pages, 1)
-        log_info(f"Scanned detection | avg_chars_per_page={avg_chars:.0f}")
-        return avg_chars < 20
+        with fitz.open(pdf_path) as doc:
+            sample_pages = min(3, len(doc))
+            total_chars = 0
+            for i in range(sample_pages):
+                page = doc[i]
+                total_chars += len(page.get_text("text").strip())
+            avg_chars = total_chars / max(sample_pages, 1)
+            log_info(f"Scanned detection | avg_chars_per_page={avg_chars:.0f}")
+            return avg_chars < 20
     except Exception:
         return False
 
@@ -355,68 +354,101 @@ def _embed_images_in_markdown(
 
     replacements: list[str] = []
 
-    for idx, picture in enumerate(pictures):
-        if idx >= placeholder_count:
-            break  # more pictures than placeholders — stop early
+    try:
+        for idx, picture in enumerate(pictures):
+            if idx >= placeholder_count:
+                break  # more pictures than placeholders — stop early
 
-        try:
-            prov_list = getattr(picture, 'prov', None)
-            if not prov_list:
-                raise ValueError("picture has no prov list")
+            try:
+                prov_list = getattr(picture, 'prov', None)
+                if not prov_list:
+                    raise ValueError("picture has no prov list")
 
-            prov = prov_list[0]
-            bbox = prov.bbox          # docling BoundingBox: l, t, r, b (bottom-left origin)
-            page_no = prov.page_no    # 1-indexed
+                prov = prov_list[0]
+                bbox = prov.bbox          # docling BoundingBox: l, t, r, b (bottom-left origin)
+                page_no = prov.page_no    # 1-indexed
 
-            page_idx = page_no - 1
-            if page_idx < 0 or page_idx >= len(fitz_doc):
-                raise ValueError(f"page_no={page_no} out of range (doc has {len(fitz_doc)} pages)")
+                page_idx = page_no - 1
+                if page_idx < 0 or page_idx >= len(fitz_doc):
+                    raise ValueError(f"page_no={page_no} out of range (doc has {len(fitz_doc)} pages)")
 
-            page = fitz_doc[page_idx]
-            page_height = page.rect.height   # fitz: top-left origin
+                page = fitz_doc[page_idx]
+                page_height = page.rect.height   # fitz: top-left origin
 
-            # Coordinate conversion: docling bottom-left → fitz top-left
-            fitz_rect = fitz.Rect(
-                bbox.l,
-                page_height - bbox.t,
-                bbox.r,
-                page_height - bbox.b,
-            )
+                # Coordinate conversion: docling bottom-left → fitz top-left
+                fitz_rect = fitz.Rect(
+                    bbox.l,
+                    page_height - bbox.t,
+                    bbox.r,
+                    page_height - bbox.b,
+                )
 
-            # Validate the rect
-            if fitz_rect.is_empty or fitz_rect.is_infinite or fitz_rect.width < 2 or fitz_rect.height < 2:
-                raise ValueError(f"Degenerate bounding box: {fitz_rect}")
+                # Validate the rect
+                if fitz_rect.is_empty or fitz_rect.is_infinite or fitz_rect.width < 2 or fitz_rect.height < 2:
+                    raise ValueError(f"Degenerate bounding box: {fitz_rect}")
 
-            # Render at 3× for crisp output
-            mat = fitz.Matrix(3.0, 3.0)
-            pix = page.get_pixmap(matrix=mat, clip=fitz_rect, colorspace=fitz.csRGB)
-            img_bytes = pix.tobytes("png")
+                # Render at 3× for crisp output
+                mat = fitz.Matrix(3.0, 3.0)
+                pix = page.get_pixmap(matrix=mat, clip=fitz_rect, colorspace=fitz.csRGB)
+                img_bytes = pix.tobytes("png")
 
-            b64_data = base64.b64encode(img_bytes).decode("ascii")
-            alt = f"Image {idx + 1} — page {page_no}"
-            replacement = f"![{alt}](data:image/png;base64,{b64_data})"
-            replacements.append(replacement)
+                b64_data = base64.b64encode(img_bytes).decode("ascii")
+                alt = f"Image {idx + 1} — page {page_no}"
+                replacement = f"![{alt}](data:image/png;base64,{b64_data})"
+                replacements.append(replacement)
 
-            log_info(
-                f"  Embedded image {idx + 1}/{placeholder_count}: "
-                f"page={page_no} size={fitz_rect.width:.0f}×{fitz_rect.height:.0f}pt "
-                f"png={len(img_bytes)} bytes"
-            )
+                log_info(
+                    f"  Embedded image {idx + 1}/{placeholder_count}: "
+                    f"page={page_no} size={fitz_rect.width:.0f}×{fitz_rect.height:.0f}pt "
+                    f"png={len(img_bytes)} bytes"
+                )
 
-        except Exception as e:
-            log_warn(f"Could not embed image {idx + 1}: {e}")
-            replacements.append("*[image — could not be extracted]*")
+            except Exception as e:
+                log_warn(f"Could not embed image {idx + 1}: {e}")
+                replacements.append("*[image — could not be extracted]*")
+    finally:
+        fitz_doc.close()
 
-    fitz_doc.close()
-
-    # Replace placeholders one by one in document order
+    # Replace placeholders back-to-front by offset to avoid re-scanning
+    # base64 data (Fix A: lambda avoids regex template interpretation,
+    # Fix B: back-to-front string slicing avoids O(n*m) rescanning)
+    matches = list(PLACEHOLDER_RE.finditer(md_text))
     result = md_text
-    for replacement in replacements:
-        result = PLACEHOLDER_RE.sub(replacement, result, count=1)
+    for match, replacement in reversed(list(zip(matches, replacements))):
+        result = result[:match.start()] + replacement + result[match.end():]
 
     embedded = sum(1 for r in replacements if r.startswith("!["))
     log_info(f"Image embedding complete | embedded={embedded}/{len(replacements)}")
     return result
+
+
+def _docling_label_to_level(label: str) -> int:
+    """
+    Map a docling element label to a Markdown heading level.
+
+    Priority order matters: "subtitle" must be checked before "title"
+    because "subtitle" contains "title" as a substring and should be
+    level 2, not level 1.  If the label contains a digit (e.g.
+    "heading_level_2"), extract the number directly.
+    """
+    # Check for explicit level digit first (e.g. "heading_level_2")
+    digit_match = re.search(r'(\d+)', label)
+    if digit_match:
+        extracted = int(digit_match.group(1))
+        if 1 <= extracted <= 6:
+            return extracted
+
+    # Check substring matches in priority order (most specific first)
+    if "subtitle" in label:
+        return 2
+    if "title" in label:
+        return 1
+    if "section_header" in label:
+        return 2
+    if "heading" in label:
+        return 2
+    # Generic section fallback
+    return 3
 
 
 def _extract_docling_toc(doc, output: ConversionOutput, log_info) -> None:
@@ -426,7 +458,7 @@ def _extract_docling_toc(doc, output: ConversionOutput, log_info) -> None:
             if "title" in label or "heading" in label or "section" in label:
                 text = getattr(item, "text", "").strip()
                 if text:
-                    level = 1 if "title" in label else (2 if "heading" in label else 3)
+                    level = _docling_label_to_level(label)
                     page_ref = getattr(getattr(item, "prov", [None])[0], "page_no", None) if getattr(item, "prov", None) else None
                     output.add_toc_entry(level, text, page_ref)
     except Exception:
@@ -473,35 +505,34 @@ def _extract_fitz_images(
         assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
         os.makedirs(assets_dir, exist_ok=True)
 
-        doc = fitz.open(source_file)
-        saved_xrefs: set[int] = set()
-        img_counter = 0
+        with fitz.open(source_file) as doc:
+            saved_xrefs: set[int] = set()
+            img_counter = 0
 
-        for page_idx in range(len(doc)):
-            page = doc[page_idx]
-            for img_info in page.get_images(full=True):
-                xref = img_info[0]
-                if xref in saved_xrefs:
-                    continue  # skip duplicate (same image on multiple pages)
-                try:
-                    base_image = doc.extract_image(xref)
-                    img_bytes = base_image["image"]
-                    if len(img_bytes) < 512:
-                        continue  # skip tiny images (icons, borders)
-                    ext = base_image.get("ext", "png")
-                    img_counter += 1
-                    filename = f"image_{img_counter:03d}_p{page_idx + 1}.{ext}"
-                    img_path = os.path.join(assets_dir, filename)
-                    with open(img_path, "wb") as fh:
-                        fh.write(img_bytes)
-                    output.asset_paths.append(f"assets/{filename}")
-                    saved_xrefs.add(xref)
-                    log_info(f"Saved image: {filename} ({len(img_bytes)} bytes)")
-                except Exception as e:
-                    log_warn(f"Could not extract image xref={xref}: {e}")
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                for img_info in page.get_images(full=True):
+                    xref = img_info[0]
+                    if xref in saved_xrefs:
+                        continue  # skip duplicate (same image on multiple pages)
+                    try:
+                        base_image = doc.extract_image(xref)
+                        img_bytes = base_image["image"]
+                        if len(img_bytes) < 512:
+                            continue  # skip tiny images (icons, borders)
+                        ext = base_image.get("ext", "png")
+                        img_counter += 1
+                        filename = f"image_{img_counter:03d}_p{page_idx + 1}.{ext}"
+                        img_path = os.path.join(assets_dir, filename)
+                        with open(img_path, "wb") as fh:
+                            fh.write(img_bytes)
+                        output.asset_paths.append(f"assets/{filename}")
+                        saved_xrefs.add(xref)
+                        log_info(f"Saved image: {filename} ({len(img_bytes)} bytes)")
+                    except Exception as e:
+                        log_warn(f"Could not extract image xref={xref}: {e}")
 
-        doc.close()
-        log_info(f"Image extraction complete | saved={img_counter}")
+            log_info(f"Image extraction complete | saved={img_counter}")
 
     except Exception as e:
         log_warn(f"fitz image extraction failed: {e}")
@@ -618,72 +649,74 @@ def _convert_pymupdf(
         confidence.overall = "Failed"
         return output
 
-    total_pages = len(doc)
-    log_info(f"Opened PDF | pages={total_pages}")
-
-    # Extract TOC from PDF outline
-    if rebuild_toc:
-        _extract_fitz_toc_from_doc(doc, output, log_info)
-
-    # Assets dir
-    assets_dir = None
-    rel_prefix = "assets/"
-    if preserve_images and output_root:
-        from .markdown_writer import assets_dir_for, assets_rel_prefix_for
-        assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
-        rel_prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
-        os.makedirs(assets_dir, exist_ok=True)
-
     page_sections = []
     ocr_confidences = []
     text_quality_flags = []
 
-    for page_idx in range(total_pages):
-        page_num = page_idx + 1
-        page = doc[page_idx]
-        prog = 0.1 + (page_idx / total_pages) * 0.75
-        progress(prog)
+    with doc:
+        total_pages = len(doc)
+        log_info(f"Opened PDF | pages={total_pages}")
 
-        page_parts = []
+        # Extract TOC from PDF outline
+        if rebuild_toc:
+            _extract_fitz_toc_from_doc(doc, output, log_info)
 
-        # Page anchor
-        if preserve_page_numbers:
-            page_parts.append(f'<a id="page-{page_num}"></a>\n\n---\n*Page {page_num}*\n')
+        # Assets dir
+        assets_dir = None
+        rel_prefix = "assets/"
+        if preserve_images and output_root:
+            from .markdown_writer import assets_dir_for, assets_rel_prefix_for
+            assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
+            rel_prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
+            os.makedirs(assets_dir, exist_ok=True)
 
-        # Text extraction
-        if use_ocr:
-            page_text, ocr_conf = _ocr_page(page, language, log_info, log_warn,
-                                            ocr_dpi_scale=ocr_dpi_scale,
-                                            prefer_engine=prefer_engine)
-            ocr_confidences.append(ocr_conf)
-            if page_text.strip():
-                page_parts.append(page_text)
-            text_quality_flags.append(bool(page_text.strip()))
-        else:
-            text = _extract_page_text_columns(page, page_num, log_info)
-            text = text.strip()
-            if text:
-                page_parts.append(text)
-            text_quality_flags.append(bool(text))
+        saved_xrefs: set[int] = set()
 
-        # Image extraction
-        if preserve_images and assets_dir:
-            img_refs = _extract_page_images(
-                doc, page, page_num, assets_dir, output, log_info, rel_prefix
-            )
-            page_parts.extend(img_refs)
+        for page_idx in range(total_pages):
+            page_num = page_idx + 1
+            page = doc[page_idx]
+            prog = 0.1 + (page_idx / total_pages) * 0.75
+            progress(prog)
 
-        # Table extraction via pdfplumber for this page
-        tables = _get_page_tables(source_file, page_num, log_info)
-        for tr in tables:
-            page_parts.append(f"\n{tr.to_markdown()}\n")
-            if tr.confidence == "Low":
-                confidence.add_warning(f"Page {page_num}: low-confidence table detected.")
+            page_parts = []
 
-        if page_parts:
-            page_sections.append((page_num, "\n".join(page_parts)))
+            # Page anchor
+            if preserve_page_numbers:
+                page_parts.append(f'<a id="page-{page_num}"></a>\n\n---\n*Page {page_num}*\n')
 
-    doc.close()
+            # Text extraction
+            if use_ocr:
+                page_text, ocr_conf = _ocr_page(page, language, log_info, log_warn,
+                                                ocr_dpi_scale=ocr_dpi_scale,
+                                                prefer_engine=prefer_engine)
+                ocr_confidences.append(ocr_conf)
+                if page_text.strip():
+                    page_parts.append(page_text)
+                text_quality_flags.append(bool(page_text.strip()))
+            else:
+                text = _extract_page_text_columns(page, page_num, log_info)
+                text = text.strip()
+                if text:
+                    page_parts.append(text)
+                text_quality_flags.append(bool(text))
+
+            # Image extraction
+            if preserve_images and assets_dir:
+                img_refs = _extract_page_images(
+                    doc, page, page_num, assets_dir, output, log_info, rel_prefix,
+                    saved_xrefs=saved_xrefs,
+                )
+                page_parts.extend(img_refs)
+
+            # Table extraction via pdfplumber for this page
+            tables = _get_page_tables(source_file, page_num, log_info)
+            for tr in tables:
+                page_parts.append(f"\n{tr.to_markdown()}\n")
+                if tr.confidence == "Low":
+                    confidence.add_warning(f"Page {page_num}: low-confidence table detected.")
+
+            if page_parts:
+                page_sections.append((page_num, "\n".join(page_parts)))
     progress(0.88)
 
     # Run post-processor pipeline on collected page texts
@@ -706,21 +739,27 @@ def _convert_pymupdf(
             do_detect_equations=pp.get("detect_equations", True),
         )
 
-        # Rebuild page_sections; blank-page filtering may have removed some
-        # Match remaining pages back to their page numbers
-        if len(processed) < len(page_texts):
-            # Some pages were removed (blank page filtering)
-            # Re-associate: processed texts are a subset in order
-            remaining = []
-            proc_idx = 0
-            for orig_idx, (pnum, orig_text) in enumerate(zip(page_nums, page_texts)):
-                if proc_idx < len(processed) and processed[proc_idx].strip():
-                    remaining.append((pnum, processed[proc_idx]))
-                    proc_idx += 1
-                # else: this page was removed
-            page_sections = remaining
-        else:
+        # Rebuild page_sections from processed output.
+        # When lengths match, pair 1:1 with original page numbers.
+        # When processed is shorter (blank-page filtering removed some),
+        # assign pages sequentially from the original page numbers,
+        # truncating if needed. This avoids fragile content-matching.
+        if len(processed) == len(page_texts):
             page_sections = list(zip(page_nums, processed))
+        elif len(processed) < len(page_texts):
+            log_warn(
+                f"Post-processing reduced pages from {len(page_texts)} to "
+                f"{len(processed)} — assigning page numbers sequentially."
+            )
+            page_sections = list(zip(page_nums[:len(processed)], processed))
+        else:
+            # Processed somehow has more entries (shouldn't happen);
+            # truncate to original count
+            log_warn(
+                f"Post-processing expanded pages from {len(page_texts)} to "
+                f"{len(processed)} — truncating to original count."
+            )
+            page_sections = list(zip(page_nums, processed[:len(page_texts)]))
 
     # Assemble sections
     for page_num, body in page_sections:
@@ -907,15 +946,26 @@ def _extract_page_images(
     doc, page, page_num: int, assets_dir: str,
     output: ConversionOutput, log_info,
     rel_prefix: str = "assets/",
+    saved_xrefs: Optional[set] = None,
 ) -> list[str]:
-    """Extract embedded images from a fitz page, save to assets/, return Markdown refs."""
+    """Extract embedded images from a fitz page, save to assets/, return Markdown refs.
+
+    ``saved_xrefs`` is an optional set shared across pages so that
+    duplicate images (watermarks, logos reused on every page) are only
+    saved once.  The caller passes the same set for each page call.
+    """
     import fitz
+
+    if saved_xrefs is None:
+        saved_xrefs = set()
 
     refs = []
     try:
         image_list = page.get_images(full=True)
         for img_idx, img_info in enumerate(image_list):
             xref = img_info[0]
+            if xref in saved_xrefs:
+                continue  # skip duplicate (same image on another page)
             try:
                 base_image = doc.extract_image(xref)
                 img_bytes = base_image["image"]
@@ -929,6 +979,7 @@ def _extract_page_images(
                 rel_path = f"{rel_prefix}{filename}"
                 output.asset_paths.append(rel_path)
                 refs.append(f"\n![Image from page {page_num}]({rel_path})\n")
+                saved_xrefs.add(xref)
                 log_info(f"Saved image: {filename}")
             except Exception:
                 pass
@@ -1006,9 +1057,8 @@ def _clean_docling_text(text: str) -> str:
 def _extract_fitz_toc(pdf_path: str, output: ConversionOutput, log_info) -> None:
     try:
         import fitz
-        doc = fitz.open(pdf_path)
-        _extract_fitz_toc_from_doc(doc, output, log_info)
-        doc.close()
+        with fitz.open(pdf_path) as doc:
+            _extract_fitz_toc_from_doc(doc, output, log_info)
     except Exception:
         pass
 
@@ -1031,16 +1081,16 @@ def _extract_fitz_toc_from_doc(doc, output: ConversionOutput, log_info) -> None:
 def _inject_page_anchors_from_text(md_text: str) -> str:
     """
     pymupdf4llm includes page separators as horizontal rules.
-    Detect them and inject page anchors. Very basic heuristic.
+    Detect them and inject page anchors. Content before the first
+    separator is page 1; each ``---`` advances to the next page.
     """
     lines = md_text.splitlines()
     result = []
-    page_num = 0
+    page_num = 1
+    # Insert anchor for page 1 before any content
+    result.append(f'<a id="page-{page_num}"></a>\n*Page {page_num}*')
     for line in lines:
-        if re.match(r'^-{3,}\s*$', line) and page_num == 0:
-            page_num = 1
-            result.append(f'<a id="page-{page_num}"></a>\n\n---\n*Page {page_num}*')
-        elif re.match(r'^-{3,}\s*$', line):
+        if re.match(r'^-{3,}\s*$', line):
             page_num += 1
             result.append(f'<a id="page-{page_num}"></a>\n\n---\n*Page {page_num}*')
         else:

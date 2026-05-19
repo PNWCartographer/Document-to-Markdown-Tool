@@ -332,7 +332,7 @@ def _html_to_markdown(element, image_map: dict) -> tuple[str, int]:
             if inner.strip():
                 parts.append(inner)
 
-    return " ".join(parts) if not any('\n' in p for p in parts) else "\n".join(parts), table_count
+    return "\n\n".join(parts), table_count
 
 
 def _inline_to_md(element, image_map: dict) -> str:
@@ -461,8 +461,10 @@ def _resolve_image(src: str, image_map: dict) -> str:
     basename = os.path.basename(src)
     if basename in image_map:
         return image_map[basename]
-    # Try without leading ../
-    clean = src.lstrip("./").lstrip("../")
+    # Try without leading ../ or ./ prefixes (substring-based, not char-based)
+    clean = src
+    while clean.startswith("../") or clean.startswith("./"):
+        clean = clean[3:] if clean.startswith("../") else clean[2:]
     if clean in image_map:
         return image_map[clean]
     return ""

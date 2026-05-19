@@ -31,9 +31,10 @@ class Rule:
             return text
         try:
             if self.use_regex:
-                return re.sub(self.pattern, self.replacement, text)
+                compiled = re.compile(self.pattern)
+                return compiled.sub(self.replacement, text)
             return text.replace(self.pattern, self.replacement)
-        except re.error:
+        except (re.error, Exception):
             return text
 
 
@@ -85,7 +86,7 @@ def load_profiles() -> list[RuleProfile]:
             data = json.load(fh)
         profiles = []
         for p in data:
-            rules = [Rule(**r) for r in p.get("rules", [])]
+            rules = [Rule(**{k: v for k, v in r.items() if k in Rule.__dataclass_fields__}) for r in p.get("rules", [])]
             profiles.append(RuleProfile(name=p.get("name", ""), rules=rules))
         return profiles
     except Exception:

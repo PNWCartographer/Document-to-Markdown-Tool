@@ -256,6 +256,9 @@ def _build_front_matter(output: ConversionOutput, flavor: str = "GFM") -> str:
     """Build YAML front matter block from conversion metadata."""
     source_name = os.path.basename(output.source_file) if output.source_file else "unknown"
     title = os.path.splitext(source_name)[0]
+    # Sanitize YAML values to prevent injection via filenames
+    title = title.replace('"', "'").replace('\n', ' ').replace(':', ' -')
+    source_name = source_name.replace('"', "'").replace('\n', ' ').replace(':', ' -')
     lines = ["---"]
     lines.append(f"title: \"{title}\"")
     lines.append(f"source: \"{source_name}\"")
@@ -325,10 +328,15 @@ def rows_to_markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     Convert a list of header strings and data rows into a Markdown table.
     Cells are coerced to str; pipe characters inside cells are escaped.
     """
+    if not headers and not rows:
+        return ""
+
     def _cell(v) -> str:
         return str(v).replace("|", "\\|").replace("\n", " ")
 
     col_count = max(len(headers), max((len(r) for r in rows), default=0))
+    if col_count == 0:
+        return ""
     headers = _pad(headers, col_count)
     header_row = "| " + " | ".join(_cell(h) for h in headers) + " |"
     sep_row = "| " + " | ".join("---" for _ in headers) + " |"

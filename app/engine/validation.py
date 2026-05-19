@@ -142,7 +142,7 @@ def _count_links(md: str) -> int:
 
 def _count_words(md: str) -> int:
     text = re.sub(r'```[\s\S]*?```', '', md)
-    text = re.sub(r'---[\s\S]*?---', '', text, count=1)
+    text = re.sub(r'\A---[\s\S]*?---', '', text, count=1)
     text = re.sub(r'[#*|`\[\]()>_~]', ' ', text)
     text = re.sub(r'<[^>]+>', '', text)
     words = text.split()
@@ -267,7 +267,7 @@ def _flesch_kincaid(md: str) -> tuple[float, str]:
       FK = 0.39 * (words/sentences) + 11.8 * (syllables/words) - 15.59
     """
     text = re.sub(r'```[\s\S]*?```', '', md)
-    text = re.sub(r'---[\s\S]*?---', '', text, count=1)
+    text = re.sub(r'\A---[\s\S]*?---', '', text, count=1)
     text = re.sub(r'[#*|`\[\]()>_~]', ' ', text)
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)

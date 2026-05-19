@@ -152,9 +152,17 @@ def install_language_pair(from_code: str, to_code: str) -> bool:
         if pkg is None:
             return False
 
-        # Download and install
-        download_path = pkg.download()
-        argostranslate.package.install_from_path(download_path)
+        # Download and install, ensuring temp file is cleaned up
+        download_path = None
+        try:
+            download_path = pkg.download()
+            argostranslate.package.install_from_path(download_path)
+        finally:
+            if download_path and os.path.isfile(download_path):
+                try:
+                    os.unlink(download_path)
+                except OSError:
+                    pass
 
         # Reset cache
         _INSTALLED_PAIRS = None
@@ -169,6 +177,7 @@ def translate_text(
     from_code: str,
     to_code: str = "en",
     auto_install: bool = True,
+    _depth: int = 0,
 ) -> Optional[str]:
     """
     Translate *text* from *from_code* to *to_code* using Argos Translate.
@@ -189,14 +198,18 @@ def translate_text(
     if (from_code, to_code) not in _get_installed_pairs():
         if auto_install:
             if not install_language_pair(from_code, to_code):
-                # Try pivot through English
+                # Try pivot through English (only if not already recursing)
+                if _depth >= 1:
+                    return None
                 if to_code != "en" and from_code != "en":
                     if install_language_pair(from_code, "en"):
                         intermediate = translate_text(text, from_code, "en",
-                                                       auto_install=False)
+                                                       auto_install=False,
+                                                       _depth=_depth + 1)
                         if intermediate:
                             return translate_text(intermediate, "en", to_code,
-                                                   auto_install=True)
+                                                   auto_install=True,
+                                                   _depth=_depth + 1)
                 return None
         else:
             return None

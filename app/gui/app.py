@@ -1,6 +1,7 @@
 import math
 import os
 import re
+import sys
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
@@ -47,14 +48,17 @@ _FILETYPES = [
     ("All files",        "*.*"),
 ]
 
-_FONT_TITLE    = ("Segoe UI", 13, "bold")
-_FONT_HEADING  = ("Segoe UI", 22, "bold")
-_FONT_BODY     = ("Segoe UI", 13)
-_FONT_NAV      = ("Segoe UI", 12)
-_FONT_NAV_ACT  = ("Segoe UI", 12, "bold")
-_FONT_SMALL    = ("Segoe UI", 11)
-_FONT_BTN      = ("Segoe UI", 13, "bold")
-_FONT_SECTION  = ("Segoe UI", 10, "bold")
+_FONT_FAMILY = "Segoe UI" if sys.platform == "win32" else (
+    "Helvetica Neue" if sys.platform == "darwin" else "sans-serif")
+
+_FONT_TITLE    = (_FONT_FAMILY, 13, "bold")
+_FONT_HEADING  = (_FONT_FAMILY, 22, "bold")
+_FONT_BODY     = (_FONT_FAMILY, 13)
+_FONT_NAV      = (_FONT_FAMILY, 12)
+_FONT_NAV_ACT  = (_FONT_FAMILY, 12, "bold")
+_FONT_SMALL    = (_FONT_FAMILY, 11)
+_FONT_BTN      = (_FONT_FAMILY, 13, "bold")
+_FONT_SECTION  = (_FONT_FAMILY, 10, "bold")
 
 _CONF_AREAS = [
     "Overall",
@@ -216,11 +220,15 @@ class App:
         # auto-detects display DPI for font/widget scaling.  We read the
         # real system DPI so we can scale window geometry, sidebar width,
         # and custom widget dimensions to match.
-        try:
-            import ctypes
-            _sys_dpi = ctypes.windll.user32.GetDpiForSystem()
-            self._dpi = _sys_dpi / 96.0
-        except Exception:
+        self._is_windows = (sys.platform == "win32")
+        if self._is_windows:
+            try:
+                import ctypes
+                _sys_dpi = ctypes.windll.user32.GetDpiForSystem()
+                self._dpi = _sys_dpi / 96.0
+            except Exception:
+                self._dpi = 1.0
+        else:
             self._dpi = 1.0
 
         from .widgets import set_dpi_scale
@@ -901,18 +909,21 @@ class App:
         return row + 1
 
     def _on_setting_changed(self, *_):
+        if getattr(self, '_resetting_defaults', False):
+            return
         for key, var in self._setting_vars.items():
             self._cfg[key] = var.get()
         _cfg_mod.save(self._cfg)
 
     def _on_reset_defaults(self):
         """Reset conversion settings to factory defaults. Theme is NOT changed."""
+        self._resetting_defaults = True
         defaults = _cfg_mod.DEFAULTS
-        # Only reset keys that are exposed as settings controls — never touch theme
         for key, val in defaults.items():
             if key in self._setting_vars:
                 self._setting_vars[key].set(val)
-        # _on_setting_changed fires from the var traces and saves cfg — done.
+        self._resetting_defaults = False
+        self._on_setting_changed()
 
     def _build_conversion(self):
         f = self._new_screen("Conversion")
@@ -1499,9 +1510,8 @@ class App:
         """Flash the Watch nav button briefly to signal a completed file."""
         btn = self._nav_btns.get("Watch")
         if btn and self._current != "Watch":
-            original_fg = btn.cget("fg")
             btn.config(fg=self._t.get("accent", "#7c3aed"))
-            self.root.after(2000, lambda: btn.config(fg=original_fg))
+            self.root.after(2000, lambda: btn.config(fg=self._t["text"]))
 
     # ── Debug / Preview window ──────────────────────────────
 
@@ -1610,7 +1620,8 @@ class App:
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write(text.get("1.0", tk.END))
                 btn_export.set_text("✓ Saved")
-                win.after(1500, lambda: btn_export.set_text("Export Log"))
+                win.after(1500, lambda: btn_export.set_text("Export Log")
+                          if win.winfo_exists() else None)
             except Exception as e:
                 messagebox.showerror("Export Failed", f"Could not save log:\n{e}", parent=win)
 
@@ -1984,7 +1995,8 @@ class App:
             win.clipboard_clear()
             win.clipboard_append(current_content[0])
             btn_copy.set_text("✓ Copied")
-            win.after(1500, lambda: btn_copy.set_text("Copy Markdown"))
+            win.after(1500, lambda: btn_copy.set_text("Copy Markdown")
+                      if win.winfo_exists() else None)
 
         btn_copy = PillButton(
             top_bar, text="Copy Markdown", font=_FONT_SMALL,
@@ -2201,7 +2213,10 @@ class App:
         # Images deferred to after_idle for instant window render
 
         def load_file(rel_path):
-            idx = file_display_names.index(rel_path)
+            try:
+                idx = file_display_names.index(rel_path)
+            except ValueError:
+                return
             full_path = output_files[idx]
 
             # ── Left panel: source info ──────────────────────
@@ -2448,11 +2463,15 @@ class App:
             # Collect all matches first, then apply tags in one call
             start = "1.0"
             match_ranges: list[str] = []
+            count_var = tk.IntVar()
             while True:
-                pos = preview_text.search(query, start, stopindex=tk.END, nocase=True)
+                pos = preview_text.search(
+                    query, start, stopindex=tk.END,
+                    nocase=True, count=count_var)
                 if not pos:
                     break
-                end = f"{pos}+{len(query)}c"
+                matched_len = count_var.get() or len(query)
+                end = f"{pos}+{matched_len}c"
                 search_matches.append(pos)
                 match_ranges.extend([pos, end])
                 start = end
@@ -2502,14 +2521,26 @@ class App:
         # Search bindings
         search_entry.bind("<Return>", _do_search)
         search_entry.bind("<Escape>", _close_search)
-        search_var.trace_add("write", _on_search_key)
+        _search_trace = search_var.trace_add("write", _on_search_key)
         win.bind("<Control-f>", _toggle_search)
 
         # Load first file
         load_file(file_display_names[0])
 
         # Bind file selector changes
-        file_var.trace_add("write", lambda *_: load_file(file_var.get()))
+        _file_trace = file_var.trace_add("write", lambda *_: load_file(file_var.get()))
+
+        # Cleanup pending after() IDs and traces on window close
+        def _on_preview_close():
+            if search_debounce_id[0] is not None:
+                try: win.after_cancel(search_debounce_id[0])
+                except Exception: pass
+            try: search_var.trace_remove("write", _search_trace)
+            except Exception: pass
+            try: file_var.trace_remove("write", _file_trace)
+            except Exception: pass
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _on_preview_close)
 
     # ── File picker logic ────────────────────────────────────
 
@@ -2535,10 +2566,10 @@ class App:
             return
         folder = os.path.normpath(folder)
         found = []
-        for entry in sorted(os.listdir(folder)):
-            full = os.path.join(folder, entry)
-            if os.path.isfile(full) and os.path.splitext(entry)[1].lower() in _SUPPORTED_EXTS:
-                found.append(full)
+        for dirpath, _dirs, filenames in os.walk(folder):
+            for entry in sorted(filenames):
+                if os.path.splitext(entry)[1].lower() in _SUPPORTED_EXTS:
+                    found.append(os.path.join(dirpath, entry))
         if not found:
             messagebox.showinfo(
                 "No Supported Files",
@@ -2717,7 +2748,7 @@ class App:
         self._conv_overall_bar.set_progress(0.0)
         self._conv_file_bar.set_progress(0.0)
         label = "1 file" if n == 1 else f"{n} files"
-        self._conv_overall_count_lbl.config(text=f"0 of {n} file{'s' if n != 1 else ''}")
+        self._conv_overall_count_lbl.config(text=f"0 of {label}")
         self._conv_file_name_lbl.config(text="Preparing…")
         self._conv_stage_lbl.config(text="")
         self._conv_log.config(state="normal")
@@ -2731,15 +2762,18 @@ class App:
         self._log_write("")
 
     def _on_start(self):
+        if self._active_job and self._active_job.is_running():
+            return
+        self._btn_start.set_state("disabled")
         self._reset_conversion_screen()
         self._show("Conversion")
         self._last_output_root = self._output_path
 
         self._active_job = _converter_mod.ConversionJob(
-            files=self._selected_files,
-            aliases=self._file_aliases,
+            files=list(self._selected_files),
+            aliases=dict(self._file_aliases),
             output_root=self._output_path,
-            cfg=self._cfg,
+            cfg=dict(self._cfg),
             root=self.root,
             on_log=self._log_write,
             on_file_progress=self._set_file_progress,
@@ -2940,12 +2974,13 @@ class App:
         for p in paths:
             p = os.path.normpath(p)
             if os.path.isdir(p):
-                for entry in sorted(os.listdir(p)):
-                    full = os.path.join(p, entry)
-                    if os.path.isfile(full) and os.path.splitext(entry)[1].lower() in _SUPPORTED_EXTS:
-                        if full not in self._selected_files:
-                            self._selected_files.append(full)
-                            added += 1
+                for dirpath, _dirs, filenames in os.walk(p):
+                    for entry in sorted(filenames):
+                        full = os.path.join(dirpath, entry)
+                        if os.path.splitext(entry)[1].lower() in _SUPPORTED_EXTS:
+                            if full not in self._selected_files:
+                                self._selected_files.append(full)
+                                added += 1
             elif os.path.isfile(p):
                 ext = os.path.splitext(p)[1].lower()
                 if ext in _SUPPORTED_EXTS:
@@ -2970,7 +3005,10 @@ class App:
         i = 0
         while i < len(data):
             if data[i] == '{':
-                end = data.index('}', i)
+                try:
+                    end = data.index('}', i)
+                except ValueError:
+                    end = len(data)
                 paths.append(data[i + 1:end])
                 i = end + 2
             elif data[i] == ' ':
@@ -3059,6 +3097,8 @@ class App:
             self._apply_dwm_dark(dark, target)
 
     def _apply_dwm_dark(self, dark: bool, target) -> None:
+        if not self._is_windows:
+            return
         try:
             import ctypes
             from ctypes import c_int, byref, sizeof
@@ -3193,8 +3233,7 @@ class App:
         self._results_val_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
         self._results_val_div.config(bg=t["border"])
         self._results_val_frame.config(bg=t["content_bg"])
-        for lbl_pair in self._results_val_count_lbls.values():
-            pass  # value labels themed below
+        # Validation count labels are themed by the winfo_children walk below
         # Theme every child label inside the validation counts frame
         for child in self._results_val_frame.winfo_children():
             if child.winfo_class() == "Label":
@@ -3329,6 +3368,9 @@ class App:
     def _on_close(self):
         if self._active_job and self._active_job.is_running():
             self._active_job.cancel()
+            thread = getattr(self._active_job, '_thread', None)
+            if thread and thread.is_alive():
+                thread.join(timeout=1.0)
         if self._watcher and self._watcher.is_running:
             self._watcher.stop()
         self.root.destroy()
