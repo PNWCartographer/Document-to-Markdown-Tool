@@ -496,6 +496,19 @@ class ConversionJob:
                 progress_callback=progress,
             )
 
+        elif ext in (".html", ".htm"):
+            stage("Parsing HTML…")
+            from . import html_converter
+            return html_converter.convert(
+                source_file,
+                alias=alias,
+                output_root=self._output_root,
+                preserve_images=preserve_images,
+                use_subfolder=use_subfolder,
+                logger=logger,
+                progress_callback=progress,
+            )
+
         elif ext == ".dxf":
             stage("Parsing DXF drawing…")
             from . import dxf_converter

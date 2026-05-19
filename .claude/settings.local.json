@@ -80,7 +80,9 @@
       "Bash(python -m py_compile app/engine/markdown_writer.py)",
       "Bash(python -m py_compile app/engine/validation.py)",
       "Bash(python -m py_compile app/engine/logger.py)",
-      "Bash(dir /b \"C:\\\\Users\\\\klars\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-klars-Documents-GitHub-Document-to-Markdown-Tool\\\\318d334a-b327-4caa-b3d0-84800f1a1637\\\\tasks\\\\\")"
+      "Bash(dir /b \"C:\\\\Users\\\\klars\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-klars-Documents-GitHub-Document-to-Markdown-Tool\\\\318d334a-b327-4caa-b3d0-84800f1a1637\\\\tasks\\\\\")",
+      "Bash(python -c \"import markdownify; print\\(markdownify.__version__\\)\")",
+      "Bash(python -m py_compile app/engine/html_converter.py)"
     ]
   }
 }

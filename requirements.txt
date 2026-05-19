@@ -63,6 +63,11 @@ ebooklib>=0.18                  # EPUB reading, spine/TOC extraction
 beautifulsoup4>=4.12.0          # HTML content → Markdown conversion
 
 # ---------------------------------------------------------------------------
+# HTML conversion
+# ---------------------------------------------------------------------------
+markdownify>=0.14.1             # HTML → clean Markdown (primary engine for .html/.htm)
+
+# ---------------------------------------------------------------------------
 # DXF (engineering drawings)
 # ---------------------------------------------------------------------------
 ezdxf>=1.4.0                    # AutoCAD DXF parsing, text extraction, SVG rendering

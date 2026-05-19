@@ -32,15 +32,16 @@ ICONS = {
 }
 
 _SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
-                   ".pptx", ".epub", ".dxf",
+                   ".pptx", ".epub", ".dxf", ".html", ".htm",
                    ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
 
 _FILETYPES = [
-    ("Supported files",  "*.pdf *.docx *.doc *.xlsx *.xls *.csv *.pptx *.epub *.dxf *.png *.jpg *.jpeg *.tiff *.bmp"),
+    ("Supported files",  "*.pdf *.docx *.doc *.xlsx *.xls *.csv *.pptx *.epub *.dxf *.html *.htm *.png *.jpg *.jpeg *.tiff *.bmp"),
     ("PDF files",        "*.pdf"),
     ("Word documents",   "*.docx *.doc"),
     ("PowerPoint files", "*.pptx"),
     ("EPUB e-books",     "*.epub"),
+    ("HTML files",       "*.html *.htm"),
     ("DXF drawings",     "*.dxf"),
     ("Excel files",      "*.xlsx *.xls"),
     ("CSV files",        "*.csv"),

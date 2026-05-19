@@ -29,7 +29,7 @@ from .converter import ConversionJob
 
 _SUPPORTED_EXTS = {
     ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
-    ".pptx", ".epub", ".dxf",
+    ".pptx", ".epub", ".dxf", ".html", ".htm",
     ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
 }
 
