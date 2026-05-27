@@ -28,10 +28,10 @@ All notable changes to the Documentation to Markdown Converter Tool are document
 - About window updated with GPU acceleration and Searchable PDF
 
 ### Dependencies Added
-- rapidocr-onnxruntime >= 1.4.0 (replaces paddlepaddle and paddleocr)
+- rapidocr-onnxruntime >= 1.2.0 (replaces paddlepaddle and paddleocr)
 - ocrmypdf >= 17.0.0
 - psutil >= 5.9.0
-- pynvml >= 12.0.0 (optional)
+- nvidia-ml-py >= 12.0.0 (optional, NVIDIA GPU detection)
 
 ### Dependencies Removed
 - paddlepaddle

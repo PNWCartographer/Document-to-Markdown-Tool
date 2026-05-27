@@ -42,7 +42,7 @@ pandas>=2.2.0                   # CSV, datasets, table building
 # ---------------------------------------------------------------------------
 # OCR — primary (RapidOCR runs PaddleOCR models via ONNX Runtime)
 # ---------------------------------------------------------------------------
-rapidocr-onnxruntime>=1.4.0     # ONNX-based OCR engine (replaces PaddlePaddle, Apache 2.0)
+rapidocr-onnxruntime>=1.2.0     # ONNX-based OCR engine (replaces PaddlePaddle, Apache 2.0)
 
 # ---------------------------------------------------------------------------
 # OCR — fallback (requires Tesseract binary installed separately)
@@ -97,4 +97,4 @@ opencv-python>=4.10.0           # deskew, contrast, edge cleanup before OCR
 # System detection (performance auto-configuration)
 # ---------------------------------------------------------------------------
 psutil>=5.9.0                   # CPU core count and RAM detection
-pynvml>=12.0.0                  # NVIDIA GPU name and VRAM detection (optional)
+nvidia-ml-py>=12.0.0            # NVIDIA GPU name and VRAM detection (optional, graceful fallback)

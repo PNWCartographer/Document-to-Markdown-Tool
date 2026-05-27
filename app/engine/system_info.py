@@ -50,8 +50,8 @@ def detect_system() -> SystemInfo:
     # RAM
     info.ram_gb = _detect_ram_gb()
 
-    # GPU (NVIDIA)
-    gpu_name, gpu_vram = _detect_nvidia_gpu()
+    # GPU (NVIDIA via pynvml, AMD/Intel via OS query)
+    gpu_name, gpu_vram = _detect_gpu()
     if gpu_name:
         info.gpu_name = gpu_name
         info.gpu_vram_gb = gpu_vram
@@ -173,10 +173,32 @@ def _detect_ram_gb() -> float:
 # GPU detection
 # ---------------------------------------------------------------------------
 
+def _detect_gpu() -> tuple[Optional[str], Optional[float]]:
+    """Detect GPU name and VRAM.
+
+    Tries NVIDIA via pynvml first (provides VRAM info), then falls back
+    to platform-specific queries for AMD/Intel GPUs (name only, no VRAM).
+    """
+    # Try NVIDIA first (gives us VRAM)
+    name, vram = _detect_nvidia_gpu()
+    if name:
+        return name, vram
+
+    # Fallback: detect any GPU via OS queries (AMD, Intel, etc.)
+    name = _detect_gpu_platform()
+    if name:
+        return name, None
+
+    return None, None
+
+
 def _detect_nvidia_gpu() -> tuple[Optional[str], Optional[float]]:
-    """Detect NVIDIA GPU name and VRAM via pynvml. Returns (name, vram_gb)."""
+    """Detect NVIDIA GPU name and VRAM via nvidia-ml-py (pynvml)."""
     try:
-        import pynvml
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*pynvml.*deprecated.*")
+            import pynvml
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         name = pynvml.nvmlDeviceGetName(handle)
@@ -188,6 +210,55 @@ def _detect_nvidia_gpu() -> tuple[Optional[str], Optional[float]]:
         return name, vram_gb
     except Exception:
         return None, None
+
+
+def _detect_gpu_platform() -> Optional[str]:
+    """Detect GPU name via platform-specific OS queries (AMD, Intel, etc.)."""
+    if sys.platform == "win32":
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["wmic", "path", "win32_VideoController", "get", "name"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                lines = [ln.strip() for ln in result.stdout.splitlines()
+                         if ln.strip() and ln.strip().lower() != "name"]
+                if lines:
+                    return lines[0]
+        except Exception:
+            pass
+    elif sys.platform == "linux":
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["lspci"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if "VGA" in line or "3D" in line or "Display" in line:
+                        # Extract device name after the colon
+                        parts = line.split(": ", 1)
+                        if len(parts) > 1:
+                            return parts[1].strip()
+        except Exception:
+            pass
+    elif sys.platform == "darwin":
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["system_profiler", "SPDisplaysDataType"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("Chipset Model:"):
+                        return stripped.split(":", 1)[1].strip()
+        except Exception:
+            pass
+    return None
 
 
 # ---------------------------------------------------------------------------

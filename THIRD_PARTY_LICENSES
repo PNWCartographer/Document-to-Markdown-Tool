@@ -19,7 +19,7 @@ pandas                  BSD-3-Clause    Data manipulation and CSV handling
 rapidocr-onnxruntime    Apache-2.0      Primary OCR engine (ONNX Runtime, replaces PaddlePaddle)
 onnxruntime             MIT             Machine learning inference engine for RapidOCR
 psutil                  BSD-3-Clause    Cross-platform system/process monitoring
-pynvml                  BSD-3-Clause    NVIDIA GPU management and detection (optional)
+nvidia-ml-py            BSD-3-Clause    NVIDIA GPU management and detection (optional)
 pytesseract             Apache-2.0      Tesseract OCR wrapper
 python-pptx             MIT             PowerPoint reading
 ebooklib                AGPL-3.0        EPUB reading and spine extraction (local use only)

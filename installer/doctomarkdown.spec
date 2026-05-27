@@ -79,7 +79,7 @@ hidden_imports = [
 
     # ── System detection ──
     "psutil",
-    "pynvml",
+    "nvidia_ml_py",
 
     # ── File watching ──
     "watchdog",
