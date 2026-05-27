@@ -62,18 +62,43 @@ OCR should be used for:
 - Images with text
 - Drawings with text
 - Embedded images where text extraction is needed
+- Searchable PDF creation (adding invisible text layer)
 
 OCR confidence should be captured when available.
+
+### OCR Engine Routing
+The tool uses platform-aware OCR engine selection:
+
+| Platform | Primary Engine | Secondary | Fallback |
+|----------|---------------|-----------|----------|
+| Windows | RapidOCR (CUDA or DirectML) | Tesseract | CPU-only RapidOCR |
+| Linux | RapidOCR (CUDA) | Tesseract | CPU-only RapidOCR |
+| macOS | Apple Vision (Neural Engine) | RapidOCR (CoreML) | Tesseract |
+
+### Ensemble OCR Mode
+When OCR Engine is set to "Ensemble":
+1. Run RapidOCR on the page — get word-level bounding boxes and confidence scores
+2. Run Tesseract on the same page — get word-level bounding boxes and confidence scores
+3. Align words spatially using intersection-over-union matching on bounding boxes
+4. For each aligned word pair, keep the result with the higher confidence score
+5. Reconstruct lines from the winning words
+6. Report engine as "ensemble (rapidocr+tesseract)"
+
+Ensemble mode reduces OCR errors by 30-50% compared to a single engine, at the cost of roughly double the processing time.
 
 ## File Type Routing
 The tool should detect file type and route conversion through the best local method available.
 
-Possible routing model:
-- PDFs: document layout engine, PDF Markdown engine, OCR fallback
-- DOCX and Word files: document parser or conversion engine
-- Excel and CSV files: spreadsheet parser and Markdown table builder
-- Images: OCR and asset preservation
-- Datasets: structured text or table export depending on format
+Routing model:
+- PDFs: docling (AI layout) → pymupdf4llm → pymupdf+OCR fallback
+- DOCX and Word files: docling → mammoth → python-docx fallback
+- Excel and CSV files: openpyxl/xlrd → pandas table builder
+- PowerPoint: python-pptx (slides, tables, images, speaker notes)
+- EPUB: ebooklib + BeautifulSoup (chapters, images, TOC)
+- HTML: markdownify → BeautifulSoup fallback
+- DXF: ezdxf (layers, text, dimensions, SVG preview)
+- Images: RapidOCR with Tesseract fallback (OpenCV preprocessing pipeline)
+- Searchable PDF output: ocrmypdf with custom RapidOCR plugin
 
 ## Edge Case Stop Gaps
 When conversion quality is uncertain, the tool should not hide the issue. It should flag the issue and offer clear options when possible.
@@ -284,6 +309,66 @@ Each line in the JSONL output is a self-contained JSON object:
 - Confidence data is included per-chunk when confidence reporting is enabled
 - Empty chunks (all whitespace) are excluded from output
 
+## Searchable PDF Conversion Rules
+
+Searchable PDF output uses ocrmypdf to add an invisible OCR text layer to PDF files.
+
+### Processing Pipeline
+1. Input PDF is analyzed to detect which pages already contain text
+2. Pages without text are processed through OCR (unless Force OCR is enabled, which re-OCRs all pages)
+3. Deskew correction is applied when enabled (straightens tilted scans)
+4. Page cleaning removes speckles and noise when enabled
+5. Background removal strips colored backgrounds when enabled (OpenCV preprocessing)
+6. OCR engine produces text and bounding box data
+7. Invisible text layer is composited onto each page at the correct positions
+8. Output is optimized according to the selected level
+9. PDF/A conversion is applied when enabled
+10. Sidecar text file is written alongside the PDF when enabled
+
+### ocrmypdf Integration
+- Uses the `ocrmypdf.ocr()` Python API directly (not a subprocess call)
+- Custom plugin (`ocrmypdf_rapidocr.py`) routes OCR through RapidOCR with GPU acceleration
+- On macOS, an Apple Vision plugin is used when available
+- Not thread-safe — requires multiprocessing isolation on Windows and macOS
+- Returns structured result data: pages processed, pages skipped, confidence data
+
+### Auto-Chunking
+Documents exceeding 30 pages are automatically split into chunks for parallel processing:
+- Chunk size: 20-30 pages, determined by available RAM
+- Worker count: `min(cpu_cores - 1, int((ram_gb - 2) / 1.5))`, clamped to 1-8
+- Uses `ProcessPoolExecutor` for chunk-level parallelism
+- Chunks are reassembled into a single output PDF after processing
+- Progress callback reports per-chunk status to the conversion progress bar
+
+### Sidecar and RAG Output
+When sidecar text is enabled:
+- Primary output: `document.pdf` (searchable)
+- Sidecar: `document_sidecar.txt` (extracted OCR text, plain UTF-8)
+- Optional: `document_rag.jsonl` (RAG chunks generated from sidecar text)
+
+The sidecar text preserves page boundaries with markers. RAG chunks follow the same schema as the standard RAG Chunks output format.
+
+### Background Removal
+When enabled, a preprocessing pipeline runs before OCR:
+1. Convert page image to grayscale
+2. Apply adaptive threshold to separate foreground from background
+3. Morphological cleaning to remove noise
+4. Generate background mask
+5. Replace background with white
+
+This is an aggressive operation. The tooltip warns users that it may affect document appearance and should only be used for scanned documents with colored paper or heavy noise.
+
+### Searchable PDF Output Structure
+```text
+output/
+  document_name/
+    document_name.pdf              # Searchable PDF with OCR text layer
+    document_name_sidecar.txt      # Plain text OCR output (optional)
+    document_name_rag.jsonl         # RAG chunks from sidecar (optional)
+    confidence_report.txt           # Per-file confidence scores
+    conversion_log.txt              # Detailed conversion log
+```
+
 ## Quality Preset Behavior
 
 Quality presets control the tradeoff between conversion speed and output accuracy.
@@ -292,11 +377,13 @@ Quality presets control the tradeoff between conversion speed and output accurac
 - Overrides conversion mode to Standard (no OCR processing)
 - Skips docling AI-powered layout analysis
 - Uses the fastest available text extraction method
+- For Searchable PDF: uses lowest optimization level, skips deskew and cleaning
 - Best for: large batches of digital-native documents where speed matters more than formatting
 
 ### Balanced
 - Uses standard conversion with limited fallbacks
 - Logs when fallback engines are needed but does not skip them
+- For Searchable PDF: applies deskew, standard optimization
 - Best for: general-purpose conversion with reasonable speed
 
 ### Quality
@@ -304,4 +391,5 @@ Quality presets control the tradeoff between conversion speed and output accurac
 - OCR fallback is available when needed
 - Advanced table detection with pdfplumber and camelot
 - AI-powered layout analysis via docling
+- For Searchable PDF: applies deskew, cleaning, highest optimization
 - Best for: documents where accuracy and structure preservation are critical

@@ -2,7 +2,7 @@
 
 **by Darksquare**
 
-A professional desktop tool that converts documents into clean, structured Markdown for human review, AI upload, memory systems, and knowledgebase repositories.
+A professional desktop tool that converts documents into clean, structured Markdown or Searchable PDF for human review, AI upload, memory systems, knowledgebase repositories, and scanned document archival.
 
 Built with Python and tkinter. All processing happens on your machine — no cloud services, no telemetry, no external APIs.
 
@@ -21,7 +21,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 | EPUB | `.epub` | ebooklib + BeautifulSoup (chapters, images, TOC) |
 | HTML | `.html`, `.htm` | markdownify with BeautifulSoup fallback |
 | DXF | `.dxf` | ezdxf (layers, text, dimensions, title block, SVG preview) |
-| Images | `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.gif` | PaddleOCR with Tesseract fallback |
+| Images | `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.webp`, `.gif` | RapidOCR with Tesseract fallback |
 
 ### Output Formats
 
@@ -32,13 +32,20 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 | HTML | `.html` | Standalone HTML document with styling |
 | Plain Text | `.txt` | Clean text without formatting |
 | RAG Chunks | `.jsonl` | Chunked JSONL for vector databases and AI retrieval pipelines |
+| Searchable PDF | `.pdf` | Invisible OCR text layer for full-text search and copy-paste |
 
 ## Features
 
 ### Conversion Engine
 - Multi-engine pipeline with automatic fallback chains for every format
-- OCR support for scanned documents and images (PaddleOCR + Tesseract)
-- OpenCV preprocessing pipeline (deskew, contrast, denoise, threshold)
+- OCR support for scanned documents and images (RapidOCR + Tesseract)
+- Ensemble OCR mode — runs both engines and keeps the highest-confidence result per word
+- Platform-aware OCR routing (RapidOCR on Windows/Linux, Apple Vision on macOS, Tesseract universal fallback)
+- GPU auto-detection and acceleration (CUDA for NVIDIA, DirectML for AMD/Intel, CoreML for macOS)
+- OpenCV preprocessing pipeline (deskew, contrast, denoise, threshold, background removal)
+- Searchable PDF creation via ocrmypdf with invisible OCR text layer
+- Auto-chunking for large documents (30+ pages split and processed in parallel)
+- System hardware detection (CPU, RAM, GPU) for automatic performance configuration
 - Auto-detection of file types and best conversion method
 - Batch conversion with configurable parallel workers and cancel support
 - PDF page range selection for converting specific pages instead of full documents
@@ -60,7 +67,9 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Spell checking with offline dictionary for post-conversion proofreading
 
 ### Output
-- Five output formats: Markdown, JSON, HTML, Plain Text, RAG Chunks
+- Six output formats: Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF
+- Searchable PDF with deskew, page cleaning, force OCR, optimization levels, and PDF/A compliance
+- Sidecar text output alongside Searchable PDF with optional RAG chunk generation
 - Markdown flavor selection (GFM, Obsidian, Pandoc)
 - Optional YAML front matter with conversion metadata
 - Per-file confidence report (`confidence_report.txt`) in output folder
@@ -81,6 +90,9 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 ### Performance
 - Parallel workers (1, 2, 4, or Auto) for batch processing
 - Thread-safe output writing with file locking
+- GPU acceleration via ONNX Runtime (CUDA, DirectML, CoreML) — transparent to user
+- Auto-chunking splits large documents (30+ pages) into parallel chunks
+- System hardware detection for automatic worker and chunk configuration
 - Quality presets: Fast skips OCR, Quality enables all engines
 - Lazy model loading (AI models download once, cached locally)
 
@@ -89,6 +101,10 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Cross-platform DPI scaling (Windows, Linux, macOS)
 - Drag-and-drop file input (tkinterdnd2 with graceful fallback)
 - Five main screens: Home, Settings, Conversion, Results, Watch Folder
+- Collapsible settings sections with persistent expand/collapse state
+- Conditional settings visibility (format-specific options appear only when relevant)
+- System performance card in Settings showing detected CPU, RAM, GPU, and accelerator
+- Mixed content badges in Results (Text, Tables, Images, OCR, Scanned) with confidence coloring
 - Preview window with rich Markdown rendering and review tools
   - Syntax highlighting for headings, code blocks, inline code, blockquotes, links, tables, lists, horizontal rules, image references, and YAML front matter
   - Inline image thumbnails with click-to-zoom full-size viewer
@@ -129,7 +145,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
    python app/main.py
    ```
 
-The first run may download AI models for docling and PaddleOCR (approximately 1-2 GB). Models are cached locally after download and all processing remains offline.
+The first run may download AI models for docling and RapidOCR (approximately 1-2 GB). Models are cached locally after download and all processing remains offline.
 
 ### Basic Usage
 
@@ -154,7 +170,10 @@ See the `LICENSE` file for full terms.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| **Conversion** | | |
 | Conversion Mode | Auto-detect | How the tool reads documents (Auto-detect, Standard, OCR) |
+| Quality Preset | Quality | Speed vs. accuracy tradeoff (Fast, Balanced, Quality) |
+| **Content Handling** | | |
 | Preserve Images | On | Extract and save images from source documents |
 | Embed Images | On | Embed images as base64 data URIs in output |
 | Preserve Page Numbers | On | Insert page markers at page boundaries |
@@ -167,24 +186,37 @@ See the `LICENSE` file for full terms.
 | Detect Equations | On | Preserve math expressions as LaTeX notation |
 | Auto Translate | On | Translate non-English OCR text to English offline |
 | DXF SVG Preview | On | Render SVG preview images for DXF drawings |
-| OCR Engine | Auto | Preferred OCR engine (Auto, PaddleOCR, Tesseract) |
-| Parallel Workers | 1 | Number of files to convert simultaneously (1, 2, 4, Auto) |
-| Quality Preset | Quality | Speed vs. accuracy tradeoff (Fast, Balanced, Quality) |
+| **OCR** | | |
+| OCR Engine | Auto | Preferred OCR engine (Auto, RapidOCR, Tesseract, Ensemble, Apple Vision) |
 | OCR Language | English | Language for OCR text recognition |
-| Markdown Flavor | GFM | Markdown output style (GFM, Obsidian, Pandoc) |
-| YAML Front Matter | On | Prepend metadata block to output files |
-| Output Format | Markdown | Output file format |
+| **Output** | | |
+| Output Format | Markdown | Output file format (Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF) |
+| Markdown Flavor | GFM | Markdown output style — visible when format is Markdown |
+| YAML Front Matter | On | Prepend metadata block — visible when format is Markdown |
 | Overwrite Existing | Off | Replace existing output files |
 | Output Subfolder | On | Create per-document subfolders in output |
+| **Searchable PDF** | | *Visible when Output Format is Searchable PDF* |
+| Deskew | On | Straighten tilted scanned pages |
+| Clean Pages | Off | Remove speckles and scan artifacts |
+| Force OCR | Off | Re-OCR pages that already have text |
+| Optimize | 1 | Output compression level (0 = none, 3 = maximum) |
+| PDF/A Compliance | Off | Produce PDF/A-compliant archival output |
+| Sidecar Text | On | Save extracted OCR text as a separate text file |
+| RAG from Sidecar | Off | Generate RAG chunks from sidecar text |
+| Background Removal | Off | Remove colored backgrounds before OCR |
+| **Performance** | | |
+| Parallel Workers | 1 | Number of files to convert simultaneously (1, 2, 4, Auto) |
+| Low Confidence Action | Ask me | Behavior when conversion confidence is low |
+| **Other** | | |
 | Rules Profile | None | Post-processing rules profile to apply |
 | Theme | Dark | Interface theme (Dark, Light) |
 | Page Range | All pages | Select specific PDF pages to convert (right-click a PDF file) |
-| Low Confidence Action | Ask me | Behavior when conversion confidence is low |
 
 ## Output Structure
 
 With subfolder output enabled, each converted document produces:
 
+**Markdown and other text formats:**
 ```
 output/
   document_name/
@@ -194,6 +226,17 @@ output/
       image_002.png
     confidence_report.txt     # Per-file confidence scores
     conversion_log.txt        # Detailed conversion log
+```
+
+**Searchable PDF format:**
+```
+output/
+  document_name/
+    document_name.pdf              # Searchable PDF with OCR text layer
+    document_name_sidecar.txt      # Extracted OCR text (optional)
+    document_name_rag.jsonl        # RAG chunks from sidecar (optional)
+    confidence_report.txt          # Per-file confidence scores
+    conversion_log.txt             # Detailed conversion log
 ```
 
 ## Architecture
@@ -221,12 +264,16 @@ app/
     html_converter.py         # HTML (markdownify -> BeautifulSoup)
     dxf_converter.py          # DXF engineering drawings + SVG preview
     image_converter.py        # Image OCR with preprocessing pipeline
-    ocr_engine.py             # OCR orchestration (PaddleOCR + Tesseract)
+    ocr_engine.py             # OCR orchestration (RapidOCR + Tesseract + Ensemble)
+    ocr_platform.py           # Platform-aware OCR engine routing (Win/Linux/macOS)
+    searchable_pdf.py         # ocrmypdf wrapper, auto-chunking, sidecar output
+    ocrmypdf_rapidocr.py      # Custom ocrmypdf plugin for RapidOCR backend
+    system_info.py            # CPU/RAM/GPU detection, performance auto-config
     language_tools.py         # Language detection + offline translation
     table_extractor.py        # Advanced PDF table structure extraction
     post_processors.py        # Text cleaning (headers, code blocks, footnotes, etc.)
     rules_engine.py           # Named post-processing rule profiles
-    output_formats.py         # Output builders (Markdown, JSON, HTML, Text, RAG)
+    output_formats.py         # Output builders (Markdown, JSON, HTML, Text, RAG, Searchable PDF)
     markdown_writer.py        # Markdown assembly and asset management
     confidence.py             # Confidence scoring and reporting
     validation.py             # Output quality validation
@@ -241,23 +288,39 @@ installer/
 
 **Pipeline flow**: GUI -> ConversionJob -> Engine Converters -> Post-Processors -> Output Writers
 
+For Searchable PDF: GUI -> ConversionJob -> ocrmypdf (with RapidOCR plugin) -> Sidecar/RAG Writers
+
 Post-processors run in a fixed order: headers/footers, blank pages, line numbers, code blocks, footnotes, equations.
+
+### OCR Engine Architecture
+
+```
+ocr_platform.py (platform router)
+  ├── Windows/Linux
+  │   ├── RapidOCR (ONNX Runtime: CUDA > DirectML > CPU)
+  │   ├── Tesseract (fallback)
+  │   └── Ensemble (RapidOCR + Tesseract confidence voting)
+  └── macOS
+      ├── Apple Vision (Neural Engine via ocrmac)
+      ├── RapidOCR (CoreML provider)
+      └── Tesseract (fallback)
+```
 
 ## Local Processing
 
 This tool processes all files locally on your machine. There are no cloud services, no external APIs, no telemetry, and no remote file uploads. Source documents never leave your computer.
 
-The only network activity occurs on first run when AI models are downloaded and cached locally. After that, the tool operates fully offline.
+The only network activity occurs on first run when AI models are downloaded and cached locally. After that, the tool operates fully offline. GPU acceleration (CUDA, DirectML, CoreML) is detected and used automatically when available.
 
 ## Cross-Platform Support
 
 Doc to Markdown targets Windows 10/11, Linux, and macOS:
 
-- **Windows**: Full support including DWM dark title bar, Per-Monitor DPI awareness, and console window hiding
-- **Linux**: Tk scaling-based DPI detection, Button-4/5 scroll bindings, XDG-compliant data directories
-- **macOS**: Tk scaling DPI, native font selection (Helvetica Neue / Menlo), `open` command for folder navigation
+- **Windows**: Full support including DWM dark title bar, Per-Monitor DPI awareness, console window hiding, CUDA and DirectML GPU acceleration
+- **Linux**: Tk scaling-based DPI detection, Button-4/5 scroll bindings, XDG-compliant data directories, CUDA GPU acceleration
+- **macOS**: Tk scaling DPI, native font selection (Helvetica Neue / Menlo), `open` command for folder navigation, Apple Vision Framework OCR via Neural Engine, CoreML acceleration
 
-All file paths, font selections, scroll bindings, and platform APIs are guarded with `sys.platform` checks.
+All file paths, font selections, scroll bindings, platform APIs, and OCR engine selection are guarded with `sys.platform` checks.
 
 ## Documentation
 
@@ -268,7 +331,7 @@ Detailed specifications are available in the `docs/` folder:
 | `PROJECT_SPEC.md` | Project vision, scope, and goals |
 | `FEATURE_REQUIREMENTS.md` | Required features and capabilities |
 | `GUI_REQUIREMENTS.md` | Interface design, screens, and tooltips |
-| `CONVERSION_REQUIREMENTS.md` | Conversion behavior and output rules |
+| `CONVERSION_REQUIREMENTS.md` | Conversion behavior, output rules, Searchable PDF pipeline |
 | `CONFIDENCE_REPORTING.md` | Confidence scoring dimensions |
 | `LOCAL_PROCESSING_RULES.md` | Local-only processing requirements |
 | `LOGGING_REQUIREMENTS.md` | Logging requirements |

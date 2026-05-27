@@ -42,6 +42,21 @@ Read docs/LOGGING_REQUIREMENTS.md. Inspect the current logging or error handling
 Read docs/CONFIDENCE_REPORTING.md and docs/CONVERSION_REQUIREMENTS.md. Inspect the current output generation process. Propose one small milestone for confidence reporting. Do not edit until approved.
 ```
 
+## Searchable PDF Work
+```text
+Read docs/CONVERSION_REQUIREMENTS.md (Searchable PDF section) and docs/FEATURE_REQUIREMENTS.md (OCR Engine Architecture and Searchable PDF Output sections). Inspect app/engine/ocr_engine.py, app/engine/output_formats.py, and app/engine/converter.py. Propose the next Searchable PDF milestone. Do not edit until approved.
+```
+
+## OCR Engine Work
+```text
+Read docs/FEATURE_REQUIREMENTS.md (OCR Engine Architecture section). Inspect app/engine/ocr_engine.py and app/engine/ocr_platform.py. Propose improvements to OCR accuracy, engine routing, or GPU acceleration. Do not add dependencies without approval.
+```
+
+## Settings UI Work
+```text
+Read docs/GUI_REQUIREMENTS.md (Settings Screen Layout section). Inspect app/gui/app.py settings methods. Propose the next settings UI improvement (collapsible sections, conditional visibility, performance card). Do not edit until approved.
+```
+
 ## Debugging
 ```text
 Inspect the error and the related files. Do not make broad changes. Identify the likely cause, propose a minimal fix, then wait for approval before editing.

@@ -117,3 +117,52 @@ Post-processors modify extracted text after conversion. Some processors can affe
 ### Footnote Detection
 - Footnote detection uses pattern matching and may miss unconventional footnote formats
 - Confidence is not affected, but the conversion log notes how many footnotes were detected
+
+## Confidence for Searchable PDF
+
+Searchable PDF output introduces additional confidence dimensions related to OCR quality.
+
+| Dimension | Typical Score | Notes |
+|-----------|--------------|-------|
+| Text Extraction | Varies | Depends on scan quality and OCR engine accuracy |
+| OCR Confidence | Varies | Per-page OCR confidence reported by the engine |
+| Table Structure | Low-Medium | OCR-based table detection is less reliable than structural extraction |
+| Image Extraction | N/A | Searchable PDF preserves original page images |
+| Image Placement | N/A | Original layout is unchanged |
+| Document Order | High | Page order is preserved from the source PDF |
+
+### Per-Page OCR Confidence
+When Searchable PDF is the output format, the confidence report includes per-page data:
+- Which pages were OCR'd vs skipped (already had text)
+- Per-page OCR confidence score
+- Pages flagged as low confidence
+
+### Mixed Content Detection
+Pages may contain a mix of digital text and scanned images. The confidence report flags:
+- Pages with existing text that was preserved (no OCR needed)
+- Pages where OCR was applied
+- Pages where Force OCR replaced existing text
+
+### Ensemble OCR Confidence
+When Ensemble mode is used:
+- Confidence is generally higher because each word uses the best result from two engines
+- The report notes the engine source per word when available
+- Overall confidence label reflects the ensemble result, not individual engine scores
+
+## Confidence Preview in GUI
+
+The preview window confidence heatmap supports Searchable PDF output:
+- Color-codes pages by OCR confidence (green/yellow/red)
+- Indicates which pages were OCR'd vs skipped
+- Accessible from the existing heatmap toggle button in the preview toolbar
+
+## Mixed Content Badges
+
+The Results screen displays per-file content type badges:
+- `[Text]` — document contains digital text
+- `[Tables]` — tables were detected
+- `[Images]` — images were extracted or preserved
+- `[OCR]` — OCR was applied to some or all pages
+- `[Scanned]` — document was detected as fully scanned (no existing text layer)
+
+Badge colors reflect confidence: green (high), yellow (medium), red (low). Badges are derived from the existing confidence report data.

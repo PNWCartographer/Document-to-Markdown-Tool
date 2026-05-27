@@ -24,6 +24,9 @@ The tool should produce:
 - HTML standalone documents
 - Plain Text output
 - RAG Chunks (.jsonl) — chunked JSONL for vector databases and AI retrieval
+- Searchable PDF (.pdf) — adds invisible OCR text layer to scanned/image-based PDFs for full-text search
+- Sidecar text files (optional, alongside Searchable PDF output)
+- Sidecar RAG chunks (optional, generated from sidecar text when Searchable PDF is the output format)
 - Extracted image assets when needed
 - Linked image references inside Markdown
 - Confidence reports
@@ -49,9 +52,15 @@ The user should be able to:
 - Toggle equation detection
 - Select parallel worker count for batch processing
 - Select quality preset (Fast, Balanced, Quality)
+- Select output format (Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF)
+- Configure Searchable PDF options (deskew, clean, force OCR, optimize, PDF/A, sidecar, background removal)
+- Select OCR engine (Auto, RapidOCR, Tesseract, Ensemble, Apple Vision on macOS)
+- View system hardware detection (CPU, RAM, GPU, accelerator) in Settings
+- Expand and collapse settings sections for cleaner navigation
 - View conversion status
-- View final success or error messages
+- View final success or error messages with mixed content badges
 - View debug/diagnostic information on the Results screen
+- Preview output with syntax highlighting, search, spell check, confidence heatmap, and image zoom
 - Open output folder after conversion
 
 ## Required Conversion Behavior
@@ -80,6 +89,29 @@ Examples:
 - File is encrypted or locked
 - File type is unsupported
 
+## OCR Engine Architecture
+The tool uses a multi-engine OCR architecture with platform-aware routing:
+
+- **RapidOCR** (primary) — ONNX Runtime-based OCR using PaddleOCR models. Cross-platform GPU acceleration via CUDA (NVIDIA), DirectML (AMD/Intel on Windows), CoreML (macOS), or CPU fallback. Replaces PaddlePaddle for smaller install size and broader GPU support.
+- **Tesseract** (fallback) — Traditional OCR engine. Universal cross-platform support. Requires external binary.
+- **Apple Vision** (macOS only) — Apple's Neural Engine OCR via the Vision framework. Fastest option on Apple Silicon Macs.
+- **Ensemble mode** (opt-in) — Runs RapidOCR and Tesseract on the same page, compares word-level confidence scores, and keeps the higher-confidence result for each word. Reduces OCR errors by 30-50% at the cost of processing time.
+
+Engine selection is automatic by default. The tool detects available engines and GPU providers at startup and selects the best option for the platform.
+
+## System Detection
+The tool automatically detects system hardware at startup:
+- CPU model and core count
+- Available RAM
+- GPU model and VRAM (NVIDIA via pynvml, others via ONNX Runtime provider detection)
+- Available ONNX Runtime execution providers (CUDA, DirectML, CoreML, CPU)
+
+System information is used to:
+- Auto-configure parallel worker count based on available CPU cores and RAM
+- Select the optimal ONNX Runtime execution provider for GPU acceleration
+- Determine auto-chunking parameters for large documents
+- Display system capabilities in the Settings performance card and About window
+
 ## Batch Conversion
 The tool should support batch processing. Batch output should keep files organized by source file name.
 
@@ -94,14 +126,35 @@ output/
     logs/
 ```
 
+### Auto-Chunking for Large Documents
+Documents exceeding 30 pages are automatically split into chunks of 20-30 pages (determined by available RAM), processed in parallel via multiple worker processes, and reassembled into a single output file. This is fully automatic with no user-facing setting.
+
+## Searchable PDF Output
+The Searchable PDF format uses ocrmypdf to add an invisible OCR text layer to scanned or image-based PDFs. The original visual appearance is preserved while enabling full-text search, copy-paste, and accessibility.
+
+### Searchable PDF Features
+- Deskew correction for tilted scans
+- Page cleaning for scan artifacts (optional, off by default)
+- Force OCR mode to re-OCR pages that already have text
+- Optimization levels (0-3) for output file size
+- PDF/A compliance for archival standards (optional)
+- Sidecar text file with extracted OCR text
+- RAG chunks generated from sidecar text (optional)
+- Background removal for scanned documents with colored paper (optional, with warning)
+- Auto-chunking for documents over 30 pages
+- Watch Folder support for automated batch OCR
+
+### Searchable PDF Engine
+- Uses ocrmypdf Python API (not subprocess)
+- Custom RapidOCR plugin routes OCR through ONNX Runtime instead of Tesseract
+- On macOS, Apple Vision Framework plugin is used when available
+- Not thread-safe — uses ProcessPoolExecutor for parallel processing
+- Multiprocessing guard required on Windows and macOS
+
 ## Future Feature Ideas
 Future versions may include:
-- Searchable PDF export
 - DOCX export
-- Markdown cleanup profiles
+- Accessibility tagging for Searchable PDF (PDF/UA)
 - AI ready formatting profiles
 - Knowledgebase export presets
-- Manual review screen
-- Preview before export
-- Drag and drop support
 - Saved user profiles

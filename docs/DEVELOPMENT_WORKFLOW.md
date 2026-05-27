@@ -38,12 +38,16 @@ Good milestone examples:
 - Add logging folder creation only
 - Add confidence report draft only
 - Add installer prompt for shortcuts only
+- Replace one OCR engine with updated dependencies
+- Add one new output format with engine and settings
+- Reorganize settings UI into collapsible sections
 
 Bad milestone examples:
 - Build the entire GUI and installer and converter at once
 - Refactor everything
 - Replace all conversion engines in one step
 - Rewrite the whole application
+- Add new format, new engine, new UI, and new dependencies all at once
 
 ## Dependency Changes
 Claude Code should not add dependencies without approval.

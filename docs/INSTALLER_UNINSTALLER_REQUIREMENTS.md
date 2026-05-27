@@ -66,3 +66,28 @@ The uninstall process found output files or logs. Do you want to delete them too
 
 ## Dependency Safety
 The uninstaller should avoid removing shared system dependencies that may be used by other applications unless the dependency was installed only for this tool and can be safely removed.
+
+## Bundled Dependencies
+
+The installer must bundle the following key dependencies (managed via PyInstaller spec and requirements.txt):
+
+### OCR and PDF Processing
+- **RapidOCR** (Apache 2.0) — ONNX-based OCR using PaddleOCR models. Replaces PaddlePaddle for smaller install size and cross-platform GPU support.
+- **ONNX Runtime** — inference engine for RapidOCR models. Includes GPU execution providers (CUDA, DirectML) when available.
+- **ocrmypdf** (MPL-2.0) — Searchable PDF creation engine. Adds invisible OCR text layer to PDFs.
+- **Tesseract OCR** — traditional OCR fallback. Installed as an external binary (Windows installer downloaded by setup.py).
+
+### System Detection
+- **psutil** — CPU and RAM detection for performance auto-configuration.
+- **pynvml** (optional) — NVIDIA GPU detection. Graceful fallback if not installed or no NVIDIA GPU present.
+
+### Previously Bundled (Removed)
+- **PaddlePaddle** — replaced by RapidOCR (ONNX Runtime). No longer required.
+- **PaddleOCR** — replaced by RapidOCR. No longer required.
+
+### macOS-Specific (Not Bundled in Windows Installer)
+- **ocrmac** — Apple Vision Framework OCR wrapper. Installed separately on macOS.
+- **ocrmypdf-appleocr** — ocrmypdf plugin for Apple Vision. Installed separately on macOS.
+
+## Cross-Platform Installer Notes
+The current installer targets Windows (InnoSetup-based .exe installer). macOS and Linux installers are planned as a separate milestone. The Python setup script (`setup.py`) supports all three platforms for development use.
