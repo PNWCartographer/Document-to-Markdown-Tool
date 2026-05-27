@@ -6,3 +6,9 @@ v1_source/
 app/config/settings.json
 .claude/
 tools/
+
+# Build artifacts
+dist/
+build/
+*.manifest
+installer/Output/
