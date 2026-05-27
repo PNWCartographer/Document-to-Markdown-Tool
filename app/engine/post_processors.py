@@ -62,7 +62,7 @@ def remove_headers_footers(
             norm = _normalize(line)
             if norm:
                 top_set.add(norm)
-        for line in lines[-bottom_lines:] if len(lines) > bottom_lines else lines:
+        for line in lines[-bottom_lines:] if len(lines) > bottom_lines else lines[-1:]:
             norm = _normalize(line)
             if norm:
                 bottom_set.add(norm)
@@ -356,7 +356,7 @@ def _guess_language(lines: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 _FOOTNOTE_REF_RE = re.compile(
-    r'(?<=[^\d\s])(\d{1,3})(?=[\s.,;:)\]]|$)'
+    r'(?<=[.,;:!?\"\'\])])(\d{1,3})(?=[\s.,;:)\]]|$)'
 )
 
 _FOOTNOTE_DEF_RE = re.compile(

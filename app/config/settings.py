@@ -54,21 +54,24 @@ def load() -> dict:
 
 def save(cfg: dict) -> None:
     dir_path = os.path.dirname(_PATH)
+    tmp_path = None
     try:
         fd = tempfile.NamedTemporaryFile(
             mode="w", suffix=".tmp", dir=dir_path,
             delete=False, encoding="utf-8",
         )
+        tmp_path = fd.name
         try:
             json.dump({k: cfg[k] for k in DEFAULTS if k in cfg}, fd, indent=2)
             fd.flush()
             os.fsync(fd.fileno())
         finally:
             fd.close()
-        os.replace(fd.name, _PATH)
+        os.replace(tmp_path, _PATH)
     except OSError:
         # Clean up temp file on failure if it still exists
-        try:
-            os.unlink(fd.name)
-        except Exception:
-            pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass

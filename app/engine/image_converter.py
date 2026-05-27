@@ -164,6 +164,7 @@ def convert(
                    detected_lang=detected_lang, translation_pairs=translation_pairs)
     _finalize_confidence(confidence, ocr_result.confidence_label)
     confidence.derive_overall()
+    pil_image.close()
     progress(1.0)
     log_info("Image conversion complete.")
     return output

@@ -104,6 +104,9 @@ class ConfidenceResult:
         return f"> Conversion confidence: {self.overall}.{review}"
 
 
+_log_write_lock = __import__("threading").Lock()
+
+
 def write_confidence_report(result: ConfidenceResult) -> str:
     """
     Append this file's confidence report to the dated log in
@@ -117,10 +120,11 @@ def write_confidence_report(result: ConfidenceResult) -> str:
     log_dir = appdata_dir()
     date_str = datetime.date.today().strftime("%Y-%m-%d")
     path = os.path.join(log_dir, f"confidence_{date_str}.log")
+    report = result.to_report_text() + "\n"
     try:
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(result.to_report_text())
-            fh.write("\n")
+        with _log_write_lock:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(report)
     except OSError:
         pass
     return path

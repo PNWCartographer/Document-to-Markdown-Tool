@@ -30,7 +30,8 @@ from .converter import ConversionJob
 _SUPPORTED_EXTS = {
     ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
     ".pptx", ".epub", ".dxf", ".html", ".htm",
-    ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
+    ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp",
+    ".webp", ".gif",
 }
 
 _SETTLE_SECONDS = 1.5
@@ -218,9 +219,21 @@ class FolderWatcher:
 
         def on_done(batch_result):
             result_holder.append(batch_result)
+            # Signal completion directly from the callback thread — do NOT
+            # route through root.after() since the worker thread waits on
+            # this event and would deadlock if the GUI thread is busy.
             done_event.set()
 
         try:
+            # Wrap GUI-visible callbacks through root.after() but signal
+            # done_event directly from the worker thread so the watcher's
+            # _process_loop is never blocked waiting on the GUI thread.
+            def _gui_progress(f):
+                self._gui(self._on_file_progress, f)
+
+            def _gui_stage(s):
+                self._gui(self._on_stage, s)
+
             job = ConversionJob(
                 files=[path],
                 aliases={},
@@ -228,10 +241,10 @@ class FolderWatcher:
                 cfg=self._cfg,
                 root=self._root,
                 on_log=lambda msg: None,
-                on_file_progress=self._on_file_progress,
+                on_file_progress=_gui_progress,
                 on_overall_progress=lambda f: None,
                 on_file_start=lambda name, idx, total: None,
-                on_stage=self._on_stage,
+                on_stage=_gui_stage,
                 on_done=on_done,
             )
             job.start()

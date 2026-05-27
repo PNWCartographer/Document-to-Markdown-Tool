@@ -707,14 +707,16 @@ def _svg_to_png(
 
         # Open from string (PyMuPDF can open SVG from bytes)
         svg_doc = fitz.open(stream=svg_inlined.encode("utf-8"), filetype="svg")
-        page = svg_doc[0]
-        # Render at 150 DPI for crisp output without excessive file size
-        pix = page.get_pixmap(dpi=150)
+        try:
+            page = svg_doc[0]
+            # Render at 150 DPI for crisp output without excessive file size
+            pix = page.get_pixmap(dpi=150)
 
-        png_filename = f"{stem}_preview.png"
-        png_path = os.path.join(assets_dir, png_filename)
-        pix.save(png_path)
-        svg_doc.close()
+            png_filename = f"{stem}_preview.png"
+            png_path = os.path.join(assets_dir, png_filename)
+            pix.save(png_path)
+        finally:
+            svg_doc.close()
 
         log_info(f"PNG preview saved: {png_filename} "
                  f"({pix.width}x{pix.height}px)")

@@ -94,16 +94,37 @@ def load_profiles() -> list[RuleProfile]:
 
 
 def save_profiles(profiles: list[RuleProfile]) -> None:
+    import tempfile
     path = os.path.normpath(_PROFILES_PATH)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    dir_path = os.path.dirname(path)
+    os.makedirs(dir_path, exist_ok=True)
     data = []
     for profile in profiles:
         data.append({
             "name": profile.name,
             "rules": [asdict(r) for r in profile.rules],
         })
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    # Atomic write: write to temp file then replace
+    tmp_path = None
+    try:
+        fd = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".tmp", dir=dir_path,
+            delete=False, encoding="utf-8",
+        )
+        tmp_path = fd.name
+        try:
+            json.dump(data, fd, indent=2)
+            fd.flush()
+            os.fsync(fd.fileno())
+        finally:
+            fd.close()
+        os.replace(tmp_path, path)
+    except OSError:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 def get_profile_by_name(profiles: list[RuleProfile], name: str) -> Optional[RuleProfile]:

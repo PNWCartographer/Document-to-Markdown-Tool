@@ -347,6 +347,32 @@ def build_rag_chunks(
                 if not para_words:
                     continue
 
+                # Split oversized paragraphs that exceed chunk_size on their own
+                if len(para_words) > chunk_size:
+                    if current_words:
+                        text = " ".join(current_words)
+                        chunk = _make_chunk(
+                            stem, chunk_idx, text, source_name, page,
+                            heading, confidence_level, include_confidence,
+                        )
+                        chunks.append(chunk)
+                        chunk_idx += 1
+                        overlap_words = current_words[-chunk_overlap:] if chunk_overlap else []
+                        current_words = list(overlap_words)
+                    for wi in range(0, len(para_words), chunk_size):
+                        batch = para_words[wi:wi + chunk_size]
+                        combined = current_words + batch
+                        text = " ".join(combined)
+                        chunk = _make_chunk(
+                            stem, chunk_idx, text, source_name, page,
+                            heading, confidence_level, include_confidence,
+                        )
+                        chunks.append(chunk)
+                        chunk_idx += 1
+                        overlap_words = combined[-chunk_overlap:] if chunk_overlap else []
+                        current_words = list(overlap_words)
+                    continue
+
                 if current_words and len(current_words) + len(para_words) > chunk_size:
                     # Flush current chunk
                     text = " ".join(current_words)
@@ -510,16 +536,23 @@ def _md_body_to_html(body: str) -> str:
             if all(c.replace("-", "").replace(":", "").strip() == "" for c in cells):
                 continue  # separator row
             if not in_table:
-                out.append("<table>")
+                out.append("<table><thead>")
                 tag = "th"
                 in_table = True
+                _thead_closed = False
             else:
+                if not _thead_closed:
+                    out.append("</thead><tbody>")
+                    _thead_closed = True
                 tag = "td"
             row_html = "".join(f"<{tag}>{_esc(c)}</{tag}>" for c in cells)
             out.append(f"<tr>{row_html}</tr>")
             continue
         elif in_table:
-            out.append("</table>")
+            if _thead_closed:
+                out.append("</tbody></table>")
+            else:
+                out.append("</thead></table>")
             in_table = False
 
         # Images (file ref or base64)
@@ -543,16 +576,29 @@ def _md_body_to_html(body: str) -> str:
             out.append("<hr>")
             continue
 
+        # Preserve page anchors (e.g. <a id="page-1"></a>) before escaping
+        _anchor_re = re.compile(r'<a\s+id="page-\d+"></a>')
+        anchors = _anchor_re.findall(line)
+        p = _anchor_re.sub("\x00ANCHOR\x00", line)
+
         # Regular paragraph — apply inline formatting
-        p = _esc(line)
+        p = _esc(p)
         p = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", p)
         p = re.sub(r"\*(.+?)\*", r"<em>\1</em>", p)
         p = re.sub(r"`(.+?)`", r"<code>\1</code>", p)
+
+        # Restore preserved anchors
+        for anchor in anchors:
+            p = p.replace("\x00ANCHOR\x00", anchor, 1)
+
         if stripped:
             out.append(f"<p>{p}</p>")
 
     if in_table:
-        out.append("</table>")
+        if _thead_closed:
+            out.append("</tbody></table>")
+        else:
+            out.append("</thead></table>")
     if in_code:
         out.append("</code></pre>")
 

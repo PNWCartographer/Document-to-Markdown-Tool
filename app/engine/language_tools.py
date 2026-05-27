@@ -208,7 +208,7 @@ def translate_text(
                                                        _depth=_depth + 1)
                         if intermediate:
                             return translate_text(intermediate, "en", to_code,
-                                                   auto_install=True,
+                                                   auto_install=False,
                                                    _depth=_depth + 1)
                 return None
         else:

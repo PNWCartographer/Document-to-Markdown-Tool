@@ -38,7 +38,7 @@ if __name__ == "__main__":
             pass
         # Also try writing to a log file
         try:
-            import os, datetime
+            import datetime
             log_dir = os.path.join(
                 os.environ.get("APPDATA", os.path.expanduser("~")),
                 "DocToMarkdown",

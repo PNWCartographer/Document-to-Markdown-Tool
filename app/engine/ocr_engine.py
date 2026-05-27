@@ -40,9 +40,16 @@ _add_torch_dll_dir()
 # before pytesseract is imported so the env var is set early.
 # ---------------------------------------------------------------------------
 _TESSERACT_SEARCH_PATHS = [
+    # Windows
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
     os.path.join(os.path.expanduser("~"), r"AppData\Local\Tesseract-OCR\tesseract.exe"),
+    # Linux
+    "/usr/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    # macOS (Homebrew Intel + Apple Silicon)
+    "/usr/local/bin/tesseract",
+    "/opt/homebrew/bin/tesseract",
 ]
 
 def _configure_tesseract() -> None:
@@ -200,18 +207,22 @@ _PADDLE_LANG_MAP = {
 }
 
 
+_paddle_lock = __import__("threading").Lock()
+
+
 def _get_paddle_engine(language: str):
     global _paddle_engine, _paddle_lang
     lang = _PADDLE_LANG_MAP.get(language, "en")
-    if _paddle_engine is None or _paddle_lang != lang:
-        from paddleocr import PaddleOCR
-        _paddle_engine = PaddleOCR(
-            use_angle_cls=True,
-            lang=lang,
-            show_log=False,
-        )
-        _paddle_lang = lang
-    return _paddle_engine
+    with _paddle_lock:
+        if _paddle_engine is None or _paddle_lang != lang:
+            from paddleocr import PaddleOCR
+            _paddle_engine = PaddleOCR(
+                use_angle_cls=True,
+                lang=lang,
+                show_log=False,
+            )
+            _paddle_lang = lang
+        return _paddle_engine
 
 
 def _run_paddle(image, language: str) -> OcrResult:

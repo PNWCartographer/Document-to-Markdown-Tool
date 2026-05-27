@@ -142,7 +142,7 @@ def _count_links(md: str) -> int:
 
 def _count_words(md: str) -> int:
     text = re.sub(r'```[\s\S]*?```', '', md)
-    text = re.sub(r'\A---[\s\S]*?---', '', text, count=1)
+    text = re.sub(r'\A---\n[\s\S]*?\n---', '', text, count=1)
     text = re.sub(r'[#*|`\[\]()>_~]', ' ', text)
     text = re.sub(r'<[^>]+>', '', text)
     words = text.split()
@@ -160,17 +160,22 @@ def _check_heading_hierarchy(md: str) -> list[str]:
     in_code = False
     in_front_matter = False
     prev_level = 0
+    seen_content = False  # Track whether any non-blank content has appeared
 
     for line in lines:
         stripped = line.strip()
 
         if stripped == '---':
-            if not in_front_matter and prev_level == 0:
+            if not in_front_matter and not seen_content:
                 in_front_matter = True
                 continue
             elif in_front_matter:
                 in_front_matter = False
+                seen_content = True
                 continue
+
+        if stripped:
+            seen_content = True
 
         if in_front_matter:
             continue
@@ -267,7 +272,7 @@ def _flesch_kincaid(md: str) -> tuple[float, str]:
       FK = 0.39 * (words/sentences) + 11.8 * (syllables/words) - 15.59
     """
     text = re.sub(r'```[\s\S]*?```', '', md)
-    text = re.sub(r'\A---[\s\S]*?---', '', text, count=1)
+    text = re.sub(r'\A---\n[\s\S]*?\n---', '', text, count=1)
     text = re.sub(r'[#*|`\[\]()>_~]', ' ', text)
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)

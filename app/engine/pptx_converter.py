@@ -236,9 +236,15 @@ def _table_to_markdown(table) -> str:
     rows_data = []
     for row in table.rows:
         cells = []
+        prev_text = None
         for cell in row.cells:
             cell_text = cell.text.replace("\n", " ").strip()
-            cells.append(cell_text)
+            # Deduplicate adjacent merged cells that repeat the same text
+            if cell_text == prev_text:
+                cells.append("")
+            else:
+                cells.append(cell_text)
+            prev_text = cell_text
         rows_data.append(cells)
 
     if not rows_data:

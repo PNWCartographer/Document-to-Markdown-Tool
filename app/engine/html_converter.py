@@ -186,7 +186,8 @@ def convert(
 
 def _read_file(path: str) -> Optional[str]:
     try:
-        raw_bytes = open(path, "rb").read()
+        with open(path, "rb") as fh:
+            raw_bytes = fh.read()
     except OSError:
         return None
 
@@ -209,8 +210,15 @@ def _resolve_local_image(src: str, source_dir: str) -> Optional[str]:
         return None
     local_path = unquote(parsed.path)
     if os.path.isabs(local_path):
-        return local_path
-    return os.path.normpath(os.path.join(source_dir, local_path))
+        resolved = os.path.normpath(local_path)
+    else:
+        resolved = os.path.normpath(os.path.join(source_dir, local_path))
+    # Prevent path traversal — resolved path must stay within (or adjacent to)
+    # the source directory.
+    norm_source = os.path.normpath(source_dir)
+    if not resolved.startswith(norm_source + os.sep) and resolved != norm_source:
+        return None
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +343,7 @@ def _html_to_md(element, image_map: dict) -> tuple[str, int]:
             if inner.strip():
                 parts.append(inner)
 
-    return "\n\n".join(parts), table_count
+    return "\n\n".join(p.strip("\n") for p in parts if p.strip()), table_count
 
 
 def _inline(element, image_map: dict) -> str:
@@ -411,6 +419,9 @@ def _table_md(table_el) -> str:
             rows_data.append(cells)
     body_el = tbody if tbody else table_el
     for tr in body_el.find_all("tr", recursive=(not tbody)):
+        # Skip rows that belong to <thead> when iterating the whole table
+        if not tbody and thead and tr.parent == thead:
+            continue
         cells = [td.get_text(strip=True).replace("\n", " ")
                  for td in tr.find_all(["th", "td"])]
         if cells:

@@ -1,7 +1,10 @@
+import sys
 import tkinter as tk
 
 _DELAY_MS   = 500
-_FONT_TIP   = ("Segoe UI", 11)
+_FONT_FAMILY = ("Segoe UI" if sys.platform == "win32" else
+                "Helvetica Neue" if sys.platform == "darwin" else "sans-serif")
+_FONT_TIP   = (_FONT_FAMILY, 11)
 _SMALL_TIP  = "Resize the window to view this tooltip."
 
 

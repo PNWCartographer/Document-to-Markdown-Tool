@@ -653,7 +653,7 @@ def _convert_pymupdf(
     ocr_confidences = []
     text_quality_flags = []
 
-    with doc:
+    try:
         total_pages = len(doc)
         log_info(f"Opened PDF | pages={total_pages}")
 
@@ -717,85 +717,87 @@ def _convert_pymupdf(
 
             if page_parts:
                 page_sections.append((page_num, "\n".join(page_parts)))
-    progress(0.88)
+        progress(0.88)
 
-    # Run post-processor pipeline on collected page texts
-    pp = pp_settings or {}
-    _pp_keys_mupdf = ("remove_headers_footers", "skip_blank_pages", "strip_line_numbers",
-                       "detect_code_blocks", "detect_footnotes", "detect_equations")
-    if page_sections and any(pp.get(k) for k in _pp_keys_mupdf):
-        from . import post_processors
-        page_texts = [body for _, body in page_sections]
-        page_nums  = [num for num, _ in page_sections]
+        # Run post-processor pipeline on collected page texts
+        pp = pp_settings or {}
+        _pp_keys_mupdf = ("remove_headers_footers", "skip_blank_pages", "strip_line_numbers",
+                           "detect_code_blocks", "detect_footnotes", "detect_equations")
+        if page_sections and any(pp.get(k) for k in _pp_keys_mupdf):
+            from . import post_processors
+            page_texts = [body for _, body in page_sections]
+            page_nums  = [num for num, _ in page_sections]
 
-        log_info(f"Post-processing {len(page_texts)} pages...")
-        processed = post_processors.run_pipeline(
-            page_texts,
-            do_remove_headers_footers=pp.get("remove_headers_footers", True),
-            do_skip_blank_pages=pp.get("skip_blank_pages", True),
-            do_strip_line_numbers=pp.get("strip_line_numbers", False),
-            do_detect_code_blocks=pp.get("detect_code_blocks", True),
-            do_detect_footnotes=pp.get("detect_footnotes", True),
-            do_detect_equations=pp.get("detect_equations", True),
-        )
-
-        # Rebuild page_sections from processed output.
-        # When lengths match, pair 1:1 with original page numbers.
-        # When processed is shorter (blank-page filtering removed some),
-        # assign pages sequentially from the original page numbers,
-        # truncating if needed. This avoids fragile content-matching.
-        if len(processed) == len(page_texts):
-            page_sections = list(zip(page_nums, processed))
-        elif len(processed) < len(page_texts):
-            log_warn(
-                f"Post-processing reduced pages from {len(page_texts)} to "
-                f"{len(processed)} — assigning page numbers sequentially."
+            log_info(f"Post-processing {len(page_texts)} pages...")
+            processed = post_processors.run_pipeline(
+                page_texts,
+                do_remove_headers_footers=pp.get("remove_headers_footers", True),
+                do_skip_blank_pages=pp.get("skip_blank_pages", True),
+                do_strip_line_numbers=pp.get("strip_line_numbers", False),
+                do_detect_code_blocks=pp.get("detect_code_blocks", True),
+                do_detect_footnotes=pp.get("detect_footnotes", True),
+                do_detect_equations=pp.get("detect_equations", True),
             )
-            page_sections = list(zip(page_nums[:len(processed)], processed))
+
+            # Rebuild page_sections from processed output.
+            # When lengths match, pair 1:1 with original page numbers.
+            # When processed is shorter (blank-page filtering removed some),
+            # assign pages sequentially from the original page numbers,
+            # truncating if needed. This avoids fragile content-matching.
+            if len(processed) == len(page_texts):
+                page_sections = list(zip(page_nums, processed))
+            elif len(processed) < len(page_texts):
+                log_warn(
+                    f"Post-processing reduced pages from {len(page_texts)} to "
+                    f"{len(processed)} — assigning page numbers sequentially."
+                )
+                page_sections = list(zip(page_nums[:len(processed)], processed))
+            else:
+                # Processed somehow has more entries (shouldn't happen);
+                # truncate to original count
+                log_warn(
+                    f"Post-processing expanded pages from {len(page_texts)} to "
+                    f"{len(processed)} — truncating to original count."
+                )
+                page_sections = list(zip(page_nums, processed[:len(page_texts)]))
+
+        # Assemble sections
+        for page_num, body in page_sections:
+            output.add_section(body=body, page_number=page_num)
+
+        # Confidence
+        extracted_pages = sum(1 for f in text_quality_flags if f)
+        extraction_ratio = extracted_pages / max(total_pages, 1)
+
+        if extraction_ratio >= 0.9:
+            confidence.text_extraction = "High"
+        elif extraction_ratio >= 0.6:
+            confidence.text_extraction = "Medium"
         else:
-            # Processed somehow has more entries (shouldn't happen);
-            # truncate to original count
-            log_warn(
-                f"Post-processing expanded pages from {len(page_texts)} to "
-                f"{len(processed)} — truncating to original count."
-            )
-            page_sections = list(zip(page_nums, processed[:len(page_texts)]))
+            confidence.text_extraction = "Low"
 
-    # Assemble sections
-    for page_num, body in page_sections:
-        output.add_section(body=body, page_number=page_num)
+        if use_ocr and ocr_confidences:
+            ocr_label_priority = {"High": 3, "Medium": 2, "Low": 1, "Failed": 0, "N/A": 4}
+            worst_ocr = min(ocr_confidences, key=lambda s: ocr_label_priority.get(s, 0))
+            confidence.ocr_confidence = worst_ocr
+            if worst_ocr in ("Low", "Failed"):
+                confidence.add_warning("Some pages had low OCR confidence — manual review recommended.")
+        else:
+            confidence.ocr_confidence = "N/A"
 
-    # Confidence
-    extracted_pages = sum(1 for f in text_quality_flags if f)
-    extraction_ratio = extracted_pages / max(total_pages, 1)
+        confidence.table_structure = "Medium"
+        confidence.document_order = "High"
+        confidence.image_extraction = "High" if preserve_images and assets_dir else "N/A"
+        confidence.image_placement = "Medium" if preserve_images and assets_dir else "N/A"
+        confidence.derive_overall()
 
-    if extraction_ratio >= 0.9:
-        confidence.text_extraction = "High"
-    elif extraction_ratio >= 0.6:
-        confidence.text_extraction = "Medium"
-    else:
-        confidence.text_extraction = "Low"
-
-    if use_ocr and ocr_confidences:
-        ocr_label_priority = {"High": 3, "Medium": 2, "Low": 1, "Failed": 0, "N/A": 4}
-        worst_ocr = min(ocr_confidences, key=lambda s: ocr_label_priority.get(s, 0))
-        confidence.ocr_confidence = worst_ocr
-        if worst_ocr in ("Low", "Failed"):
-            confidence.add_warning("Some pages had low OCR confidence — manual review recommended.")
-    else:
-        confidence.ocr_confidence = "N/A"
-
-    confidence.table_structure = "Medium"
-    confidence.document_order = "High"
-    confidence.image_extraction = "High" if preserve_images and assets_dir else "N/A"
-    confidence.image_placement = "Medium" if preserve_images and assets_dir else "N/A"
-    confidence.derive_overall()
-
-    engine_label = "pymupdf page-by-page (OCR)" if use_ocr else "pymupdf page-by-page"
-    confidence.add_note(f"Engine: {engine_label}")
-    log_info(f"pymupdf conversion complete | pages={total_pages} extracted={extracted_pages}")
-    progress(1.0)
-    return output
+        engine_label = "pymupdf page-by-page (OCR)" if use_ocr else "pymupdf page-by-page"
+        confidence.add_note(f"Engine: {engine_label}")
+        log_info(f"pymupdf conversion complete | pages={total_pages} extracted={extracted_pages}")
+        progress(1.0)
+        return output
+    finally:
+        doc.close()
 
 
 # ---------------------------------------------------------------------------
@@ -929,9 +931,12 @@ def _ocr_page(page, language: str, log_info, log_warn,
         img_bytes = pix.tobytes("png")
         pil_image = Image.open(io.BytesIO(img_bytes))
 
-        result = ocr_engine.run_ocr(pil_image, language=language,
-                                     prefer_engine=prefer_engine)
-        return result.text, result.confidence_label
+        try:
+            result = ocr_engine.run_ocr(pil_image, language=language,
+                                         prefer_engine=prefer_engine)
+            return result.text, result.confidence_label
+        finally:
+            pil_image.close()
 
     except Exception as e:
         log_warn(f"Page OCR failed: {e}")

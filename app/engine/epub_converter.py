@@ -106,7 +106,7 @@ def convert(
     # ── Convert spine documents ──────────────────────────
     spine_items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
     # Filter to only items in spine order
-    spine_ids = [item_id for (item_id, _linear) in book.spine]
+    spine_ids = [entry[0] for entry in book.spine]
     spine_lookup = {item.get_id(): item for item in spine_items}
     ordered_items = [spine_lookup[sid] for sid in spine_ids if sid in spine_lookup]
 

@@ -60,6 +60,8 @@ _FONT_NAV_ACT  = (_FONT_FAMILY, 12, "bold")
 _FONT_SMALL    = (_FONT_FAMILY, 11)
 _FONT_BTN      = (_FONT_FAMILY, 13, "bold")
 _FONT_SECTION  = (_FONT_FAMILY, 10, "bold")
+_FONT_MONO     = ("Consolas" if sys.platform == "win32" else
+                  "Menlo" if sys.platform == "darwin" else "monospace")
 
 _CONF_AREAS = [
     "Overall",
@@ -806,7 +808,7 @@ class App:
         # Section: Post-Processing Rules
         row = self._settings_add_section(self._settings_content, "Post-Processing Rules", row)
 
-        info = tk.Label(self._settings_content, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
+        info = tk.Label(self._settings_content, text="ⓘ", font=(_FONT_FAMILY, 12), cursor="question_arrow")
         info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
         Tooltip(info, (
             "Apply regex find/replace rules to the converted output. Rules run after "
@@ -867,7 +869,7 @@ class App:
         return row + 2
 
     def _settings_add_checkbox(self, parent, key, label, tip, row, default_hint="") -> int:
-        info = tk.Label(parent, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
+        info = tk.Label(parent, text="ⓘ", font=(_FONT_FAMILY, 12), cursor="question_arrow")
         info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
         Tooltip(info, tip, lambda: self._t)
 
@@ -878,7 +880,7 @@ class App:
         cb = ToggleSwitch(parent, variable=var)
         cb.grid(row=row, column=2, sticky="e", pady=4, padx=(0, 8))
 
-        hint_lbl = tk.Label(parent, text=default_hint, font=("Segoe UI", 9), anchor="e")
+        hint_lbl = tk.Label(parent, text=default_hint, font=(_FONT_FAMILY, 9), anchor="e")
         hint_lbl.grid(row=row, column=3, sticky="e", pady=4, padx=(0, 4))
 
         self._settings_info_labels.append(info)
@@ -888,7 +890,7 @@ class App:
         return row + 1
 
     def _settings_add_dropdown(self, parent, key, label, options, tip, row, default_hint="") -> int:
-        info = tk.Label(parent, text="ⓘ", font=("Segoe UI", 12), cursor="question_arrow")
+        info = tk.Label(parent, text="ⓘ", font=(_FONT_FAMILY, 12), cursor="question_arrow")
         info.grid(row=row, column=0, sticky="w", pady=4, padx=(0, 4))
         Tooltip(info, tip, lambda: self._t)
 
@@ -900,7 +902,7 @@ class App:
                              font=_FONT_SMALL)
         menu.grid(row=row, column=2, sticky="e", pady=3, padx=(0, 8))
 
-        hint_lbl = tk.Label(parent, text=default_hint, font=("Segoe UI", 9), anchor="e")
+        hint_lbl = tk.Label(parent, text=default_hint, font=(_FONT_FAMILY, 9), anchor="e")
         hint_lbl.grid(row=row, column=3, sticky="e", pady=4, padx=(0, 4))
 
         self._settings_info_labels.append(info)
@@ -913,7 +915,14 @@ class App:
         if getattr(self, '_resetting_defaults', False):
             return
         for key, var in self._setting_vars.items():
-            self._cfg[key] = var.get()
+            val = var.get()
+            # Keep parallel_workers as int for consistency with settings.load()
+            if key == "parallel_workers":
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    pass
+            self._cfg[key] = val
         _cfg_mod.save(self._cfg)
 
     def _on_reset_defaults(self):
@@ -1454,6 +1463,9 @@ class App:
         if not self._watch_input_path:
             messagebox.showwarning("Watch Folder", "Please select a folder to watch.")
             return
+        if not os.path.isdir(self._watch_input_path):
+            messagebox.showwarning("Watch Folder", f"Watch folder does not exist:\n{self._watch_input_path}")
+            return
         if not self._watch_output_path:
             messagebox.showwarning("Watch Folder", "Please select an output folder.")
             return
@@ -1520,11 +1532,17 @@ class App:
     def _watch_on_error(self, message: str):
         self._watch_log_append(f"Error: {message}")
 
+    _MAX_LOG_LINES = 1000
+
     def _watch_log_append(self, text: str):
         import datetime
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self._watch_log.config(state="normal")
         self._watch_log.insert("end", f"[{timestamp}] {text}\n")
+        # Cap log size to prevent unbounded memory growth
+        line_count = int(self._watch_log.index("end-1c").split(".")[0])
+        if line_count > self._MAX_LOG_LINES:
+            self._watch_log.delete("1.0", f"{line_count - self._MAX_LOG_LINES}.0")
         self._watch_log.see("end")
         self._watch_log.config(state="disabled")
 
@@ -1544,8 +1562,21 @@ class App:
         """Flash the Watch nav button briefly to signal a completed file."""
         btn = self._nav_btns.get("Watch")
         if btn and self._current != "Watch":
+            # Cancel any pending restore before scheduling a new one
+            pending = getattr(self, "_watch_notify_id", None)
+            if pending is not None:
+                try:
+                    self.root.after_cancel(pending)
+                except Exception:
+                    pass
             btn.config(fg=self._t.get("accent", "#7c3aed"))
-            self.root.after(2000, lambda: btn.config(fg=self._t["text"]))
+
+            def _restore():
+                self._watch_notify_id = None
+                # Don't overwrite accent if Watch tab is now active
+                if self._current != "Watch":
+                    btn.config(fg=self._t["text"])
+            self._watch_notify_id = self.root.after(2000, _restore)
 
     # ── Debug / Preview window ──────────────────────────────
 
@@ -2150,7 +2181,7 @@ class App:
         preview_frame.grid_columnconfigure(0, weight=1)
 
         preview_text = tk.Text(
-            preview_frame, font=("Consolas", 11), wrap="none",
+            preview_frame, font=(_FONT_MONO, 11), wrap="none",
             bg=t["bg"], fg=t["text"],
             bd=0, highlightthickness=0,
             padx=12, pady=8, state="disabled",
@@ -2172,27 +2203,27 @@ class App:
         preview_sb.grid(row=0, column=1, sticky="ns")
 
         # ── Text tags for syntax highlighting ────────────────
-        preview_text.tag_configure("heading", font=("Segoe UI", 14, "bold"), foreground=t["accent"])
-        preview_text.tag_configure("heading2", font=("Segoe UI", 12, "bold"), foreground=t["accent"])
-        preview_text.tag_configure("heading3", font=("Segoe UI", 11, "bold"), foreground=t["accent"])
-        preview_text.tag_configure("bold", font=("Consolas", 11, "bold"))
-        preview_text.tag_configure("frontmatter", foreground=t["text_secondary"], font=("Consolas", 10))
+        preview_text.tag_configure("heading", font=(_FONT_FAMILY, 14, "bold"), foreground=t["accent"])
+        preview_text.tag_configure("heading2", font=(_FONT_FAMILY, 12, "bold"), foreground=t["accent"])
+        preview_text.tag_configure("heading3", font=(_FONT_FAMILY, 11, "bold"), foreground=t["accent"])
+        preview_text.tag_configure("bold", font=(_FONT_MONO, 11, "bold"))
+        preview_text.tag_configure("frontmatter", foreground=t["text_secondary"], font=(_FONT_MONO, 10))
         preview_text.tag_configure("table", foreground="#8be9fd" if self._dark else "#0969da")
-        preview_text.tag_configure("page_marker", foreground=t["text_secondary"], font=("Consolas", 10, "italic"))
+        preview_text.tag_configure("page_marker", foreground=t["text_secondary"], font=(_FONT_MONO, 10, "italic"))
         # New tags
         _code_bg = "#2a2a3d" if self._dark else "#eef0f4"
-        preview_text.tag_configure("code_block", font=("Consolas", 10),
+        preview_text.tag_configure("code_block", font=(_FONT_MONO, 10),
                                    background=_code_bg,
                                    foreground="#a9dc76" if self._dark else "#22863a",
                                    lmargin1=12, lmargin2=12, rmargin=12)
-        preview_text.tag_configure("inline_code", font=("Consolas", 10),
+        preview_text.tag_configure("inline_code", font=(_FONT_MONO, 10),
                                    background=_code_bg)
-        preview_text.tag_configure("blockquote", font=("Segoe UI", 11, "italic"),
+        preview_text.tag_configure("blockquote", font=(_FONT_FAMILY, 11, "italic"),
                                    foreground=t["text_secondary"],
                                    lmargin1=24, lmargin2=24)
         preview_text.tag_configure("link", foreground=t["accent"], underline=True)
         preview_text.tag_configure("hr", foreground=t["border"],
-                                   justify="center", font=("Consolas", 10))
+                                   justify="center", font=(_FONT_MONO, 10))
         preview_text.tag_configure("list_bullet", foreground=t["accent"])
         preview_text.tag_configure("image_ref",
                                    foreground=t.get("accent_secondary", t["accent"]))
@@ -2208,6 +2239,7 @@ class App:
 
         # Image reference list (prevent GC of PhotoImages)
         preview_images: list = []
+        image_load_id = [None]  # Pending after-ID for deferred _load_images
 
         # ── Inline formatting regexes ────────────────────────
         _RE_INLINE_CODE = re.compile(r'`([^`]+)`')
@@ -2247,6 +2279,14 @@ class App:
         # Images deferred to after_idle for instant window render
 
         def load_file(rel_path):
+            # Cancel any pending deferred image load from previous file
+            if image_load_id[0] is not None:
+                try:
+                    win.after_cancel(image_load_id[0])
+                except Exception:
+                    pass
+                image_load_id[0] = None
+
             try:
                 idx = file_display_names.index(rel_path)
             except ValueError:
@@ -2323,17 +2363,17 @@ class App:
 
             in_frontmatter = False
             in_code_block = False
-            first_line = True
+            seen_content = False  # "no non-blank content seen yet"
 
             for line in lines:
                 stripped = line.strip()
 
-                if stripped == "---" and first_line:
+                if stripped == "---" and not seen_content:
                     in_frontmatter = True
                     classified.append(("frontmatter", line))
-                    first_line = False
                     continue
-                first_line = False
+                if stripped:
+                    seen_content = True
 
                 if in_frontmatter:
                     classified.append(("frontmatter", line))
@@ -2441,7 +2481,16 @@ class App:
 
             # ── Deferred: image thumbnails (non-blocking) ─────
             if img_entries:
+                _current_file = full_path  # capture for identity check
+
                 def _load_images():
+                    image_load_id[0] = None
+                    # Guard against destroyed window or stale file switch
+                    try:
+                        if not win.winfo_exists():
+                            return
+                    except Exception:
+                        return
                     preview_text.config(state="normal")
                     offset = 0
                     for idx, img_rel in img_entries:
@@ -2457,7 +2506,7 @@ class App:
                     # results so match positions stay correct.
                     if search_visible[0] and search_var.get():
                         _do_search()
-                win.after(50, _load_images)
+                image_load_id[0] = win.after(50, _load_images)
 
         # ── Search functions ─────────────────────────────────
         def _toggle_search(_event=None):
@@ -2568,6 +2617,9 @@ class App:
         def _on_preview_close():
             if search_debounce_id[0] is not None:
                 try: win.after_cancel(search_debounce_id[0])
+                except Exception: pass
+            if image_load_id[0] is not None:
+                try: win.after_cancel(image_load_id[0])
                 except Exception: pass
             try: search_var.trace_remove("write", _search_trace)
             except Exception: pass
@@ -2774,6 +2826,10 @@ class App:
     def _log_write(self, text: str):
         self._conv_log.config(state="normal")
         self._conv_log.insert(tk.END, text + "\n")
+        # Cap log size to prevent unbounded memory growth
+        line_count = int(self._conv_log.index("end-1c").split(".")[0])
+        if line_count > self._MAX_LOG_LINES:
+            self._conv_log.delete("1.0", f"{line_count - self._MAX_LOG_LINES}.0")
         self._conv_log.config(state="disabled")
         self._conv_log.see(tk.END)
 
@@ -2832,13 +2888,19 @@ class App:
         self._conv_stage_lbl.config(text=stage)
 
     def _on_conversion_done(self, result: "_converter_mod.BatchResult") -> None:
-        # Final bar states
-        self._conv_overall_bar.set_progress(1.0)
-        self._conv_file_bar.set_progress(1.0)
+        # Final bar states — only show 100% when not cancelled
+        if result.cancelled:
+            frac = result.completed / max(result.total, 1)
+            self._conv_overall_bar.set_progress(frac)
+        else:
+            self._conv_overall_bar.set_progress(1.0)
+            self._conv_file_bar.set_progress(1.0)
         total = result.total
         self._conv_overall_count_lbl.config(text=f"{result.completed} of {total} file{'s' if total != 1 else ''}")
         self._conv_file_name_lbl.config(text="Conversion complete" if not result.cancelled else "Cancelled")
         self._conv_stage_lbl.config(text="")
+        # Re-enable start button
+        self._check_start_ready()
         self._log_write("")
         self._log_write(result.status_text)
 
@@ -3134,6 +3196,11 @@ class App:
         if not self._is_windows:
             return
         try:
+            if not target.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
             import ctypes
             from ctypes import c_int, byref, sizeof
 
@@ -3414,6 +3481,13 @@ class App:
                 thread.join(timeout=1.0)
         if self._watcher and self._watcher.is_running:
             self._watcher.stop()
+        # Cancel pending after() callbacks to prevent TclError on destroyed root
+        pending = getattr(self, "_watch_notify_id", None)
+        if pending is not None:
+            try:
+                self.root.after_cancel(pending)
+            except Exception:
+                pass
         self.root.destroy()
 
     # ── Run ──────────────────────────────────────────────────
