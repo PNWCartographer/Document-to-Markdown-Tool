@@ -64,6 +64,9 @@ def load() -> dict:
                     out[int_key] = int(out[int_key])
                 except (ValueError, TypeError):
                     out[int_key] = DEFAULTS[int_key]
+            # Migrate parallel_workers from old int default 1 → "Auto"
+            if out["parallel_workers"] == 1:
+                out["parallel_workers"] = "Auto"
             return out
         except Exception:
             pass
