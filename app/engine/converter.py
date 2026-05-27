@@ -75,11 +75,13 @@ class ConversionJob:
         on_file_start: Callable[[str, int, int], None], # (filename, idx, total)
         on_stage: Callable[[str], None],                # stage description
         on_done: Callable[["BatchResult"], None],       # called on completion
+        page_ranges: dict[str, list[int]] | None = None,  # per-file page selections
     ):
         self._files = list(files)
         self._aliases = dict(aliases)
         self._output_root = output_root
         self._cfg = dict(cfg)
+        self._page_ranges = page_ranges or {}
         self._root = root
 
         self._on_log = on_log
@@ -471,6 +473,7 @@ class ConversionJob:
                 auto_translate=auto_translate,
                 prefer_engine=prefer_engine,
                 ocr_dpi_scale=ocr_dpi_scale,
+                page_range=self._page_ranges.get(source_file),
                 logger=logger,
                 progress_callback=progress,
             )

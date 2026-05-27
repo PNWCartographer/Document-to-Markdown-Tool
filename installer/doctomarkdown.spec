@@ -67,6 +67,10 @@ hidden_imports = [
     "striprtf",
     "ezdxf",
 
+    # ── Preview tools ──
+    "spellchecker",
+    "markdown",
+
     # ── Language tools ──
     "fast_langdetect",
     "argostranslate",

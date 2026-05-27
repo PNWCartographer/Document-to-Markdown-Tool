@@ -282,6 +282,7 @@ class App:
         # Home screen state
         self._selected_files: list[str] = []
         self._file_aliases:   dict[str, str] = {}   # path → custom output name
+        self._file_page_ranges: dict[str, list[int]] = {}  # path → selected pages
         self._output_path: str = self._cfg.get("last_output_folder", "")
 
         # Settings state (config already loaded above)
@@ -2123,7 +2124,7 @@ class App:
         file_display_names = [os.path.relpath(f, result.output_root) for f in output_files]
         file_var = tk.StringVar(value=file_display_names[0])
 
-        # ── Copy to clipboard button (pack BEFORE expanding selector) ─
+        # ── Copy buttons (pack BEFORE expanding selector) ────
         current_content = [""]  # mutable container for raw markdown
 
         def _copy_to_clipboard():
@@ -2132,6 +2133,240 @@ class App:
             btn_copy.set_text("✓ Copied")
             win.after(1500, lambda: btn_copy.set_text("Copy Markdown")
                       if win.winfo_exists() else None)
+
+        def _copy_formatted():
+            """Copy as rich HTML so pasting into Word/Docs preserves formatting."""
+            md_text = current_content[0]
+            try:
+                import markdown as _md_lib
+                html = _md_lib.markdown(
+                    md_text, extensions=["tables", "fenced_code"])
+            except ImportError:
+                # Minimal fallback — wrap in <pre> if markdown lib missing
+                html = f"<pre>{md_text}</pre>"
+            if sys.platform == "win32":
+                _copy_html_win32(html)
+            else:
+                # macOS / Linux: plain HTML on clipboard via tkinter
+                win.clipboard_clear()
+                win.clipboard_append(html)
+            btn_copy_fmt.set_text("✓ Copied")
+            win.after(1500, lambda: btn_copy_fmt.set_text("Copy Rich")
+                      if win.winfo_exists() else None)
+
+        def _copy_html_win32(html: str):
+            """Put HTML on the Windows clipboard using CF_HTML format."""
+            try:
+                import ctypes
+                from ctypes import wintypes
+                CF_HTML = ctypes.windll.user32.RegisterClipboardFormatW("HTML Format")
+                # Build CF_HTML envelope
+                header = (
+                    "Version:0.9\r\n"
+                    "StartHTML:{:08d}\r\n"
+                    "EndHTML:{:08d}\r\n"
+                    "StartFragment:{:08d}\r\n"
+                    "EndFragment:{:08d}\r\n"
+                )
+                prefix = "<!--StartFragment-->"
+                suffix = "<!--EndFragment-->"
+                dummy_header = header.format(0, 0, 0, 0)
+                start_html = len(dummy_header.encode("utf-8"))
+                start_frag = start_html + len(prefix.encode("utf-8"))
+                end_frag = start_frag + len(html.encode("utf-8"))
+                end_html = end_frag + len(suffix.encode("utf-8"))
+                blob = header.format(start_html, end_html, start_frag, end_frag)
+                blob += prefix + html + suffix
+                data = blob.encode("utf-8") + b"\x00"
+
+                ctypes.windll.user32.OpenClipboard(0)
+                ctypes.windll.user32.EmptyClipboard()
+                # Also set plain text
+                win.clipboard_clear()
+                win.clipboard_append(current_content[0])
+                # Set HTML format
+                h_mem = ctypes.windll.kernel32.GlobalAlloc(0x0042, len(data))
+                p = ctypes.windll.kernel32.GlobalLock(h_mem)
+                ctypes.memmove(p, data, len(data))
+                ctypes.windll.kernel32.GlobalUnlock(h_mem)
+                ctypes.windll.user32.SetClipboardData(CF_HTML, h_mem)
+                ctypes.windll.user32.CloseClipboard()
+            except Exception:
+                # Fallback: just copy plain markdown
+                win.clipboard_clear()
+                win.clipboard_append(current_content[0])
+
+        # Spell check state
+        spell_active = [False]
+        _spell_checker = [None]  # lazy-loaded SpellChecker instance
+
+        def _toggle_spell_check():
+            spell_active[0] = not spell_active[0]
+            if spell_active[0]:
+                btn_spell.set_text("✓ Spell")
+                _run_spell_check()
+            else:
+                btn_spell.set_text("Spell")
+                preview_text.config(state="normal")
+                preview_text.tag_remove("misspelled", "1.0", tk.END)
+                preview_text.config(state="disabled")
+
+        def _run_spell_check():
+            """Flag misspelled words with red underline."""
+            if not spell_active[0]:
+                return
+            try:
+                if _spell_checker[0] is None:
+                    from spellchecker import SpellChecker
+                    _spell_checker[0] = SpellChecker()
+                spell = _spell_checker[0]
+            except ImportError:
+                btn_spell.set_text("N/A")
+                return
+
+            preview_text.config(state="normal")
+            preview_text.tag_remove("misspelled", "1.0", tk.END)
+
+            content = preview_text.get("1.0", tk.END)
+            lines = content.split("\n")
+            _word_re = re.compile(r"[a-zA-Z']{3,}")
+            spell_ranges: list[str] = []
+
+            for ln_num, line in enumerate(lines, 1):
+                for m in _word_re.finditer(line):
+                    word = m.group()
+                    if word.lower() not in spell.word_frequency:
+                        if spell.unknown([word]):
+                            spell_ranges.extend([
+                                f"{ln_num}.{m.start()}",
+                                f"{ln_num}.{m.end()}"])
+            if spell_ranges:
+                preview_text.tag_add("misspelled", *spell_ranges)
+            preview_text.config(state="disabled")
+
+        # Confidence heatmap state
+        heatmap_active = [False]
+
+        def _toggle_heatmap():
+            heatmap_active[0] = not heatmap_active[0]
+            if heatmap_active[0]:
+                btn_heatmap.set_text("✓ Heatmap")
+                _apply_heatmap()
+            else:
+                btn_heatmap.set_text("Heatmap")
+                preview_text.config(state="normal")
+                preview_text.tag_remove("conf_high", "1.0", tk.END)
+                preview_text.tag_remove("conf_medium", "1.0", tk.END)
+                preview_text.tag_remove("conf_low", "1.0", tk.END)
+                preview_text.config(state="disabled")
+
+        def _apply_heatmap():
+            """Color-code the preview based on confidence scores."""
+            if not heatmap_active[0]:
+                return
+            rel_path = file_var.get()
+            try:
+                idx = file_display_names.index(rel_path)
+            except ValueError:
+                return
+            full_path_h = output_files[idx]
+            stem = os.path.splitext(os.path.basename(full_path_h))[0]
+
+            # Find the matching confidence result
+            conf_obj = None
+            if result.all_confidence:
+                for c in result.all_confidence:
+                    cs = os.path.splitext(os.path.basename(
+                        c.source_file))[0] if c.source_file else ""
+                    if cs == stem:
+                        conf_obj = c
+                        break
+
+            if not conf_obj:
+                return
+
+            # Determine the overall tag to apply
+            overall = (conf_obj.overall or "").lower()
+            if overall in ("high",):
+                conf_tag = "conf_high"
+            elif overall in ("medium", "moderate"):
+                conf_tag = "conf_medium"
+            else:
+                conf_tag = "conf_low"
+
+            # Apply to the entire document as base tint
+            preview_text.config(state="normal")
+            preview_text.tag_remove("conf_high", "1.0", tk.END)
+            preview_text.tag_remove("conf_medium", "1.0", tk.END)
+            preview_text.tag_remove("conf_low", "1.0", tk.END)
+
+            total_lines = int(preview_text.index("end-1c").split(".")[0])
+
+            # Apply per-dimension coloring to sections
+            # Tables get table_structure confidence
+            # Images get image_extraction confidence
+            # Regular text gets text_extraction confidence
+            content = preview_text.get("1.0", tk.END)
+            lines = content.split("\n")
+
+            for ln_num, line in enumerate(lines, 1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Determine which dimension applies
+                if stripped.startswith("|"):
+                    dim = (conf_obj.table_structure or "").lower()
+                elif stripped.startswith("![") or stripped.startswith("🖼"):
+                    dim = (conf_obj.image_extraction or "").lower()
+                else:
+                    dim = (conf_obj.text_extraction or "").lower()
+
+                if dim in ("n/a", ""):
+                    dim = overall
+                if dim in ("high",):
+                    tag = "conf_high"
+                elif dim in ("medium", "moderate"):
+                    tag = "conf_medium"
+                elif dim in ("low", "failed"):
+                    tag = "conf_low"
+                else:
+                    tag = conf_tag
+                preview_text.tag_add(tag, f"{ln_num}.0", f"{ln_num}.end+1c")
+
+            preview_text.config(state="disabled")
+
+        btn_heatmap = PillButton(
+            top_bar, text="Heatmap", font=_FONT_SMALL,
+            style="secondary", padx=12, pady=5,
+            command=_toggle_heatmap,
+        )
+        btn_heatmap.pack(side="right", padx=(4, 0))
+        btn_heatmap.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        btn_spell = PillButton(
+            top_bar, text="Spell", font=_FONT_SMALL,
+            style="secondary", padx=12, pady=5,
+            command=_toggle_spell_check,
+        )
+        btn_spell.pack(side="right", padx=(4, 0))
+        btn_spell.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        btn_copy_fmt = PillButton(
+            top_bar, text="Copy Rich", font=_FONT_SMALL,
+            style="secondary", padx=12, pady=5,
+            command=_copy_formatted,
+        )
+        btn_copy_fmt.pack(side="right", padx=(4, 0))
+        btn_copy_fmt.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
 
         btn_copy = PillButton(
             top_bar, text="Copy Markdown", font=_FONT_SMALL,
@@ -2165,15 +2400,50 @@ class App:
             sashwidth=4, sashrelief="flat")
         paned.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-        # ── Left panel: source info ──────────────────────────
+        # ── Left panel: source info + source pages ────────────
         left_frame = tk.Frame(paned, bg=t["bg"])
-        paned.add(left_frame, width=int(340 * self._dpi), minsize=int(200 * self._dpi))
+        paned.add(left_frame, width=int(380 * self._dpi), minsize=int(200 * self._dpi))
 
-        tk.Label(left_frame, text="SOURCE INFO", font=_FONT_SECTION,
-                 bg=t["bg"], fg=t["text_secondary"], anchor="w"
-                 ).pack(fill="x", padx=12, pady=(12, 4))
+        # Tab switcher: Info | Pages
+        left_tab_bar = tk.Frame(left_frame, bg=t["bg"])
+        left_tab_bar.pack(fill="x", padx=12, pady=(12, 4))
+        left_tab_var = tk.StringVar(value="info")
+
+        source_page_images: list = []  # prevent GC of page PhotoImages
+
+        def _set_left_tab(tab: str):
+            left_tab_var.set(tab)
+            _lbl_info_tab.config(
+                fg=t["accent"] if tab == "info" else t["text_secondary"])
+            _lbl_pages_tab.config(
+                fg=t["accent"] if tab == "pages" else t["text_secondary"])
+            if tab == "info":
+                source_pages_frame.pack_forget()
+                source_text.pack(fill="both", expand=True)
+            else:
+                source_text.pack_forget()
+                source_pages_frame.pack(fill="both", expand=True)
+
+        _lbl_info_tab = tk.Label(
+            left_tab_bar, text="SOURCE INFO", font=_FONT_SECTION,
+            bg=t["bg"], fg=t["accent"], cursor="hand2",
+        )
+        _lbl_info_tab.pack(side="left")
+        _lbl_info_tab.bind("<Button-1>", lambda _: _set_left_tab("info"))
+
+        tk.Label(left_tab_bar, text="  │  ", font=_FONT_SECTION,
+                 bg=t["bg"], fg=t["border"]).pack(side="left")
+
+        _lbl_pages_tab = tk.Label(
+            left_tab_bar, text="SOURCE PAGES", font=_FONT_SECTION,
+            bg=t["bg"], fg=t["text_secondary"], cursor="hand2",
+        )
+        _lbl_pages_tab.pack(side="left")
+        _lbl_pages_tab.bind("<Button-1>", lambda _: _set_left_tab("pages"))
+
         tk.Frame(left_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
 
+        # Info view (shown by default)
         source_text = tk.Text(
             left_frame, font=_FONT_SMALL, wrap="word",
             bg=t["bg"], fg=t["text"],
@@ -2181,6 +2451,117 @@ class App:
             padx=12, pady=8, state="disabled",
         )
         source_text.pack(fill="both", expand=True)
+
+        # Pages view (scrollable canvas for rendered source pages)
+        source_pages_frame = tk.Frame(left_frame, bg=t["bg"])
+        # Not packed initially — toggled by tab click
+
+        pages_canvas = tk.Canvas(source_pages_frame, bg=t["bg"],
+                                 highlightthickness=0)
+        pages_sb = GlassScrollbar(source_pages_frame, orient="vertical",
+                                  command=pages_canvas.yview)
+        pages_sb.set_colors(thumb=t["scrollbar_thumb"],
+                            thumb_hover=t["scrollbar_hover"],
+                            parent_bg=t["bg"])
+        pages_inner = tk.Frame(pages_canvas, bg=t["bg"])
+        pages_canvas.create_window((0, 0), window=pages_inner, anchor="nw")
+        pages_inner.bind("<Configure>", lambda e: pages_canvas.configure(
+            scrollregion=pages_canvas.bbox("all")))
+        pages_canvas.configure(yscrollcommand=pages_sb.set)
+        pages_canvas.pack(side="left", fill="both", expand=True)
+        pages_sb.pack(side="right", fill="y")
+
+        # Mousewheel scroll for pages canvas
+        pages_canvas.bind(
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', pages_canvas))
+        pages_canvas.bind(
+            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
+            if self._scroll_target is pages_canvas else None)
+        pages_inner.bind(
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', pages_canvas))
+
+        def _render_source_pages(source_path: str):
+            """Render source document pages into the Pages tab."""
+            # Clear previous
+            for w in pages_inner.winfo_children():
+                w.destroy()
+            source_page_images.clear()
+
+            ext = os.path.splitext(source_path)[1].lower()
+
+            if ext == ".pdf":
+                _render_pdf_pages(source_path)
+            elif ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff",
+                         ".tif", ".webp", ".gif"):
+                _render_image_page(source_path)
+            else:
+                tk.Label(
+                    pages_inner,
+                    text=f"Page preview not available for {ext} files.\n\n"
+                         "Supported: PDF, PNG, JPG, BMP, TIFF, WebP, GIF",
+                    font=_FONT_SMALL, fg=t["text_secondary"], bg=t["bg"],
+                    wraplength=int(300 * self._dpi), justify="center",
+                ).pack(pady=40)
+
+        def _render_pdf_pages(pdf_path: str):
+            """Render PDF pages as images using PyMuPDF."""
+            try:
+                import fitz
+                doc = fitz.open(pdf_path)
+            except Exception:
+                tk.Label(pages_inner, text="Could not open PDF",
+                         font=_FONT_SMALL, fg=t["text_secondary"],
+                         bg=t["bg"]).pack(pady=40)
+                return
+
+            panel_w = int(340 * self._dpi)
+            zoom = panel_w / 612.0  # 612 = standard US Letter width in pts
+            mat = fitz.Matrix(zoom, zoom)
+
+            for page_num in range(min(doc.page_count, 50)):  # cap at 50 pages
+                try:
+                    page = doc[page_num]
+                    pix = page.get_pixmap(matrix=mat)
+                    from PIL import Image as _PILImage, ImageTk as _PILImageTk
+                    img = _PILImage.frombytes("RGB",
+                                              [pix.width, pix.height],
+                                              pix.samples)
+                    photo = _PILImageTk.PhotoImage(img)
+                    source_page_images.append(photo)
+
+                    # Page number label
+                    tk.Label(
+                        pages_inner,
+                        text=f"— Page {page_num + 1} —",
+                        font=(_FONT_FAMILY, 9), fg=t["text_secondary"],
+                        bg=t["bg"],
+                    ).pack(pady=(8, 2))
+
+                    lbl = tk.Label(pages_inner, image=photo, bg=t["bg"])
+                    lbl.pack(padx=8, pady=(0, 4))
+                except Exception:
+                    continue
+            doc.close()
+
+        def _render_image_page(img_path: str):
+            """Render a single image source file."""
+            try:
+                from PIL import Image as _PILImage, ImageTk as _PILImageTk
+                img = _PILImage.open(img_path)
+                panel_w = int(340 * self._dpi)
+                if img.width > panel_w:
+                    ratio = panel_w / img.width
+                    img = img.resize(
+                        (panel_w, int(img.height * ratio)),
+                        _PILImage.LANCZOS)
+                photo = _PILImageTk.PhotoImage(img)
+                source_page_images.append(photo)
+                lbl = tk.Label(pages_inner, image=photo, bg=t["bg"])
+                lbl.pack(padx=8, pady=8)
+            except Exception:
+                tk.Label(pages_inner, text="Could not load image",
+                         font=_FONT_SMALL, fg=t["text_secondary"],
+                         bg=t["bg"]).pack(pady=40)
 
         # ── Right panel: markdown preview ────────────────────
         right_frame = tk.Frame(paned, bg=t["bg"])
@@ -2191,13 +2572,17 @@ class App:
                  ).pack(fill="x", padx=12, pady=(12, 4))
         tk.Frame(right_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
 
-        # ── Search bar (hidden by default) ───────────────────
+        # ── Search & Replace bar (hidden by default) ─────────
         search_bar = tk.Frame(right_frame, bg=t["content_bg"])
         # Not packed initially — toggled by Ctrl+F
 
+        # Row 1: find entry + navigation
+        search_row1 = tk.Frame(search_bar, bg=t["content_bg"])
+        search_row1.pack(fill="x")
+
         search_var = tk.StringVar()
         search_entry = tk.Entry(
-            search_bar, textvariable=search_var, font=_FONT_SMALL,
+            search_row1, textvariable=search_var, font=_FONT_SMALL,
             bg=t["bg"], fg=t["text"], insertbackground=t["text"],
             bd=0, highlightthickness=1, highlightcolor=t["accent"],
             highlightbackground=t["border"],
@@ -2205,33 +2590,49 @@ class App:
         search_entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=4)
 
         search_count_lbl = tk.Label(
-            search_bar, text="", font=_FONT_SMALL,
+            search_row1, text="", font=_FONT_SMALL,
             bg=t["content_bg"], fg=t["text_secondary"],
         )
         search_count_lbl.pack(side="left", padx=(0, 4))
 
-        btn_prev_match = PillButton(
-            search_bar, text="Prev", font=_FONT_SMALL,
-            style="secondary", padx=8, pady=3, command=lambda: _prev_match(),
+        # Regex toggle
+        regex_on = tk.BooleanVar(value=False)
+        regex_btn = tk.Label(
+            search_row1, text=".*", font=(_FONT_MONO, 10, "bold"),
+            bg=t["content_bg"], fg=t["text_secondary"],
+            cursor="hand2", padx=4,
         )
-        btn_prev_match.pack(side="left", padx=2, pady=4)
+        regex_btn.pack(side="left", padx=2, pady=4)
+
+        def _toggle_regex(_e=None):
+            regex_on.set(not regex_on.get())
+            regex_btn.config(
+                fg=t["accent"] if regex_on.get() else t["text_secondary"])
+            _do_search()
+        regex_btn.bind("<Button-1>", _toggle_regex)
+
+        btn_prev_match = PillButton(
+            search_row1, text="▲", font=_FONT_SMALL,
+            style="secondary", padx=6, pady=3, command=lambda: _prev_match(),
+        )
+        btn_prev_match.pack(side="left", padx=1, pady=4)
         btn_prev_match.set_colors(
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
 
         btn_next_match = PillButton(
-            search_bar, text="Next", font=_FONT_SMALL,
-            style="secondary", padx=8, pady=3, command=lambda: _next_match(),
+            search_row1, text="▼", font=_FONT_SMALL,
+            style="secondary", padx=6, pady=3, command=lambda: _next_match(),
         )
-        btn_next_match.pack(side="left", padx=2, pady=4)
+        btn_next_match.pack(side="left", padx=1, pady=4)
         btn_next_match.set_colors(
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
 
         btn_close_search = PillButton(
-            search_bar, text="✕", font=_FONT_SMALL,
+            search_row1, text="✕", font=_FONT_SMALL,
             style="secondary", padx=6, pady=3, command=lambda: _close_search(),
         )
         btn_close_search.pack(side="right", padx=(2, 8), pady=4)
@@ -2240,7 +2641,42 @@ class App:
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
 
-        search_matches = []      # list of "line.col" positions
+        # Row 2: replace entry + buttons
+        replace_row = tk.Frame(search_bar, bg=t["content_bg"])
+        replace_row.pack(fill="x")
+
+        replace_var = tk.StringVar()
+        replace_entry = tk.Entry(
+            replace_row, textvariable=replace_var, font=_FONT_SMALL,
+            bg=t["bg"], fg=t["text"], insertbackground=t["text"],
+            bd=0, highlightthickness=1, highlightcolor=t["accent"],
+            highlightbackground=t["border"],
+        )
+        replace_entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=(0, 4))
+
+        btn_replace = PillButton(
+            replace_row, text="Replace", font=_FONT_SMALL,
+            style="secondary", padx=8, pady=3,
+            command=lambda: _replace_current(),
+        )
+        btn_replace.pack(side="left", padx=2, pady=(0, 4))
+        btn_replace.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        btn_replace_all = PillButton(
+            replace_row, text="All", font=_FONT_SMALL,
+            style="secondary", padx=8, pady=3,
+            command=lambda: _replace_all(),
+        )
+        btn_replace_all.pack(side="left", padx=(2, 8), pady=(0, 4))
+        btn_replace_all.set_colors(
+            fill=t["content_bg"], fg=t["text"],
+            hover_fill=t["accent"], parent_bg=t["content_bg"],
+        )
+
+        search_matches = []      # list of (start_pos, end_pos) tuples
         search_current_idx = [0]  # mutable index
         search_visible = [False]
         search_debounce_id = [None]  # pending after() id for debounce
@@ -2302,6 +2738,24 @@ class App:
         preview_text.tag_configure("list_bullet", foreground=t["accent"])
         preview_text.tag_configure("image_ref",
                                    foreground=t.get("accent_secondary", t["accent"]))
+        # Confidence heatmap tags
+        preview_text.tag_configure("conf_high",
+                                   lmargin1=6,
+                                   borderwidth=0,
+                                   background="#0a2e0a" if self._dark else "#e6f9e6")
+        preview_text.tag_configure("conf_medium",
+                                   lmargin1=6,
+                                   borderwidth=0,
+                                   background="#2e2a0a" if self._dark else "#fff8e1")
+        preview_text.tag_configure("conf_low",
+                                   lmargin1=6,
+                                   borderwidth=0,
+                                   background="#2e0a0a" if self._dark else "#fde8e8")
+        # Spell check tag
+        preview_text.tag_configure("misspelled",
+                                   underline=True,
+                                   foreground="#ff6b6b" if self._dark else "#d63031",
+                                   underlinefg="#ff6b6b" if self._dark else "#d63031")
         # Search tags (higher priority — raised above other tags)
         preview_text.tag_configure("search_match",
                                    background="#ffd700" if self._dark else "#ffeaa7",
@@ -2311,6 +2765,7 @@ class App:
                                    foreground=t["text_on_accent"])
         preview_text.tag_raise("search_match")
         preview_text.tag_raise("search_active")
+        preview_text.tag_raise("misspelled")
 
         # Image reference list (prevent GC of PhotoImages)
         preview_images: list = []
@@ -2327,26 +2782,73 @@ class App:
         _RE_LIST = re.compile(r'^(\s*)([-*]|\d+\.)\s')
 
         def _load_thumbnail(file_dir: str, img_rel: str):
-            """Load an image, return PhotoImage or None."""
+            """Load an image, return (thumbnail PhotoImage, abs_path) or (None, None)."""
             if img_rel.startswith("data:"):
-                return None
+                return None, None
             abs_path = os.path.normpath(os.path.join(file_dir, img_rel))
             ext = os.path.splitext(abs_path)[1].lower()
             if ext not in _IMG_EXTS or not os.path.isfile(abs_path):
-                return None
+                return None, None
             try:
-                from PIL import Image, ImageTk
-                img = Image.open(abs_path)
+                from PIL import Image as _PILImage, ImageTk as _PILImageTk
+                img = _PILImage.open(abs_path)
                 max_w = 400
                 if img.width > max_w:
                     ratio = max_w / img.width
                     img = img.resize(
-                        (max_w, int(img.height * ratio)), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
+                        (max_w, int(img.height * ratio)), _PILImage.LANCZOS)
+                photo = _PILImageTk.PhotoImage(img)
                 preview_images.append(photo)  # prevent GC
-                return photo
+                return photo, abs_path
             except Exception:
-                return None
+                return None, None
+
+        def _show_image_zoom(img_path: str):
+            """Open a full-size image in a themed overlay window."""
+            try:
+                from PIL import Image as _PILImage, ImageTk as _PILImageTk
+                img = _PILImage.open(img_path)
+            except Exception:
+                return
+
+            zoom_win = tk.Toplevel(win)
+            zoom_win.title(os.path.basename(img_path))
+            zoom_win.config(bg=t["bg"])
+            zoom_win.transient(win)
+            self._set_titlebar_dark(self._dark, zoom_win)
+
+            # Fit image to screen (max 90% of screen dimensions)
+            screen_w = zoom_win.winfo_screenwidth()
+            screen_h = zoom_win.winfo_screenheight()
+            max_w = int(screen_w * 0.9)
+            max_h = int(screen_h * 0.85)
+            display_img = img.copy()
+            if display_img.width > max_w or display_img.height > max_h:
+                display_img.thumbnail((max_w, max_h), _PILImage.LANCZOS)
+
+            win_w = display_img.width + 24
+            win_h = display_img.height + 60
+            rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
+            ry = self.root.winfo_y() + (self.root.winfo_height() - win_h) // 2
+            zoom_win.geometry(f"{win_w}x{win_h}+{max(0, rx)}+{max(0, ry)}")
+
+            # Image label
+            photo = _PILImageTk.PhotoImage(display_img)
+            img_label = tk.Label(zoom_win, image=photo, bg=t["bg"])
+            img_label.image = photo  # prevent GC
+            img_label.pack(fill="both", expand=True, padx=12, pady=(8, 4))
+
+            # Info bar
+            info_text = (f"{os.path.basename(img_path)}  •  "
+                         f"{img.width}×{img.height} px  •  "
+                         f"{os.path.getsize(img_path) / 1024:.0f} KB")
+            tk.Label(
+                zoom_win, text=info_text, font=(_FONT_FAMILY, 9),
+                fg=t["text_secondary"], bg=t["bg"],
+            ).pack(pady=(0, 8))
+
+            zoom_win.bind("<Escape>", lambda _: zoom_win.destroy())
+            zoom_win.focus_set()
 
         # ── load_file — two-pass bulk parser ─────────────────
         # Pass 1: classify lines (pure Python, no widget calls)
@@ -2419,6 +2921,10 @@ class App:
             source_text.delete("1.0", tk.END)
             source_text.insert("1.0", "\n".join(source_info_lines))
             source_text.config(state="disabled")
+
+            # Render source pages in background (deferred to avoid blocking)
+            if matched_source:
+                win.after(100, lambda p=matched_source: _render_source_pages(p))
 
             # ── Right panel: converted markdown ──────────────
             try:
@@ -2569,12 +3075,22 @@ class App:
                     preview_text.config(state="normal")
                     offset = 0
                     for idx, img_rel in img_entries:
-                        photo = _load_thumbnail(file_dir, img_rel)
+                        photo, abs_path = _load_thumbnail(file_dir, img_rel)
                         if photo:
                             ins_ln = idx + 1 + offset + 1
                             preview_text.insert(f"{ins_ln}.0", " \n")
                             preview_text.image_create(
                                 f"{ins_ln}.0", image=photo)
+                            # Bind click-to-zoom on the image line
+                            tag_name = f"_img_{idx}"
+                            preview_text.tag_add(
+                                tag_name, f"{ins_ln}.0", f"{ins_ln}.end")
+                            _p = abs_path  # capture for closure
+                            preview_text.tag_bind(
+                                tag_name, "<Button-1>",
+                                lambda _e, p=_p: _show_image_zoom(p))
+                            preview_text.tag_configure(
+                                tag_name, foreground="", background="")
                             offset += 1
                     preview_text.config(state="disabled")
                     # Image insertion shifts line numbers — refresh search
@@ -2583,7 +3099,13 @@ class App:
                         _do_search()
                 image_load_id[0] = win.after(50, _load_images)
 
-        # ── Search functions ─────────────────────────────────
+            # Re-run overlays if active
+            if spell_active[0]:
+                win.after(100, _run_spell_check)
+            if heatmap_active[0]:
+                win.after(100, _apply_heatmap)
+
+        # ── Search & Replace functions ───────────────────────
         def _toggle_search(_event=None):
             if search_visible[0]:
                 _close_search()
@@ -2602,12 +3124,11 @@ class App:
             return "break"
 
         def _clear_search_highlights():
-            if search_matches:
-                preview_text.config(state="normal")
-                preview_text.tag_remove("search_match", "1.0", tk.END)
-                preview_text.tag_remove("search_active", "1.0", tk.END)
-                preview_text.config(state="disabled")
-                search_matches.clear()
+            preview_text.config(state="normal")
+            preview_text.tag_remove("search_match", "1.0", tk.END)
+            preview_text.tag_remove("search_active", "1.0", tk.END)
+            preview_text.config(state="disabled")
+            search_matches.clear()
             search_current_idx[0] = 0
             search_count_lbl.config(text="")
 
@@ -2617,22 +3138,49 @@ class App:
             if not query:
                 return
 
+            use_regex = regex_on.get()
             preview_text.config(state="normal")
-            # Collect all matches first, then apply tags in one call
-            start = "1.0"
             match_ranges: list[str] = []
-            count_var = tk.IntVar()
-            while True:
-                pos = preview_text.search(
-                    query, start, stopindex=tk.END,
-                    nocase=True, count=count_var)
-                if not pos:
-                    break
-                matched_len = count_var.get() or len(query)
-                end = f"{pos}+{matched_len}c"
-                search_matches.append(pos)
-                match_ranges.extend([pos, end])
-                start = end
+
+            if use_regex:
+                # Regex search across the full text content
+                try:
+                    pattern = re.compile(query, re.IGNORECASE | re.MULTILINE)
+                except re.error:
+                    search_count_lbl.config(text="bad regex")
+                    preview_text.config(state="disabled")
+                    return
+                full = preview_text.get("1.0", tk.END)
+                for m in pattern.finditer(full):
+                    if not m.group():
+                        continue
+                    # Convert string offset to tk line.col index
+                    s_off = m.start()
+                    e_off = m.end()
+                    s_line = full.count("\n", 0, s_off) + 1
+                    s_col = s_off - full.rfind("\n", 0, s_off) - 1
+                    e_line = full.count("\n", 0, e_off) + 1
+                    e_col = e_off - full.rfind("\n", 0, e_off) - 1
+                    start_idx = f"{s_line}.{s_col}"
+                    end_idx = f"{e_line}.{e_col}"
+                    search_matches.append((start_idx, end_idx))
+                    match_ranges.extend([start_idx, end_idx])
+            else:
+                # Plain text search
+                start = "1.0"
+                count_var = tk.IntVar()
+                while True:
+                    pos = preview_text.search(
+                        query, start, stopindex=tk.END,
+                        nocase=True, count=count_var)
+                    if not pos:
+                        break
+                    matched_len = count_var.get() or len(query)
+                    end = f"{pos}+{matched_len}c"
+                    search_matches.append((pos, end))
+                    match_ranges.extend([pos, end])
+                    start = end
+
             if match_ranges:
                 preview_text.tag_add("search_match", *match_ranges)
             preview_text.config(state="disabled")
@@ -2648,17 +3196,9 @@ class App:
             preview_text.config(state="normal")
             preview_text.tag_remove("search_active", "1.0", tk.END)
             if search_matches:
-                pos = search_matches[search_current_idx[0]]
-                # Use count_var (Tk-measured length) instead of Python len()
-                # so multi-byte Unicode characters highlight correctly.
-                _cnt = tk.IntVar()
-                preview_text.search(
-                    search_var.get(), pos, stopindex=tk.END,
-                    nocase=True, count=_cnt)
-                matched = _cnt.get() or len(search_var.get())
-                end = f"{pos}+{matched}c"
-                preview_text.tag_add("search_active", pos, end)
-                preview_text.see(pos)
+                s, e = search_matches[search_current_idx[0]]
+                preview_text.tag_add("search_active", s, e)
+                preview_text.see(s)
             preview_text.config(state="disabled")
 
         def _next_match():
@@ -2677,6 +3217,34 @@ class App:
             search_count_lbl.config(
                 text=f"{search_current_idx[0] + 1}/{len(search_matches)}")
 
+        def _replace_current():
+            """Replace the currently active match and advance."""
+            if not search_matches:
+                return
+            s, e = search_matches[search_current_idx[0]]
+            replacement = replace_var.get()
+            preview_text.config(state="normal")
+            preview_text.delete(s, e)
+            preview_text.insert(s, replacement)
+            preview_text.config(state="disabled")
+            # Update the raw content tracker
+            current_content[0] = preview_text.get("1.0", tk.END).rstrip("\n")
+            _do_search()  # re-scan after replacement
+
+        def _replace_all():
+            """Replace all matches at once."""
+            if not search_matches:
+                return
+            replacement = replace_var.get()
+            preview_text.config(state="normal")
+            # Replace in reverse order so positions stay valid
+            for s, e in reversed(search_matches):
+                preview_text.delete(s, e)
+                preview_text.insert(s, replacement)
+            preview_text.config(state="disabled")
+            current_content[0] = preview_text.get("1.0", tk.END).rstrip("\n")
+            _do_search()
+
         # Debounced live search — fires 300ms after last keystroke
         def _on_search_key(_event=None):
             if search_debounce_id[0] is not None:
@@ -2684,10 +3252,13 @@ class App:
             search_debounce_id[0] = win.after(300, _do_search)
 
         # Search bindings
-        search_entry.bind("<Return>", _do_search)
+        search_entry.bind("<Return>", lambda _: _next_match())
+        replace_entry.bind("<Return>", lambda _: _replace_current())
         search_entry.bind("<Escape>", _close_search)
+        replace_entry.bind("<Escape>", _close_search)
         _search_trace = search_var.trace_add("write", _on_search_key)
         win.bind("<Control-f>", _toggle_search)
+        win.bind("<Control-h>", _toggle_search)  # Ctrl+H also opens search
 
         # Load first file
         load_file(file_display_names[0])
@@ -2839,6 +3410,7 @@ class App:
     def _clear_files(self):
         self._selected_files.clear()
         self._file_aliases.clear()
+        self._file_page_ranges.clear()
         self._update_file_list()
 
     def _pick_output_folder(self):
@@ -2983,6 +3555,7 @@ class App:
             on_file_start=self._on_file_start,
             on_stage=self._on_stage_update,
             on_done=self._on_conversion_done,
+            page_ranges=dict(self._file_page_ranges),
         )
         self._active_job.start()
 
@@ -3153,6 +3726,15 @@ class App:
                        relief="flat", bd=0)
         if len(sel) == 1:
             menu.add_command(label="Rename Output File…", command=self._rename_selected_file)
+            # Show "Select Pages…" for PDF files
+            sel_path = self._selected_files[sel[0]]
+            if sel_path.lower().endswith(".pdf"):
+                pages_label = "Select Pages…"
+                if sel_path in self._file_page_ranges:
+                    n = len(self._file_page_ranges[sel_path])
+                    pages_label = f"Select Pages… ({n} selected)"
+                menu.add_command(label=pages_label,
+                                 command=lambda: self._show_page_selector(sel_path))
             menu.add_separator()
         remove_label = "Remove File" if len(sel) == 1 else f"Remove {len(sel)} Files"
         menu.add_command(label=remove_label, command=self._remove_selected_files)
@@ -3163,7 +3745,198 @@ class App:
         for idx in indices:
             path = self._selected_files.pop(idx)
             self._file_aliases.pop(path, None)
+            self._file_page_ranges.pop(path, None)
         self._update_file_list()
+
+    def _show_page_selector(self, pdf_path: str):
+        """Show a visual page selector with thumbnails for a PDF file."""
+        t = self._t
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+        except Exception:
+            messagebox.showerror("Error", "Could not open PDF for page preview.")
+            return
+
+        total = doc.page_count
+        existing = set(self._file_page_ranges.get(pdf_path, []))
+
+        win = tk.Toplevel(self.root)
+        win.title(f"Select Pages — {os.path.basename(pdf_path)}")
+        win_w = int(680 * self._dpi)
+        win_h = int(520 * self._dpi)
+        rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
+        ry = self.root.winfo_y() + (self.root.winfo_height() - win_h) // 2
+        win.geometry(f"{win_w}x{win_h}+{max(0, rx)}+{max(0, ry)}")
+        win.config(bg=t["bg"])
+        win.transient(self.root)
+        win.grab_set()
+        self._set_titlebar_dark(self._dark, win)
+
+        # Header
+        tk.Label(
+            win, text=f"{os.path.basename(pdf_path)}  •  {total} pages",
+            font=(_FONT_FAMILY, 12, "bold"),
+            fg=t["text"], bg=t["bg"],
+        ).pack(padx=16, pady=(16, 4), anchor="w")
+        tk.Label(
+            win, text="Click pages to select or deselect. Shift+click for range.",
+            font=(_FONT_FAMILY, 9),
+            fg=t["text_secondary"], bg=t["bg"],
+        ).pack(padx=16, pady=(0, 8), anchor="w")
+
+        # Quick actions bar
+        actions_bar = tk.Frame(win, bg=t["bg"])
+        actions_bar.pack(fill="x", padx=16, pady=(0, 8))
+
+        page_selected = {}  # page_num (1-indexed) → BooleanVar
+        page_frames = {}    # page_num → frame widget (for highlight)
+        thumb_images = []   # prevent GC
+
+        count_lbl = tk.Label(
+            actions_bar, text="", font=_FONT_SMALL,
+            fg=t["text_secondary"], bg=t["bg"],
+        )
+        count_lbl.pack(side="right")
+
+        def _update_count():
+            sel = [p for p, v in page_selected.items() if v.get()]
+            if len(sel) == total or len(sel) == 0:
+                count_lbl.config(text=f"All {total} pages")
+            else:
+                count_lbl.config(text=f"{len(sel)} of {total} pages selected")
+
+        def _select_all():
+            for v in page_selected.values():
+                v.set(True)
+            _refresh_highlights()
+
+        def _select_none():
+            for v in page_selected.values():
+                v.set(False)
+            _refresh_highlights()
+
+        btn_all = PillButton(actions_bar, text="Select All", font=_FONT_SMALL,
+                             style="secondary", padx=10, pady=4, command=_select_all)
+        btn_all.pack(side="left", padx=(0, 4))
+        btn_all.set_colors(fill=t["bg"], fg=t["text"],
+                           hover_fill=t["accent"], parent_bg=t["bg"])
+
+        btn_none = PillButton(actions_bar, text="Clear", font=_FONT_SMALL,
+                              style="secondary", padx=10, pady=4, command=_select_none)
+        btn_none.pack(side="left", padx=(0, 4))
+        btn_none.set_colors(fill=t["bg"], fg=t["text"],
+                            hover_fill=t["accent"], parent_bg=t["bg"])
+
+        # Scrollable grid of page thumbnails
+        grid_outer = tk.Frame(win, bg=t["bg"])
+        grid_outer.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        canvas = tk.Canvas(grid_outer, bg=t["bg"], highlightthickness=0)
+        sb = GlassScrollbar(grid_outer, orient="vertical", command=canvas.yview)
+        sb.set_colors(thumb=t["scrollbar_thumb"], thumb_hover=t["scrollbar_hover"],
+                      parent_bg=t["bg"])
+        grid_frame = tk.Frame(canvas, bg=t["bg"])
+        canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+        grid_frame.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        # Mousewheel scroll
+        canvas.bind("<Enter>", lambda _: setattr(self, '_scroll_target', canvas))
+        canvas.bind("<Leave>", lambda _: setattr(self, '_scroll_target', None)
+                    if self._scroll_target is canvas else None)
+        grid_frame.bind("<Enter>", lambda _: setattr(self, '_scroll_target', canvas))
+
+        last_clicked = [None]  # for Shift+click range selection
+
+        def _on_page_click(page_num, event=None):
+            shift = event and (event.state & 0x1)  # Shift held
+            if shift and last_clicked[0] is not None:
+                # Range selection
+                lo = min(last_clicked[0], page_num)
+                hi = max(last_clicked[0], page_num)
+                for p in range(lo, hi + 1):
+                    page_selected[p].set(True)
+            else:
+                page_selected[page_num].set(not page_selected[page_num].get())
+            last_clicked[0] = page_num
+            _refresh_highlights()
+
+        def _refresh_highlights():
+            for pn, frm in page_frames.items():
+                if page_selected[pn].get():
+                    frm.config(highlightbackground=t["accent"], highlightthickness=2)
+                else:
+                    frm.config(highlightbackground=t["border"], highlightthickness=1)
+            _update_count()
+
+        # Render thumbnails in a grid (4 columns)
+        cols = 4
+        thumb_w = int(120 * self._dpi)
+        zoom = thumb_w / 612.0  # 612pt = US Letter width
+        mat = fitz.Matrix(zoom, zoom)
+
+        for i in range(total):
+            page_num = i + 1
+            row, col = divmod(i, cols)
+            var = tk.BooleanVar(value=(page_num in existing) if existing else True)
+            page_selected[page_num] = var
+
+            cell = tk.Frame(grid_frame, bg=t["bg"],
+                            highlightthickness=1, highlightbackground=t["border"])
+            cell.grid(row=row, column=col, padx=4, pady=4)
+            page_frames[page_num] = cell
+
+            try:
+                page = doc[i]
+                pix = page.get_pixmap(matrix=mat)
+                from PIL import Image as _PILImage, ImageTk as _PILImageTk
+                img = _PILImage.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                photo = _PILImageTk.PhotoImage(img)
+                thumb_images.append(photo)
+                lbl = tk.Label(cell, image=photo, bg=t["bg"], cursor="hand2")
+            except Exception:
+                lbl = tk.Label(cell, text=f"Page {page_num}", font=_FONT_SMALL,
+                               fg=t["text_secondary"], bg=t["bg"],
+                               width=14, height=8, cursor="hand2")
+            lbl.pack(padx=2, pady=2)
+            _pn = page_num
+            lbl.bind("<Button-1>", lambda e, p=_pn: _on_page_click(p, e))
+
+            tk.Label(cell, text=str(page_num), font=(_FONT_FAMILY, 8),
+                     fg=t["text_secondary"], bg=t["bg"]).pack()
+
+        doc.close()
+        _refresh_highlights()
+
+        # Bottom buttons
+        btn_bar = tk.Frame(win, bg=t["bg"])
+        btn_bar.pack(fill="x", padx=16, pady=(0, 16))
+
+        def _apply():
+            selected = sorted(p for p, v in page_selected.items() if v.get())
+            if len(selected) == total or not selected:
+                self._file_page_ranges.pop(pdf_path, None)
+            else:
+                self._file_page_ranges[pdf_path] = selected
+            self._update_file_list()
+            win.destroy()
+
+        btn_apply = PillButton(btn_bar, text="Apply", font=(_FONT_FAMILY, 10, "bold"),
+                               style="primary", padx=24, pady=8, command=_apply)
+        btn_apply.pack(side="right", padx=(4, 0))
+        btn_apply.set_colors(fill=t["accent"], fg=t["text_on_accent"],
+                             hover_fill=t["accent_hover"], parent_bg=t["bg"])
+
+        btn_cancel = PillButton(btn_bar, text="Cancel", font=_FONT_SMALL,
+                                style="secondary", padx=16, pady=6,
+                                command=win.destroy)
+        btn_cancel.pack(side="right", padx=(0, 4))
+        btn_cancel.set_colors(fill=t["bg"], fg=t["text"],
+                              hover_fill=t["accent"], parent_bg=t["bg"])
 
     # ── Drag and drop handlers ──────────────────────────────
 

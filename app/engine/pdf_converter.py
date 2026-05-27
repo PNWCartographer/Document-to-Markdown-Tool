@@ -47,6 +47,7 @@ def convert(
     auto_translate: bool = True,
     prefer_engine: str = "paddle",
     ocr_dpi_scale: float = 4.0,
+    page_range: list[int] | None = None,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
@@ -84,6 +85,9 @@ def convert(
         _doc_check.close()
     except Exception:
         pass  # will be caught by the actual converter below
+
+    if page_range:
+        log_info(f"Page range filter active: {len(page_range)} pages selected")
 
     # ------------------------------------------------------------------
     # Auto-detect: check if PDF has extractable text or is scanned
@@ -134,6 +138,7 @@ def convert(
                     rebuild_toc, preserve_page_numbers, use_subfolder,
                     output, confidence, log_info, log_warn, progress,
                     pp_settings=pp_settings,
+                    page_range=page_range,
                 )
             except Exception as e:
                 log_warn(f"pymupdf4llm failed: {e} — falling back.")
@@ -566,6 +571,7 @@ def _convert_pymupdf4llm(
     source_file, alias, output_root, preserve_images, rebuild_toc,
     preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress,
     pp_settings: Optional[dict] = None,
+    page_range: list[int] | None = None,
 ) -> ConversionOutput:
     import pymupdf4llm
     import fitz
@@ -574,7 +580,9 @@ def _convert_pymupdf4llm(
     output.engine_used = "pymupdf4llm"
     progress(0.1)
 
-    md_text = pymupdf4llm.to_markdown(source_file)
+    # pymupdf4llm accepts 0-indexed page list
+    pages_arg = [p - 1 for p in page_range] if page_range else None
+    md_text = pymupdf4llm.to_markdown(source_file, pages=pages_arg)
     if not md_text.strip():
         log_warn("pymupdf4llm returned empty output.")
         confidence.text_extraction = "Low"
@@ -694,6 +702,9 @@ def _convert_pymupdf(
 
         for page_idx in range(total_pages):
             page_num = page_idx + 1
+            # Skip pages not in the selected range (0-indexed in page_range)
+            if page_range and page_num not in page_range:
+                continue
             page = doc[page_idx]
             prog = 0.1 + (page_idx / total_pages) * 0.75
             progress(prog)
