@@ -4064,7 +4064,12 @@ class App:
 
         win = tk.Toplevel(self.root)
         win.title("Optional Components")
-        win.geometry(f"{int(460 * self._dpi)}x{int(win_h * self._dpi)}")
+        win_w = int(460 * self._dpi)
+        win_h_px = int(win_h * self._dpi)
+        # Centre on the main window
+        rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
+        ry = self.root.winfo_y() + (self.root.winfo_height() - win_h_px) // 2
+        win.geometry(f"{win_w}x{win_h_px}+{max(0, rx)}+{max(0, ry)}")
         win.config(bg=t["bg"])
         win.resizable(False, False)
         win.transient(self.root)

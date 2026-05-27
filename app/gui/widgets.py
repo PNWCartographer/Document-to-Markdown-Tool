@@ -15,6 +15,12 @@ import math
 import tkinter as tk
 import tkinter.font as tkfont
 
+try:
+    from PIL import Image, ImageDraw, ImageTk
+    _HAS_PIL = True
+except ImportError:
+    _HAS_PIL = False
+
 
 # ── DPI helpers ─────────────────────────────────────────────
 
@@ -49,6 +55,14 @@ def _darken(hex_color: str, factor: float = 0.85) -> str:
     g = int(int(h[2:4], 16) * factor)
     b = int(int(h[4:6], 16) * factor)
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _hex_to_rgb(hex_color: str) -> tuple:
+    """Convert a #RRGGBB hex string to an (R, G, B) tuple."""
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return (128, 128, 128)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
 def _lerp_color(c1: str, c2: str, t: float) -> str:
@@ -338,8 +352,6 @@ class ToggleSwitch(tk.Canvas):
 
         # Track — interpolate between off and on colors
         track_fill = _lerp_color(self._off_fill, self._on_fill, t)
-        _draw_pill_arcs(self, 1, 1, w - 1, h - 1, fill=track_fill,
-                        outline="", outline_w=0)
 
         # Thumb — interpolate position and color
         pad = self._thumb_pad
@@ -349,7 +361,59 @@ class ToggleSwitch(tk.Canvas):
         cx = off_cx + (on_cx - off_cx) * t
         cy = h / 2
         thumb_c = _lerp_color(self._thumb_off, self._thumb_on, t)
-        _draw_circle(self, cx, cy, thumb_r, fill=thumb_c, aa_bg=track_fill)
+
+        if _HAS_PIL:
+            self._draw_pil(w, h, track_fill, cx, cy, thumb_r, thumb_c)
+        else:
+            _draw_pill_arcs(self, 1, 1, w - 1, h - 1, fill=track_fill,
+                            outline="", outline_w=0)
+            _draw_circle(self, cx, cy, thumb_r, fill=thumb_c, aa_bg=track_fill)
+
+    def _draw_pil(self, w, h, track_fill, cx, cy, thumb_r, thumb_c):
+        """Render the toggle using PIL supersampling for smooth edges.
+
+        Draws the pill track and thumb circle at 3× resolution, then
+        downscales with LANCZOS to produce clean anti-aliased edges
+        that tkinter Canvas cannot achieve natively.
+        """
+        SS = 3  # supersample factor
+        sw, sh = int(w * SS), int(h * SS)
+
+        img = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Track pill shape (rounded rectangle with radius = half-height)
+        track_rgb = _hex_to_rgb(track_fill)
+        margin = SS
+        pill_r = (sh - 2 * margin) // 2
+        draw.rounded_rectangle(
+            [margin, margin, sw - margin, sh - margin],
+            radius=pill_r,
+            fill=track_rgb + (255,),
+        )
+
+        # Thumb circle
+        thumb_rgb = _hex_to_rgb(thumb_c)
+        tcx = cx * SS
+        tcy = cy * SS
+        tr = thumb_r * SS
+        draw.ellipse(
+            [tcx - tr, tcy - tr, tcx + tr, tcy + tr],
+            fill=thumb_rgb + (255,),
+        )
+
+        # Downscale with high-quality resampling
+        img = img.resize((w, h), Image.LANCZOS)
+
+        # Composite onto parent background color
+        bg_rgb = _hex_to_rgb(self._parent_bg)
+        bg_img = Image.new("RGBA", (w, h), bg_rgb + (255,))
+        bg_img.paste(img, (0, 0), img)
+        final = bg_img.convert("RGB")
+
+        # Display — keep a reference to prevent garbage collection
+        self._photo = ImageTk.PhotoImage(final)
+        self.create_image(0, 0, image=self._photo, anchor="nw")
 
     def _on_var_changed(self, *_):
         if not self._animating:
