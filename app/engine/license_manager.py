@@ -21,7 +21,7 @@ from typing import Optional
 from .logger import appdata_dir
 
 _LICENSE_FILE = "license.json"
-_FREE_TIER_LIMIT = 5
+_FREE_TIER_LIMIT = 999
 _io_lock = threading.Lock()
 
 # Key format constants

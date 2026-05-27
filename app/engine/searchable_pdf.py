@@ -85,7 +85,7 @@ def ocrmypdf_available() -> bool:
     try:
         import ocrmypdf  # noqa: F401
         return True
-    except ImportError:
+    except Exception:
         return False
 
 
