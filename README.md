@@ -41,6 +41,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - OpenCV preprocessing pipeline (deskew, contrast, denoise, threshold)
 - Auto-detection of file types and best conversion method
 - Batch conversion with configurable parallel workers and cancel support
+- PDF page range selection for converting specific pages instead of full documents
 - Quality presets (Fast, Balanced, Quality) to control speed vs. accuracy
 - DXF engineering drawing conversion with SVG preview rendering
 
@@ -56,6 +57,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Footnote handling (converts to Markdown footnote syntax)
 - Equation detection (preserves math as LaTeX notation)
 - Offline language detection and translation for non-English text
+- Spell checking with offline dictionary for post-conversion proofreading
 
 ### Output
 - Five output formats: Markdown, JSON, HTML, Plain Text, RAG Chunks
@@ -74,6 +76,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Broken link detection
 - Missing alt-text flagging
 - Flesch-Kincaid readability scoring
+- Confidence heatmap visualization — color-codes preview content by extraction quality
 
 ### Performance
 - Parallel workers (1, 2, 4, or Auto) for batch processing
@@ -86,12 +89,17 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Cross-platform DPI scaling (Windows, Linux, macOS)
 - Drag-and-drop file input (tkinterdnd2 with graceful fallback)
 - Five main screens: Home, Settings, Conversion, Results, Watch Folder
-- Preview window with syntax-highlighted Markdown output
-  - Code blocks, inline code, blockquotes, links, headings, tables, lists
-  - Image thumbnails rendered inline
-  - Ctrl+F search with live debounced highlighting
-  - Copy Markdown to clipboard
-- Debug Info window with Export Log
+- Preview window with rich Markdown rendering and review tools
+  - Syntax highlighting for headings, code blocks, inline code, blockquotes, links, tables, lists, horizontal rules, image references, and YAML front matter
+  - Inline image thumbnails with click-to-zoom full-size viewer
+  - Source pages panel with rendered PDF page thumbnails and image previews
+  - Source info panel with file metadata and per-dimension confidence breakdown
+  - Find and Replace bar (Ctrl+F) with regex support, match navigation, and Replace All
+  - Copy Markdown (raw) or Copy Rich (formatted HTML for Word/Docs/email)
+  - Spell check toggle with offline dictionary (misspelled words underlined in red)
+  - Confidence heatmap overlay — color-codes text, tables, and images by extraction confidence
+- Debug Info window with Export Log (saves full conversion diagnostics to a text file)
+- PDF page range selector — visual thumbnail grid with click and Shift+click range selection
 - Watch Folder mode for automated batch conversion
 - Post-processing Rules Editor with named profiles
 - Tooltip system for every setting with detailed descriptions
@@ -129,7 +137,7 @@ The first run may download AI models for docling and PaddleOCR (approximately 1-
 2. **Set Output** — Choose an output folder for converted files
 3. **Configure** — Adjust settings if needed (defaults work well for most documents)
 4. **Convert** — Click "Convert" and monitor progress in the Conversion screen
-5. **Review** — Check confidence scores in Results, preview output in the Preview window
+5. **Review** — Check confidence scores in Results, preview output with syntax highlighting, spell check, confidence heatmap, and image zoom in the Preview window
 
 ## Licensing
 
@@ -170,6 +178,7 @@ See the `LICENSE` file for full terms.
 | Output Subfolder | On | Create per-document subfolders in output |
 | Rules Profile | None | Post-processing rules profile to apply |
 | Theme | Dark | Interface theme (Dark, Light) |
+| Page Range | All pages | Select specific PDF pages to convert (right-click a PDF file) |
 | Low Confidence Action | Ask me | Behavior when conversion confidence is low |
 
 ## Output Structure

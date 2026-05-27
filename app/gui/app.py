@@ -1156,6 +1156,9 @@ class App:
         )
         self._btn_open_folder.grid(row=0, column=1)
         self._secondary_pills.append(self._btn_open_folder)
+        Tooltip(self._btn_open_folder,
+                "Open the output folder in your system file explorer.",
+                lambda: self._t)
 
         # ── Confidence summary ───────────────────────────────
         self._results_conf_section_lbl = tk.Label(
@@ -1313,6 +1316,10 @@ class App:
         )
         self._btn_preview.grid(row=1, column=0, pady=(10, 0))
         self._secondary_pills.append(self._btn_preview)
+        Tooltip(self._btn_preview,
+                "Open the preview window to review converted output with syntax highlighting, "
+                "inline images, search and replace, spell check, and confidence heatmap.",
+                lambda: self._t)
 
         self._btn_debug_info = PillButton(
             self._results_btn_row,
@@ -1324,6 +1331,10 @@ class App:
         )
         self._btn_debug_info.grid(row=1, column=1, padx=(12, 0), pady=(10, 0))
         self._secondary_pills.append(self._btn_debug_info)
+        Tooltip(self._btn_debug_info,
+                "View detailed conversion diagnostics — engine used, confidence breakdown, "
+                "warnings, and settings snapshot. Export as a text file for troubleshooting.",
+                lambda: self._t)
 
     # ── Watch Folder screen ─────────────────────────────────
 
@@ -1760,6 +1771,9 @@ class App:
             fill=t["bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["bg"],
         )
+        Tooltip(btn_export,
+                "Save the full conversion log to a text file for troubleshooting or archival.",
+                lambda: self._t)
 
     # ── Rules Editor dialog ────────────────────────────────
 
@@ -2335,6 +2349,13 @@ class App:
 
             preview_text.config(state="disabled")
 
+        # ── Toolbar separator: visual dividers between button groups ──
+        def _toolbar_sep():
+            sep = tk.Frame(top_bar, width=1, bg=t["border"])
+            sep.pack(side="right", fill="y", padx=6, pady=4)
+            return sep
+
+        # ── Analysis tools (right side, packed right-to-left) ──
         btn_heatmap = PillButton(
             top_bar, text="Heatmap", font=_FONT_SMALL,
             style="secondary", padx=12, pady=5,
@@ -2345,6 +2366,10 @@ class App:
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
+        Tooltip(btn_heatmap,
+                "Color-code the preview by conversion confidence. Green = high confidence, "
+                "yellow = medium, red = low. Tables and images are scored separately from text.",
+                lambda: self._t)
 
         btn_spell = PillButton(
             top_bar, text="Spell", font=_FONT_SMALL,
@@ -2356,7 +2381,14 @@ class App:
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
+        Tooltip(btn_spell,
+                "Toggle offline spell check. Misspelled words are underlined in red. "
+                "Useful for catching OCR errors in scanned documents.",
+                lambda: self._t)
 
+        _toolbar_sep()  # ── divider between analysis and clipboard tools ──
+
+        # ── Clipboard tools ──
         btn_copy_fmt = PillButton(
             top_bar, text="Copy Rich", font=_FONT_SMALL,
             style="secondary", padx=12, pady=5,
@@ -2367,6 +2399,10 @@ class App:
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
+        Tooltip(btn_copy_fmt,
+                "Copy as formatted HTML. Paste into Word, Google Docs, or email "
+                "to preserve headings, tables, and code block formatting.",
+                lambda: self._t)
 
         btn_copy = PillButton(
             top_bar, text="Copy Markdown", font=_FONT_SMALL,
@@ -2378,6 +2414,11 @@ class App:
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
+        Tooltip(btn_copy,
+                "Copy the raw Markdown source to your clipboard.",
+                lambda: self._t)
+
+        _toolbar_sep()  # ── divider between clipboard tools and file selector ──
 
         # File selector (packed after right-side buttons so it expands into remaining space)
         file_selector = GlassDropdown(
@@ -2430,6 +2471,9 @@ class App:
         )
         _lbl_info_tab.pack(side="left")
         _lbl_info_tab.bind("<Button-1>", lambda _: _set_left_tab("info"))
+        Tooltip(_lbl_info_tab,
+                "File metadata, confidence scores, and conversion notes for the selected document.",
+                lambda: self._t)
 
         tk.Label(left_tab_bar, text="  │  ", font=_FONT_SECTION,
                  bg=t["bg"], fg=t["border"]).pack(side="left")
@@ -2440,6 +2484,10 @@ class App:
         )
         _lbl_pages_tab.pack(side="left")
         _lbl_pages_tab.bind("<Button-1>", lambda _: _set_left_tab("pages"))
+        Tooltip(_lbl_pages_tab,
+                "Rendered page thumbnails from the original source document. "
+                "Supported for PDF and image files.",
+                lambda: self._t)
 
         tk.Frame(left_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
 
@@ -2567,9 +2615,16 @@ class App:
         right_frame = tk.Frame(paned, bg=t["bg"])
         paned.add(right_frame, minsize=int(300 * self._dpi))
 
-        tk.Label(right_frame, text="CONVERTED OUTPUT", font=_FONT_SECTION,
+        _output_hdr_row = tk.Frame(right_frame, bg=t["bg"])
+        _output_hdr_row.pack(fill="x", padx=12, pady=(12, 4))
+        tk.Label(_output_hdr_row, text="CONVERTED OUTPUT", font=_FONT_SECTION,
                  bg=t["bg"], fg=t["text_secondary"], anchor="w"
-                 ).pack(fill="x", padx=12, pady=(12, 4))
+                 ).pack(side="left")
+        _shortcut_lbl = tk.Label(
+            _output_hdr_row, text="Ctrl+F to search", font=(_FONT_FAMILY, 8),
+            bg=t["bg"], fg=t["border"],
+        )
+        _shortcut_lbl.pack(side="right")
         tk.Frame(right_frame, height=1, bg=t["border"]).pack(fill="x", padx=12, pady=(0, 8))
 
         # ── Search & Replace bar (hidden by default) ─────────
@@ -2603,6 +2658,10 @@ class App:
             cursor="hand2", padx=4,
         )
         regex_btn.pack(side="left", padx=2, pady=4)
+        Tooltip(regex_btn,
+                "Toggle regular expression mode. When active, your search "
+                "pattern is treated as a regex (e.g. \\d+ matches numbers).",
+                lambda: self._t)
 
         def _toggle_regex(_e=None):
             regex_on.set(not regex_on.get())
@@ -2664,6 +2723,9 @@ class App:
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
+        Tooltip(btn_replace,
+                "Replace the current match and advance to the next one.",
+                lambda: self._t)
 
         btn_replace_all = PillButton(
             replace_row, text="All", font=_FONT_SMALL,
@@ -2675,6 +2737,9 @@ class App:
             fill=t["content_bg"], fg=t["text"],
             hover_fill=t["accent"], parent_bg=t["content_bg"],
         )
+        Tooltip(btn_replace_all,
+                "Replace every match in the document at once.",
+                lambda: self._t)
 
         search_matches = []      # list of (start_pos, end_pos) tuples
         search_current_idx = [0]  # mutable index
@@ -3260,6 +3325,17 @@ class App:
         win.bind("<Control-f>", _toggle_search)
         win.bind("<Control-h>", _toggle_search)  # Ctrl+H also opens search
 
+        # ── Status bar at bottom ─────────────────────────────
+        status_bar = tk.Frame(win, bg=t["content_bg"])
+        status_bar.pack(fill="x", side="bottom", padx=12, pady=(0, 6))
+        _status_hint = tk.Label(
+            status_bar,
+            text="Ctrl+F  Search  │  Click images to zoom  │  Shift+Scroll  Horizontal scroll",
+            font=(_FONT_FAMILY, 8), fg=t["text_secondary"], bg=t["content_bg"],
+            anchor="w",
+        )
+        _status_hint.pack(side="left", padx=8, pady=2)
+
         # Load first file
         load_file(file_display_names[0])
 
@@ -3821,12 +3897,14 @@ class App:
         btn_all.pack(side="left", padx=(0, 4))
         btn_all.set_colors(fill=t["bg"], fg=t["text"],
                            hover_fill=t["accent"], parent_bg=t["bg"])
+        Tooltip(btn_all, "Select all pages for conversion.", lambda: self._t)
 
         btn_none = PillButton(actions_bar, text="Clear", font=_FONT_SMALL,
                               style="secondary", padx=10, pady=4, command=_select_none)
         btn_none.pack(side="left", padx=(0, 4))
         btn_none.set_colors(fill=t["bg"], fg=t["text"],
                             hover_fill=t["accent"], parent_bg=t["bg"])
+        Tooltip(btn_none, "Deselect all pages.", lambda: self._t)
 
         # Scrollable grid of page thumbnails
         grid_outer = tk.Frame(win, bg=t["bg"])
