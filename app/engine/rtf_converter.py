@@ -180,9 +180,9 @@ def _rtf_to_text_fallback(rtf: str) -> str:
     """
     # Remove RTF header/font table/color table blocks
     text = re.sub(r'\{\\fonttbl[^}]*\}', '', rtf)
-    text = re.sub(r'\{\\colortbl[^}]*\}', '', rtf)
-    text = re.sub(r'\{\\stylesheet[^}]*\}', '', rtf)
-    text = re.sub(r'\{\\info[^}]*\}', '', rtf)
+    text = re.sub(r'\{\\colortbl[^}]*\}', '', text)
+    text = re.sub(r'\{\\stylesheet[^}]*\}', '', text)
+    text = re.sub(r'\{\\info[^}]*\}', '', text)
 
     # Remove pictures and objects
     text = re.sub(r'\{\\pict[^}]*\}', '', text)

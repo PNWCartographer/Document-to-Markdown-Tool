@@ -23,14 +23,16 @@ DEFAULTS: dict = {
     "markdown_flavor":        "GFM",
     "yaml_front_matter":      True,
     "overwrite_existing":     False,
-    "output_subfolder":       False,
+    "output_subfolder":       True,
     # Consumed by the GUI layer (gui/app.py), not the conversion engine.
     "low_confidence_action":  "Ask me",
     "auto_translate":         True,
     "dxf_svg_preview":        True,
     "ocr_engine":             "Auto",
     "rules_profile":          "None",
-    "theme":                  "dark",
+    "theme":                  "system",
+    "last_output_folder":     "",
+    "_dep_check_done":        False,
 }
 
 

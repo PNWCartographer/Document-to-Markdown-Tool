@@ -66,6 +66,26 @@ def convert(
     progress(0.03)
 
     # ------------------------------------------------------------------
+    # Check for encrypted / password-protected PDFs
+    # ------------------------------------------------------------------
+    try:
+        import fitz as _fitz_check
+        _doc_check = _fitz_check.open(source_file)
+        if _doc_check.is_encrypted:
+            _doc_check.close()
+            log_warn("PDF is password-protected or encrypted. Cannot extract content.")
+            confidence.overall = "Low"
+            confidence.text_extraction = "Low"
+            confidence.manual_review_recommended = True
+            output.add_section(
+                body="*This PDF is password-protected or encrypted. "
+                     "Please remove the password and try again.*")
+            return output
+        _doc_check.close()
+    except Exception:
+        pass  # will be caught by the actual converter below
+
+    # ------------------------------------------------------------------
     # Auto-detect: check if PDF has extractable text or is scanned
     # ------------------------------------------------------------------
     is_scanned = False

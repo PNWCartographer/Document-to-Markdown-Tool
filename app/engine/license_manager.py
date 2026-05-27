@@ -15,12 +15,14 @@ import hmac
 import json
 import os
 import datetime
+import threading
 from typing import Optional
 
 from .logger import appdata_dir
 
 _LICENSE_FILE = "license.json"
 _FREE_TIER_LIMIT = 5
+_io_lock = threading.Lock()
 
 # Key format constants
 _PFX = "DS-"
@@ -152,14 +154,15 @@ def increment_conversion_count(count: int = 1) -> int:
     """
     Increment the conversion counter by count.
     Called after each successful file conversion.
-    Returns the new total.
+    Returns the new total.  Thread-safe via _io_lock.
     """
-    data = _load_data()
-    if not data.get("first_use_date"):
-        data["first_use_date"] = datetime.date.today().isoformat()
-    data["conversion_count"] = data.get("conversion_count", 0) + count
-    _save_data(data)
-    return data["conversion_count"]
+    with _io_lock:
+        data = _load_data()
+        if not data.get("first_use_date"):
+            data["first_use_date"] = datetime.date.today().isoformat()
+        data["conversion_count"] = data.get("conversion_count", 0) + count
+        _save_data(data)
+        return data["conversion_count"]
 
 
 def activate_license(key: str) -> tuple[bool, str]:

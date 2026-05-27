@@ -187,7 +187,7 @@ def verify() -> None:
     if all_ok:
         print("  Setup complete. Run the tool with:")
         print("    python app/main.py")
-        print("    — or double-click Launch.bat")
+        print("    — or double-click Launch.pyw")
     else:
         print("  Setup finished with warnings. Check failed items above.")
 

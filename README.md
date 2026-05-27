@@ -164,10 +164,10 @@ See the `LICENSE` file for full terms.
 | Quality Preset | Quality | Speed vs. accuracy tradeoff (Fast, Balanced, Quality) |
 | OCR Language | English | Language for OCR text recognition |
 | Markdown Flavor | GFM | Markdown output style (GFM, Obsidian, Pandoc) |
-| YAML Front Matter | Off | Prepend metadata block to output files |
+| YAML Front Matter | On | Prepend metadata block to output files |
 | Output Format | Markdown | Output file format |
 | Overwrite Existing | Off | Replace existing output files |
-| Output Subfolder | Off | Create per-document subfolders in output |
+| Output Subfolder | On | Create per-document subfolders in output |
 | Rules Profile | None | Post-processing rules profile to apply |
 | Theme | Dark | Interface theme (Dark, Light) |
 | Low Confidence Action | Ask me | Behavior when conversion confidence is low |
@@ -224,6 +224,10 @@ app/
     logger.py                 # Per-file and app-level logging
     watch_folder.py           # Watch Folder automated conversion
     license_manager.py        # License validation and usage tracking
+installer/
+  doctomarkdown.spec          # PyInstaller build spec
+  doctomarkdown.iss           # InnoSetup installer wizard script
+  build_installer.bat         # One-click Windows installer build
 ```
 
 **Pipeline flow**: GUI -> ConversionJob -> Engine Converters -> Post-Processors -> Output Writers
@@ -259,6 +263,7 @@ Detailed specifications are available in the `docs/` folder:
 | `CONFIDENCE_REPORTING.md` | Confidence scoring dimensions |
 | `LOCAL_PROCESSING_RULES.md` | Local-only processing requirements |
 | `LOGGING_REQUIREMENTS.md` | Logging requirements |
+| `INSTALLER_UNINSTALLER_REQUIREMENTS.md` | Install and uninstall expectations |
 | `DEVELOPMENT_WORKFLOW.md` | Build and development workflow |
 
 ## License

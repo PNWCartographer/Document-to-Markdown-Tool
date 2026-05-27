@@ -32,9 +32,10 @@ ICONS = {
     "Watch":      "◉",
 }
 
-_SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
+_SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".xls", ".csv",
                    ".pptx", ".epub", ".dxf", ".html", ".htm",
-                   ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
+                   ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp",
+                   ".webp", ".gif"}
 
 _FILETYPES = [
     ("Supported files",  "*.pdf *.docx *.doc *.rtf *.xlsx *.xls *.csv *.pptx *.epub *.dxf *.html *.htm *.png *.jpg *.jpeg *.tiff *.tif *.bmp *.webp *.gif"),
@@ -250,10 +251,29 @@ class App:
         self.root.geometry(f"{int(960 * self._dpi)}x{int(640 * self._dpi)}")
         self.root.minsize(int(720 * self._dpi), int(500 * self._dpi))
 
+        # Window icon
+        _icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "assets", "app_icon.ico")
+        if not os.path.isfile(_icon_path):
+            # Fallback: look relative to project root
+            _icon_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "assets", "app_icon.ico")
+        if os.path.isfile(_icon_path):
+            try:
+                self.root.iconbitmap(_icon_path)
+            except Exception:
+                pass
+
         # Load config first — theme preference is stored here
         self._cfg = _cfg_mod.load()
 
-        self._dark = (self._cfg.get("theme", "light") == "dark")
+        theme_pref = self._cfg.get("theme", "system")
+        if theme_pref == "system":
+            self._dark = self._detect_system_dark_mode()
+        else:
+            self._dark = (theme_pref == "dark")
         self._t = themes.DARK if self._dark else themes.LIGHT
         self._nav_btns: dict[str, tk.Button] = {}
         self._frames:   dict[str, tk.Frame]  = {}
@@ -262,7 +282,7 @@ class App:
         # Home screen state
         self._selected_files: list[str] = []
         self._file_aliases:   dict[str, str] = {}   # path → custom output name
-        self._output_path: str = ""
+        self._output_path: str = self._cfg.get("last_output_folder", "")
 
         # Settings state (config already loaded above)
         self._setting_vars:        dict = {}
@@ -337,6 +357,9 @@ class App:
         self._show("Home")
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Non-blocking startup checks (run after mainloop starts)
+        self.root.after(500, self._startup_checks)
 
     # ── Layout ──────────────────────────────────────────────
 
@@ -578,7 +601,7 @@ class App:
 
         self._lbl_output_path = tk.Label(
             self._out_path_frame,
-            text="No output folder selected",
+            text=self._output_path if self._output_path else "No output folder selected",
             font=_FONT_SMALL,
             anchor="w",
             padx=10,
@@ -2719,7 +2742,8 @@ class App:
             messagebox.showinfo(
                 "No Supported Files",
                 f"No supported files were found in:\n{folder}\n\n"
-                "Supported types: PDF, DOCX, XLSX, CSV, PNG, JPG, TIFF, BMP",
+                "Supported types: " + ", ".join(
+                    sorted(e.lstrip(".").upper() for e in _SUPPORTED_EXTS)),
             )
             return
         self._show_folder_preview(folder, found)
@@ -2818,11 +2842,16 @@ class App:
         self._update_file_list()
 
     def _pick_output_folder(self):
-        folder = filedialog.askdirectory(title="Select output folder")
+        initial = self._output_path or None
+        folder = filedialog.askdirectory(title="Select output folder",
+                                         initialdir=initial)
         if not folder:
             return
         self._output_path = os.path.normpath(folder)
         self._lbl_output_path.config(text=self._output_path)
+        # Remember for next session
+        self._cfg["last_output_folder"] = self._output_path
+        _cfg_mod.save(self._cfg)
         self._check_start_ready()
 
     def _update_file_list(self):
@@ -3361,6 +3390,15 @@ class App:
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
+        # Enable mousewheel scrolling
+        canvas.bind(
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', canvas))
+        canvas.bind(
+            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
+            if self._scroll_target is canvas else None)
+        frame.bind(
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', canvas))
+
         pad = 28
 
         # ── Title ──
@@ -3373,7 +3411,7 @@ class App:
             fg=t["text_secondary"], bg=t["bg"],
         ).pack(anchor="w", padx=pad)
         tk.Label(
-            frame, text="Version 1.0.0", font=(_FONT_FAMILY, 11),
+            frame, text="Version 1.1.0", font=(_FONT_FAMILY, 11),
             fg=t["text_secondary"], bg=t["bg"],
         ).pack(anchor="w", padx=pad, pady=(2, 12))
 
@@ -3532,6 +3570,13 @@ class App:
 
         # Bottom padding
         tk.Frame(frame, bg=t["bg"], height=24).pack()
+
+        # Clean up scroll target reference when window closes
+        def _on_about_close():
+            if self._scroll_target is canvas:
+                self._scroll_target = None
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _on_about_close)
 
     # ── Theme ────────────────────────────────────────────────
 
@@ -3858,6 +3903,46 @@ class App:
                 self._style_screen_labels(child, t)
 
     @staticmethod
+    def _detect_system_dark_mode() -> bool:
+        """Detect OS dark mode preference. Returns True for dark, False for light."""
+        import sys as _sys
+        if _sys.platform == "win32":
+            try:
+                import winreg
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                winreg.CloseKey(key)
+                return value == 0  # 0 = dark, 1 = light
+            except Exception:
+                return True  # default to dark
+        elif _sys.platform == "darwin":
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                    capture_output=True, text=True, timeout=2)
+                return "dark" in result.stdout.lower()
+            except Exception:
+                return True
+        else:
+            # Linux: check GTK theme name for "dark" keyword
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                    capture_output=True, text=True, timeout=2)
+                if "dark" in result.stdout.lower():
+                    return True
+                result = subprocess.run(
+                    ["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"],
+                    capture_output=True, text=True, timeout=2)
+                return "dark" in result.stdout.lower()
+            except Exception:
+                return True
+
+    @staticmethod
     def _scroll_units(event) -> int:
         """Normalize mousewheel delta to scroll units across platforms."""
         import sys as _sys
@@ -3867,10 +3952,206 @@ class App:
             return -1 * (event.delta // 120)
         return 0
 
+    # ── Startup checks ──────────────────────────────────────
+
+    _APP_VERSION = "1.1.0"
+    _UPDATE_URL = "https://darksquare.dev/version.json"
+
+    def _startup_checks(self):
+        """Run non-blocking startup checks after the window is visible."""
+        import threading
+        threading.Thread(target=self._check_updates, daemon=True).start()
+        threading.Thread(target=self._check_dependencies, daemon=True).start()
+
+    def _check_updates(self):
+        """Check for updates in background thread. Non-blocking, silent on failure."""
+        try:
+            import urllib.request
+            import json as _json
+            req = urllib.request.Request(
+                self._UPDATE_URL,
+                headers={"User-Agent": f"DocToMarkdown/{self._APP_VERSION}"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            latest = data.get("latest_version", "")
+            download_url = data.get("download_url", "https://darksquare.dev")
+            if latest and latest != self._APP_VERSION:
+                # Schedule UI notification on the main thread
+                self.root.after(0, lambda: self._show_update_banner(latest, download_url))
+        except Exception:
+            pass  # silent — no network is fine
+
+    def _show_update_banner(self, latest: str, url: str):
+        """Show a non-intrusive update notification at the top of the Home screen."""
+        t = self._t
+        home = self._frames.get("Home")
+        if not home:
+            return
+        banner = tk.Frame(home, bg=t["accent"], pady=4)
+        banner.pack(fill="x", before=list(home.winfo_children())[0] if home.winfo_children() else None)
+        msg = tk.Label(
+            banner,
+            text=f"  Update available: v{latest}  —  Visit darksquare.dev to download",
+            font=(_FONT_FAMILY, 10), fg=t["text_on_accent"], bg=t["accent"],
+            anchor="w", cursor="hand2",
+        )
+        msg.pack(side="left", fill="x", expand=True)
+        msg.bind("<Button-1>", lambda _: __import__("webbrowser").open(url))
+        dismiss = tk.Label(
+            banner, text=" ✕ ", font=(_FONT_FAMILY, 10, "bold"),
+            fg=t["text_on_accent"], bg=t["accent"], cursor="hand2",
+        )
+        dismiss.pack(side="right", padx=(0, 8))
+        dismiss.bind("<Button-1>", lambda _: banner.destroy())
+
+    def _check_dependencies(self):
+        """Check for optional dependencies and show a one-time notice if any are missing."""
+        # When running from a PyInstaller bundle all dependencies are already
+        # packaged inside the frozen executable — skip the check entirely.
+        import sys as _sys
+        if getattr(_sys, "frozen", False):
+            return
+
+        # Only check once per source install
+        if self._cfg.get("_dep_check_done"):
+            return
+
+        import importlib.util
+        import shutil
+
+        missing = []
+        checks = [
+            ("PaddleOCR", "paddleocr",
+             "Best OCR engine for scanned documents and images"),
+            ("Tesseract", "pytesseract",
+             "Fallback OCR engine (requires Tesseract binary)"),
+            ("Docling", "docling",
+             "AI-powered document layout analysis for complex PDFs"),
+        ]
+        # Use find_spec instead of __import__ — checks if the module is
+        # installed without actually loading heavy ML frameworks (PyTorch,
+        # TensorFlow, etc.) which would block for many seconds.
+        for name, module, desc in checks:
+            if importlib.util.find_spec(module) is None:
+                missing.append((name, desc))
+
+        # Special check: Tesseract binary on PATH
+        if not any(n == "Tesseract" for n, _ in missing):
+            if shutil.which("tesseract") is None:
+                missing.append(("Tesseract binary",
+                                "pytesseract installed but tesseract not found in PATH"))
+
+        self._cfg["_dep_check_done"] = True
+        _cfg_mod.save(self._cfg)
+
+        if not missing:
+            return
+
+        # Schedule the themed dialog on the main thread
+        self.root.after(500, lambda m=missing: self._show_dependency_dialog(m))
+
+    def _show_dependency_dialog(self, missing: list):
+        """Show a themed dialog listing missing optional components.
+
+        Only shown when running from source (never from the PyInstaller
+        installer, which bundles all dependencies).
+        """
+        t = self._t
+        # Calculate height based on number of missing items
+        base_h = 260
+        per_item = 52
+        win_h = base_h + len(missing) * per_item
+
+        win = tk.Toplevel(self.root)
+        win.title("Optional Components")
+        win.geometry(f"{int(460 * self._dpi)}x{int(win_h * self._dpi)}")
+        win.config(bg=t["bg"])
+        win.resizable(False, False)
+        win.transient(self.root)
+        win.grab_set()
+        self._set_titlebar_dark(self._dark, win)
+
+        pad = 24
+
+        # ── Icon + title row ──
+        header = tk.Frame(win, bg=t["bg"])
+        header.pack(fill="x", padx=pad, pady=(pad, 0))
+        tk.Label(
+            header, text="ℹ", font=(_FONT_FAMILY, 22),
+            fg=t["accent"], bg=t["bg"],
+        ).pack(side="left", padx=(0, 10))
+        tk.Label(
+            header, text="Optional Components",
+            font=(_FONT_FAMILY, 14, "bold"),
+            fg=t["text"], bg=t["bg"],
+        ).pack(side="left", anchor="w")
+
+        # ── Description ──
+        tk.Label(
+            win,
+            text="Some optional components were not found. Conversions\n"
+                 "will use the best available engine automatically.",
+            font=(_FONT_FAMILY, 10),
+            fg=t["text_secondary"], bg=t["bg"],
+            justify="left", anchor="w",
+        ).pack(fill="x", padx=pad, pady=(12, 8))
+
+        # ── Missing items list ──
+        list_frame = tk.Frame(win, bg=t["content_bg"],
+                              highlightbackground=t["border"],
+                              highlightthickness=1)
+        list_frame.pack(fill="x", padx=pad, pady=(0, 12))
+
+        for i, (name, desc) in enumerate(missing):
+            row = tk.Frame(list_frame, bg=t["content_bg"])
+            row.pack(fill="x", padx=12, pady=(8 if i == 0 else 2, 8 if i == len(missing) - 1 else 2))
+            tk.Label(
+                row, text=f"•  {name}", font=(_FONT_FAMILY, 10, "bold"),
+                fg=t["accent"], bg=t["content_bg"], anchor="w",
+            ).pack(anchor="w")
+            tk.Label(
+                row, text=f"    {desc}", font=(_FONT_FAMILY, 9),
+                fg=t["text_secondary"], bg=t["content_bg"], anchor="w",
+                wraplength=int(390 * self._dpi),
+            ).pack(anchor="w")
+
+        # ── Hint ──
+        tk.Label(
+            win,
+            text="Run  python setup.py  to install all components.",
+            font=(_FONT_FAMILY, 9),
+            fg=t["text_secondary"], bg=t["bg"],
+            anchor="w",
+        ).pack(fill="x", padx=pad, pady=(0, 16))
+
+        # ── OK button ──
+        btn_frame = tk.Frame(win, bg=t["bg"])
+        btn_frame.pack(fill="x", padx=pad, pady=(0, pad))
+        ok_btn = PillButton(
+            btn_frame, text="OK",
+            style="primary",
+            font=(_FONT_FAMILY, 10, "bold"),
+            padx=26, pady=8,
+            command=win.destroy,
+        )
+        ok_btn.set_colors(
+            fill=t["accent"], fg=t["text_on_accent"],
+            hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+            parent_bg=t["bg"],
+        )
+        ok_btn.pack(anchor="e")
+
     # ── Cleanup ──────────────────────────────────────────────
 
     def _on_close(self):
         if self._active_job and self._active_job.is_running():
+            if not messagebox.askyesno(
+                "Conversion in Progress",
+                "A conversion is currently running.\n\n"
+                "Are you sure you want to close the application?",
+                parent=self.root,
+            ):
+                return
             self._active_job.cancel()
             thread = getattr(self._active_job, '_thread', None)
             if thread and thread.is_alive():
