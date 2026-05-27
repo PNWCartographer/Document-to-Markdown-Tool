@@ -1,7 +1,7 @@
 """
 OCR abstraction layer.
 
-Primary:  PaddleOCR  (deep learning, no external binary, Apache 2.0)
+Primary:  RapidOCR  (ONNX Runtime, Apache 2.0 — runs PaddleOCR models via ONNX)
 Fallback: pytesseract + Tesseract binary
 
 Both paths accept a PIL Image and return an OcrResult with extracted text,
@@ -18,25 +18,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Windows DLL search path fix — must run before any torch/paddle import.
-# Windows Store Python sandbox restricts DLL loading; add torch's lib dir
-# explicitly so shm.dll and other torch libs resolve correctly.
-# ---------------------------------------------------------------------------
-def _add_torch_dll_dir() -> None:
-    if sys.platform != "win32":
-        return
-    try:
-        import torch
-        lib_dir = os.path.join(os.path.dirname(torch.__file__), "lib")
-        if os.path.isdir(lib_dir):
-            os.add_dll_directory(lib_dir)
-    except Exception:
-        pass
-
-_add_torch_dll_dir()
-
-# ---------------------------------------------------------------------------
-# Tesseract binary discovery — check common Windows install paths and PATH
+# Tesseract binary discovery — check common install paths and PATH
 # before pytesseract is imported so the env var is set early.
 # ---------------------------------------------------------------------------
 _TESSERACT_SEARCH_PATHS = [
@@ -70,9 +52,8 @@ def _configure_tesseract() -> None:
 _configure_tesseract()
 
 # Cached engine instances (initialized once per process)
-_paddle_engine = None
-_paddle_lang: Optional[str] = None
-_paddle_available: Optional[bool] = None
+_rapidocr_engine = None
+_rapidocr_available: Optional[bool] = None
 _tesseract_available: Optional[bool] = None
 
 
@@ -124,18 +105,25 @@ class OcrResult:
 # Availability checks
 # ---------------------------------------------------------------------------
 
-def paddle_available() -> bool:
-    global _paddle_available
-    if _paddle_available is not None:
-        return _paddle_available
+def rapidocr_available() -> bool:
+    """Check if RapidOCR (ONNX Runtime) is installed and importable."""
+    global _rapidocr_available
+    if _rapidocr_available is not None:
+        return _rapidocr_available
     try:
-        import paddleocr  # noqa: F401
-        _paddle_available = True
+        from rapidocr_onnxruntime import RapidOCR  # noqa: F401
+        _rapidocr_available = True
     except Exception:
-        # Catches ImportError, OSError (DLL load failures), and any other
-        # runtime error that can occur when the paddle/torch stack is broken.
-        _paddle_available = False
-    return _paddle_available
+        _rapidocr_available = False
+    return _rapidocr_available
+
+
+# Backward-compatibility alias — other modules may still reference this
+# after the PaddleOCR → RapidOCR swap.  Returns False because PaddleOCR
+# is no longer installed; callers should migrate to rapidocr_available().
+def paddle_available() -> bool:
+    """Deprecated. Returns False. Use rapidocr_available() instead."""
+    return False
 
 
 def tesseract_available() -> bool:
@@ -152,7 +140,7 @@ def tesseract_available() -> bool:
 
 
 def any_ocr_available() -> bool:
-    return paddle_available() or tesseract_available()
+    return rapidocr_available() or tesseract_available()
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +150,7 @@ def any_ocr_available() -> bool:
 def run_ocr(
     image,                      # PIL.Image.Image
     language: str = "en",
-    prefer_engine: str = "paddle",
+    prefer_engine: str = "rapidocr",
 ) -> OcrResult:
     """
     Run OCR on a PIL Image.
@@ -171,99 +159,92 @@ def run_ocr(
     ----------
     image : PIL.Image.Image
     language : str
-        Language code. "en" for English. PaddleOCR uses its own codes;
-        Tesseract uses ISO 639-2 (e.g. "eng"). This function translates.
+        Language code. "en" for English. RapidOCR uses PaddleOCR model
+        codes; Tesseract uses ISO 639-2 (e.g. "eng"). This function
+        translates internally.
     prefer_engine : str
-        "paddle" or "tesseract". Falls back to the other if unavailable.
+        "rapidocr", "tesseract", or legacy "paddle" (mapped to "rapidocr").
+        Falls back to the other engine if the preferred one is unavailable.
     """
-    if prefer_engine == "paddle" and paddle_available():
-        return _run_paddle(image, language)
+    # Map legacy "paddle" preference to "rapidocr"
+    if prefer_engine == "paddle":
+        prefer_engine = "rapidocr"
+
+    if prefer_engine == "rapidocr" and rapidocr_available():
+        return _run_rapidocr(image, language)
+    if prefer_engine == "tesseract" and tesseract_available():
+        return _run_tesseract(image, language)
+
+    # Preferred engine unavailable — try the other
+    if rapidocr_available():
+        return _run_rapidocr(image, language)
     if tesseract_available():
         return _run_tesseract(image, language)
-    if paddle_available():
-        return _run_paddle(image, language)
 
     result = OcrResult(engine_used="none", confidence_label="Failed")
-    result.text = "[OCR unavailable — install PaddleOCR or Tesseract]"
+    result.text = "[OCR unavailable — install RapidOCR or Tesseract]"
     return result
 
 
 # ---------------------------------------------------------------------------
-# PaddleOCR engine
+# RapidOCR engine (replaces PaddleOCR)
 # ---------------------------------------------------------------------------
 
-_PADDLE_LANG_MAP = {
-    "en": "en",
-    "fr": "fr",
-    "de": "german",
-    "es": "es",
-    "it": "it",
-    "pt": "pt",
-    "zh": "ch",
-    "ja": "japan",
-    "ko": "korean",
-    "ar": "ar",
-    "ru": "ru",
-}
+_rapidocr_lock = __import__("threading").Lock()
 
 
-_paddle_lock = __import__("threading").Lock()
+def _get_rapidocr_engine():
+    """Lazy-initialize the RapidOCR engine (one instance per process)."""
+    global _rapidocr_engine
+    with _rapidocr_lock:
+        if _rapidocr_engine is None:
+            from rapidocr_onnxruntime import RapidOCR
+            _rapidocr_engine = RapidOCR()
+        return _rapidocr_engine
 
 
-def _get_paddle_engine(language: str):
-    global _paddle_engine, _paddle_lang
-    lang = _PADDLE_LANG_MAP.get(language, "en")
-    with _paddle_lock:
-        if _paddle_engine is None or _paddle_lang != lang:
-            from paddleocr import PaddleOCR
-            _paddle_engine = PaddleOCR(
-                use_angle_cls=True,
-                lang=lang,
-                show_log=False,
-            )
-            _paddle_lang = lang
-        return _paddle_engine
-
-
-def _run_paddle(image, language: str) -> OcrResult:
+def _run_rapidocr(image, language: str) -> OcrResult:
+    """Run OCR using RapidOCR (ONNX Runtime backend)."""
     import numpy as np
 
-    result = OcrResult(engine_used="paddleocr")
+    result = OcrResult(engine_used="rapidocr")
     try:
-        engine = _get_paddle_engine(language)
+        engine = _get_rapidocr_engine()
         img_array = np.array(image.convert("RGB"))
-        # Hold the lock during inference — PaddleOCR is not thread-safe.
-        with _paddle_lock:
-            raw = engine.ocr(img_array, cls=True)
+
+        # RapidOCR inference — hold the lock for thread safety.
+        with _rapidocr_lock:
+            raw, _elapse = engine(img_array)
 
         lines = []
         confidences = []
         regions = []
 
-        if raw and raw[0]:
-            for line in raw[0]:
-                if line and len(line) >= 2:
-                    bbox = line[0]  # 4 polygon vertices: [[x,y], ...]
-                    text_info = line[1]
-                    if isinstance(text_info, (list, tuple)) and len(text_info) >= 2:
-                        text = str(text_info[0])
-                        conf = float(text_info[1])
-                        # Guard against NaN or out-of-range confidence
-                        if not (0.0 <= conf <= 1.0):
-                            conf = 0.5
-                    else:
-                        text = str(text_info)
-                        conf = 0.5
-                    if text.strip():
-                        lines.append(text)
-                        confidences.append(conf)
-                        # Compute centroid from bbox polygon
-                        cx = sum(p[0] for p in bbox) / len(bbox) if bbox else 0
-                        cy = sum(p[1] for p in bbox) / len(bbox) if bbox else 0
-                        regions.append(OcrTextRegion(
-                            text=text, confidence=conf,
-                            bbox=bbox, cx=cx, cy=cy,
-                        ))
+        if raw:
+            for item in raw:
+                # Each item: [bbox_ndarray, text_str, confidence_float]
+                if not item or len(item) < 3:
+                    continue
+                bbox = item[0]      # ndarray or list of 4 [x,y] points
+                text = str(item[1])
+                conf = float(item[2])
+
+                # Guard against NaN or out-of-range confidence
+                if not (0.0 <= conf <= 1.0):
+                    conf = 0.5
+
+                if text.strip():
+                    lines.append(text)
+                    confidences.append(conf)
+
+                    # Convert bbox to list of [x,y] pairs for OcrTextRegion
+                    bbox_list = bbox.tolist() if hasattr(bbox, "tolist") else list(bbox)
+                    cx = sum(p[0] for p in bbox_list) / len(bbox_list) if bbox_list else 0
+                    cy = sum(p[1] for p in bbox_list) / len(bbox_list) if bbox_list else 0
+                    regions.append(OcrTextRegion(
+                        text=text, confidence=conf,
+                        bbox=bbox_list, cx=cx, cy=cy,
+                    ))
 
         result.lines = lines
         result.confidences = confidences
@@ -272,7 +253,7 @@ def _run_paddle(image, language: str) -> OcrResult:
         result.aggregate_confidence()
 
     except Exception as e:
-        result.text = f"[PaddleOCR error: {e}]"
+        result.text = f"[RapidOCR error: {e}]"
         result.confidence_label = "Failed"
 
     return result

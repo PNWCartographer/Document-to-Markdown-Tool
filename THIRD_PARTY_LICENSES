@@ -16,8 +16,10 @@ mammoth                 BSD-2-Clause    DOCX to semantic HTML/Markdown
 openpyxl                MIT             XLSX spreadsheet reading
 xlrd                    BSD-3-Clause    Legacy XLS reading
 pandas                  BSD-3-Clause    Data manipulation and CSV handling
-paddlepaddle            Apache-2.0      Deep learning framework (PaddleOCR dependency)
-paddleocr               Apache-2.0      Primary OCR engine
+rapidocr-onnxruntime    Apache-2.0      Primary OCR engine (ONNX Runtime, replaces PaddlePaddle)
+onnxruntime             MIT             Machine learning inference engine for RapidOCR
+psutil                  BSD-3-Clause    Cross-platform system/process monitoring
+pynvml                  BSD-3-Clause    NVIDIA GPU management and detection (optional)
 pytesseract             Apache-2.0      Tesseract OCR wrapper
 python-pptx             MIT             PowerPoint reading
 ebooklib                AGPL-3.0        EPUB reading and spine extraction (local use only)

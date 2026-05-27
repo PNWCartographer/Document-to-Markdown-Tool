@@ -49,8 +49,8 @@ hidden_imports = [
     "docling",
     "docling.document_converter",
     "docling.datamodel",
-    "paddle",
-    "paddleocr",
+    "rapidocr_onnxruntime",
+    "onnxruntime",
 
     # ── OCR & image ──
     "pytesseract",
@@ -76,6 +76,10 @@ hidden_imports = [
     "argostranslate",
     "argostranslate.translate",
     "argostranslate.package",
+
+    # ── System detection ──
+    "psutil",
+    "pynvml",
 
     # ── File watching ──
     "watchdog",
@@ -113,7 +117,7 @@ datas += [
 
 # Collect data files from libraries that embed runtime assets
 _data_packages = [
-    "paddleocr",
+    "rapidocr_onnxruntime",
     "ezdxf",
     "pdfplumber",
     "ebooklib",
@@ -131,7 +135,7 @@ for pkg in _data_packages:
 
 # ── Dynamic libraries ──────────────────────────────────────────
 binaries = []
-_bin_packages = ["paddle", "paddleocr", "cv2", "ezdxf"]
+_bin_packages = ["onnxruntime", "cv2", "ezdxf"]
 for pkg in _bin_packages:
     try:
         binaries += collect_dynamic_libs(pkg)

@@ -1,7 +1,7 @@
 # Document to Markdown Converter Tool
 # Full dependency list — install with: pip install -r requirements.txt
 #
-# First-run note: docling and paddleocr download AI models on first use (~1-2 GB total).
+# First-run note: docling and RapidOCR download AI models on first use (~1-2 GB total).
 # Models are cached locally in ~/.cache after download. All processing is offline after that.
 
 # ---------------------------------------------------------------------------
@@ -40,10 +40,9 @@ xlrd>=2.0.1                     # legacy .xls (Excel 97-2003) reading
 pandas>=2.2.0                   # CSV, datasets, table building
 
 # ---------------------------------------------------------------------------
-# OCR — primary
+# OCR — primary (RapidOCR runs PaddleOCR models via ONNX Runtime)
 # ---------------------------------------------------------------------------
-paddlepaddle>=2.6.0             # PaddlePaddle framework (PaddleOCR dependency)
-paddleocr>=2.8.0                # deep learning OCR, no external binary needed
+rapidocr-onnxruntime>=1.4.0     # ONNX-based OCR engine (replaces PaddlePaddle, Apache 2.0)
 
 # ---------------------------------------------------------------------------
 # OCR — fallback (requires Tesseract binary installed separately)
@@ -93,3 +92,9 @@ watchdog>=4.0.0                 # file-system event monitoring (output folder wa
 # ---------------------------------------------------------------------------
 Pillow>=10.3.0                  # image open/save/crop/convert
 opencv-python>=4.10.0           # deskew, contrast, edge cleanup before OCR
+
+# ---------------------------------------------------------------------------
+# System detection (performance auto-configuration)
+# ---------------------------------------------------------------------------
+psutil>=5.9.0                   # CPU core count and RAM detection
+pynvml>=12.0.0                  # NVIDIA GPU name and VRAM detection (optional)

@@ -45,7 +45,7 @@ def convert(
     detect_footnotes: bool = True,
     detect_equations: bool = True,
     auto_translate: bool = True,
-    prefer_engine: str = "paddle",
+    prefer_engine: str = "rapidocr",
     ocr_dpi_scale: float = 4.0,
     page_range: list[int] | None = None,
     logger: Optional[ConversionLogger] = None,
@@ -661,7 +661,7 @@ def _convert_pymupdf(
     log_info, log_warn, progress, use_ocr: bool = False,
     pp_settings: Optional[dict] = None,
     ocr_dpi_scale: float = 4.0,
-    prefer_engine: str = "paddle",
+    prefer_engine: str = "rapidocr",
 ) -> ConversionOutput:
     import fitz
 
@@ -950,7 +950,7 @@ def _detect_columns(text_blocks: list, page_width: float) -> list[list]:
 
 def _ocr_page(page, language: str, log_info, log_warn,
               ocr_dpi_scale: float = 4.0,
-              prefer_engine: str = "paddle") -> tuple[str, str]:
+              prefer_engine: str = "rapidocr") -> tuple[str, str]:
     """Render a fitz page to an image and OCR it. Returns (text, confidence_label)."""
     try:
         import fitz

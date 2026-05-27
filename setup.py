@@ -48,7 +48,7 @@ def check_python() -> None:
         print()
         print("  NOTE: You are using Windows Store Python.")
         print("  Most features work fine. If you encounter DLL errors with")
-        print("  PaddleOCR, install Python from https://python.org instead.")
+        print("  RapidOCR, install Python from https://python.org instead.")
 
 
 def install_pip_packages() -> None:
@@ -125,23 +125,9 @@ def _print_tesseract_version(binary: str) -> None:
         pass
 
 
-def _add_torch_dll_dir() -> None:
-    """Add torch's lib dir to the DLL search path on Windows before paddle imports."""
-    if sys.platform != "win32":
-        return
-    try:
-        import torch
-        lib_dir = os.path.join(os.path.dirname(torch.__file__), "lib")
-        if os.path.isdir(lib_dir):
-            os.add_dll_directory(lib_dir)
-    except Exception:
-        pass
-
-
 def verify() -> None:
     banner("Verifying installation")
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "app"))
-    _add_torch_dll_dir()
 
     checks = [
         ("docling",        "import docling"),
@@ -156,9 +142,9 @@ def verify() -> None:
         ("pandas",         "import pandas"),
         ("Pillow",         "import PIL"),
         ("opencv",         "import cv2"),
-        ("paddlepaddle",   "import paddle"),
-        ("paddleocr",      "import paddleocr"),
+        ("rapidocr",       "import rapidocr_onnxruntime"),
         ("pytesseract",    "import pytesseract"),
+        ("psutil",         "import psutil"),
     ]
 
     all_ok = True
@@ -173,15 +159,25 @@ def verify() -> None:
     print()
     print("  OCR engines:")
     try:
-        from engine.ocr_engine import paddle_available, tesseract_available
-        pa = paddle_available()
+        from engine.ocr_engine import rapidocr_available, tesseract_available
+        ra = rapidocr_available()
         ta = tesseract_available()
-        print(f"    PaddleOCR  : {'OK  active' if pa else 'FAIL unavailable'}")
+        print(f"    RapidOCR   : {'OK  active' if ra else 'FAIL unavailable'}")
         print(f"    Tesseract  : {'OK  active' if ta else 'FAIL unavailable'}")
-        if not pa and not ta:
+        if not ra and not ta:
             print("    WARNING: No OCR engine active — images/scanned PDFs will skip text extraction.")
     except Exception as e:
         print(f"    Could not check OCR engines: {e}")
+
+    print()
+    print("  System detection:")
+    try:
+        from engine.system_info import detect_system, format_summary
+        info = detect_system()
+        for line in format_summary(info).split("\n"):
+            print(f"    {line}")
+    except Exception as e:
+        print(f"    Could not detect system info: {e}")
 
     print()
     if all_ok:

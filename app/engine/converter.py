@@ -50,7 +50,7 @@ _LANG_MAP = {
     "Italian":    "it",
     "Portuguese": "pt",
     "Dutch":      "nl",
-    "Auto-detect": "en",   # fallback; PaddleOCR handles multi-language on its own
+    "Auto-detect": "en",   # fallback; RapidOCR handles multi-language on its own
 }
 
 
@@ -424,8 +424,8 @@ class ConversionJob:
         ocr_engine_pref = cfg.get("ocr_engine", "Auto")
 
         # Map OCR engine setting → run_ocr prefer_engine parameter
-        _ENGINE_MAP = {"Auto": "paddle", "PaddleOCR": "paddle", "Tesseract": "tesseract"}
-        prefer_engine = _ENGINE_MAP.get(ocr_engine_pref, "paddle")
+        from .ocr_platform import map_engine_setting
+        prefer_engine = map_engine_setting(ocr_engine_pref)
 
         # Quality preset overrides for PDF conversion
         quality = cfg.get("quality_preset", "Quality")

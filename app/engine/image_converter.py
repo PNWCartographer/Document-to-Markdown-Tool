@@ -6,7 +6,7 @@ Pipeline:
   2. Save ORIGINAL image to assets/ (full color, for Markdown output)
   3. Preprocess with OpenCV for OCR (inversion, upscale, CLAHE, denoise,
      deskew, threshold) — used only as OCR input, not saved
-  4. Run OCR via ocr_engine (PaddleOCR primary, Tesseract fallback)
+  4. Run OCR via ocr_engine (RapidOCR primary, Tesseract fallback)
   5. Detect language of OCR'd text
   6. Translate non-English text if possible (offline via Argos Translate)
   7. Produce ConversionOutput with original image + spatially-sorted
@@ -36,7 +36,7 @@ def convert(
     preserve_images: bool = True,
     use_subfolder: bool = True,
     auto_translate: bool = True,
-    prefer_engine: str = "paddle",
+    prefer_engine: str = "rapidocr",
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:

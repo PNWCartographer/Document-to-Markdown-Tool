@@ -207,11 +207,11 @@ _TIPS = {
     ),
     "ocr_engine": (
         "Select the preferred OCR engine for text extraction from images "
-        "and scanned pages. Auto uses PaddleOCR (higher accuracy, deep "
-        "learning) with Tesseract as fallback. Choose PaddleOCR for best "
-        "results on engineering drawings, complex layouts, and non-Latin "
-        "scripts. Choose Tesseract for faster, lighter processing, or if "
-        "PaddleOCR is not installed."
+        "and scanned pages. Auto picks the best available engine for your "
+        "system. RapidOCR uses AI models with GPU acceleration when "
+        "available. Tesseract is a traditional engine that works "
+        "everywhere. Ensemble runs both engines and keeps the most "
+        "confident result for each word — slower but more accurate."
     ),
 }
 
@@ -811,7 +811,7 @@ class App:
         )
         row = self._settings_add_dropdown(
             self._settings_content, "ocr_engine", "OCR Engine",
-            ["Auto", "PaddleOCR", "Tesseract"],
+            ["Auto", "RapidOCR", "Tesseract", "Ensemble"],
             _TIPS["ocr_engine"], row,
             default_hint="default: Auto",
         )
@@ -4395,12 +4395,14 @@ class App:
 
         _section("Output Formats", (
             "Markdown (.md), JSON (.json), HTML (.html), "
-            "Plain Text (.txt), RAG Chunks (.jsonl)"
+            "Plain Text (.txt), RAG Chunks (.jsonl), "
+            "Searchable PDF (.pdf)"
         ))
 
         _section("Key Features", (
             "• Multi-engine conversion with automatic fallback chains\n"
-            "• OCR for scanned documents (PaddleOCR + Tesseract)\n"
+            "• OCR for scanned documents (RapidOCR + Tesseract)\n"
+            "• GPU acceleration (CUDA, DirectML, CoreML)\n"
             "• Offline translation for non-English documents\n"
             "• Confidence scoring across 6 quality dimensions\n"
             "• Post-processing rules with named profiles\n"
@@ -4872,8 +4874,8 @@ class App:
 
         missing = []
         checks = [
-            ("PaddleOCR", "paddleocr",
-             "Best OCR engine for scanned documents and images"),
+            ("RapidOCR", "rapidocr_onnxruntime",
+             "Primary OCR engine for scanned documents and images"),
             ("Tesseract", "pytesseract",
              "Fallback OCR engine (requires Tesseract binary)"),
             ("Docling", "docling",
