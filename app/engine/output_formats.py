@@ -25,11 +25,12 @@ from .markdown_writer import (
 # ---------------------------------------------------------------------------
 
 FORMATS = {
-    "Markdown":   {"ext": ".md",    "label": "Markdown (.md)"},
-    "JSON":       {"ext": ".json",  "label": "JSON (.json)"},
-    "HTML":       {"ext": ".html",  "label": "HTML (.html)"},
-    "Plain Text": {"ext": ".txt",   "label": "Plain Text (.txt)"},
-    "RAG Chunks": {"ext": ".jsonl", "label": "RAG Chunks (.jsonl)"},
+    "Markdown":       {"ext": ".md",    "label": "Markdown (.md)"},
+    "JSON":           {"ext": ".json",  "label": "JSON (.json)"},
+    "HTML":           {"ext": ".html",  "label": "HTML (.html)"},
+    "Plain Text":     {"ext": ".txt",   "label": "Plain Text (.txt)"},
+    "RAG Chunks":     {"ext": ".jsonl", "label": "RAG Chunks (.jsonl)"},
+    "Searchable PDF": {"ext": ".pdf",   "label": "Searchable PDF (.pdf)"},
 }
 
 FORMAT_NAMES = list(FORMATS.keys())

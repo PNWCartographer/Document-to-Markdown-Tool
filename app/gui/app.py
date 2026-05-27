@@ -123,7 +123,8 @@ _TIPS = {
         "best for human reading and AI upload. JSON produces structured data that can be "
         "processed by scripts, APIs, and AI pipelines. HTML creates a self-contained web page "
         "viewable in any browser. Plain Text strips all formatting for simple reading or "
-        "search indexing."
+        "search indexing. Searchable PDF adds an invisible OCR text layer to scanned PDFs "
+        "so they become full-text searchable (PDF input only)."
     ),
     "markdown_flavor": (
         "Controls which Markdown dialect is used for the output file. GFM (GitHub Flavored "
@@ -676,6 +677,12 @@ class App:
             "dxf_svg_preview":        tk.BooleanVar(value=self._cfg["dxf_svg_preview"]),
             "ocr_engine":             tk.StringVar(value=self._cfg["ocr_engine"]),
             "rules_profile":          tk.StringVar(value=self._cfg.get("rules_profile", "None")),
+            "spdf_deskew":            tk.BooleanVar(value=self._cfg.get("spdf_deskew", True)),
+            "spdf_clean":             tk.BooleanVar(value=self._cfg.get("spdf_clean", False)),
+            "spdf_force_ocr":         tk.BooleanVar(value=self._cfg.get("spdf_force_ocr", False)),
+            "spdf_optimize":          tk.StringVar(value=str(self._cfg.get("spdf_optimize", 1))),
+            "spdf_pdfa":              tk.BooleanVar(value=self._cfg.get("spdf_pdfa", False)),
+            "spdf_sidecar":           tk.BooleanVar(value=self._cfg.get("spdf_sidecar", False)),
         }
         self._rule_profiles: list[_rules_mod.RuleProfile] = _rules_mod.load_profiles()
         for var in self._setting_vars.values():
@@ -825,7 +832,7 @@ class App:
         row = self._settings_add_section(self._settings_content, "Output", row)
         row = self._settings_add_dropdown(
             self._settings_content, "output_format", "Output Format",
-            ["Markdown", "JSON", "HTML", "Plain Text", "RAG Chunks"],
+            ["Markdown", "JSON", "HTML", "Plain Text", "RAG Chunks", "Searchable PDF"],
             _TIPS["output_format"], row,
             default_hint="default: Markdown",
         )
@@ -968,8 +975,8 @@ class App:
             return
         for key, var in self._setting_vars.items():
             val = var.get()
-            # Keep parallel_workers as int for consistency with settings.load()
-            if key == "parallel_workers":
+            # Keep numeric settings as int for consistency with settings.load()
+            if key in ("parallel_workers", "spdf_optimize"):
                 try:
                     val = int(val)
                 except (ValueError, TypeError):

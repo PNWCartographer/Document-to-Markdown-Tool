@@ -88,6 +88,11 @@ argostranslate>=1.11.0          # Fully offline translation (~30 languages, pip-
 watchdog>=4.0.0                 # file-system event monitoring (output folder watch, live reload)
 
 # ---------------------------------------------------------------------------
+# Searchable PDF creation (adds invisible OCR text layer to scanned PDFs)
+# ---------------------------------------------------------------------------
+ocrmypdf>=16.0.0                # ocrmypdf Python API (requires Ghostscript system binary)
+
+# ---------------------------------------------------------------------------
 # Image processing
 # ---------------------------------------------------------------------------
 Pillow>=10.3.0                  # image open/save/crop/convert

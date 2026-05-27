@@ -30,6 +30,12 @@ DEFAULTS: dict = {
     "dxf_svg_preview":        True,
     "ocr_engine":             "Auto",
     "rules_profile":          "None",
+    "spdf_deskew":            True,
+    "spdf_clean":             False,
+    "spdf_force_ocr":         False,
+    "spdf_optimize":          1,
+    "spdf_pdfa":              False,
+    "spdf_sidecar":           False,
     "theme":                  "system",
     "last_output_folder":     "",
     "_dep_check_done":        False,
@@ -43,11 +49,12 @@ def load() -> dict:
                 data = json.load(fh)
             out = dict(DEFAULTS)
             out.update({k: v for k, v in data.items() if k in DEFAULTS})
-            # Ensure parallel_workers is always an int
-            try:
-                out["parallel_workers"] = int(out["parallel_workers"])
-            except (ValueError, TypeError):
-                out["parallel_workers"] = DEFAULTS["parallel_workers"]
+            # Ensure numeric settings stay as int
+            for int_key in ("parallel_workers", "spdf_optimize"):
+                try:
+                    out[int_key] = int(out[int_key])
+                except (ValueError, TypeError):
+                    out[int_key] = DEFAULTS[int_key]
             return out
         except Exception:
             pass

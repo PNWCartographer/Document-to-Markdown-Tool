@@ -39,6 +39,7 @@ from .markdown_writer import (
 from .output_formats import write_output as write_alt_format, output_path_for
 from .rules_engine import load_profiles, get_profile_by_name
 from . import license_manager
+from . import searchable_pdf
 
 
 # Language display names → ISO 639-1 codes used by ocr_engine
@@ -188,9 +189,17 @@ class ConversionJob:
             logger.start()
 
             try:
-                output = self._convert_file(source_file, alias, logger)
-                self._gui(self._on_stage, "Writing output…")
-                self._write_output(output, use_subfolder)
+                fmt = self._cfg.get("output_format", "Markdown")
+
+                if fmt == "Searchable PDF":
+                    self._gui(self._on_stage, "Creating searchable PDF…")
+                    output = self._convert_searchable_pdf(
+                        source_file, alias, use_subfolder, logger,
+                    )
+                else:
+                    output = self._convert_file(source_file, alias, logger)
+                    self._gui(self._on_stage, "Writing output…")
+                    self._write_output(output, use_subfolder)
 
                 if output.confidence:
                     write_confidence_report(output.confidence)
@@ -256,9 +265,17 @@ class ConversionJob:
             logger.start()
 
             try:
-                output = self._convert_file(source_file, alias, logger)
-                with self._write_lock:
-                    self._write_output(output, use_subfolder)
+                fmt = self._cfg.get("output_format", "Markdown")
+
+                if fmt == "Searchable PDF":
+                    with self._write_lock:
+                        output = self._convert_searchable_pdf(
+                            source_file, alias, use_subfolder, logger,
+                        )
+                else:
+                    output = self._convert_file(source_file, alias, logger)
+                    with self._write_lock:
+                        self._write_output(output, use_subfolder)
 
                 if output.confidence:
                     write_confidence_report(output.confidence)
@@ -366,6 +383,45 @@ class ConversionJob:
                 rebuild_toc=inc_toc,
                 overwrite=overwrite,
             )
+
+    # ------------------------------------------------------------------
+    # Searchable PDF helper
+    # ------------------------------------------------------------------
+
+    def _convert_searchable_pdf(
+        self, source_file: str, alias: str, use_subfolder: bool,
+        logger: ConversionLogger,
+    ) -> ConversionOutput:
+        """Run the Searchable PDF pipeline (ocrmypdf + RapidOCR plugin)."""
+        cfg = self._cfg
+        lang = _LANG_MAP.get(cfg.get("ocr_language", "English"), "en")
+
+        # Map 2-letter code to 3-letter for ocrmypdf/Tesseract compat
+        _LANG_3 = {
+            "en": "eng", "fr": "fra", "de": "deu", "es": "spa",
+            "it": "ita", "pt": "por", "nl": "nld",
+        }
+        lang3 = _LANG_3.get(lang, "eng")
+
+        def progress(p: float):
+            self._gui(self._on_file_progress, p)
+
+        return searchable_pdf.convert(
+            source_file=source_file,
+            alias=alias,
+            output_root=self._output_root,
+            use_subfolder=use_subfolder,
+            overwrite=cfg.get("overwrite_existing", False),
+            deskew=cfg.get("spdf_deskew", True),
+            clean=cfg.get("spdf_clean", False),
+            force_ocr=cfg.get("spdf_force_ocr", False),
+            optimize_level=cfg.get("spdf_optimize", 1),
+            pdfa=cfg.get("spdf_pdfa", False),
+            sidecar=cfg.get("spdf_sidecar", False),
+            language=lang3,
+            logger=logger,
+            progress_callback=progress,
+        )
 
     # ------------------------------------------------------------------
     # Per-file artifact writer

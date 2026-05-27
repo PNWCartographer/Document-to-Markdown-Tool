@@ -1,0 +1,54 @@
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting ocrmypdf
+  Using cached ocrmypdf-17.4.2-py3-none-any.whl.metadata (11 kB)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting deprecation>=2.1.0 (from ocrmypdf)
+  Using cached deprecation-2.1.0-py2.py3-none-any.whl.metadata (4.6 kB)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting fpdf2>=2.8.0 (from ocrmypdf)
+  Using cached fpdf2-2.8.7-py3-none-any.whl.metadata (81 kB)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting img2pdf>=0.5 (from ocrmypdf)
+  Using cached img2pdf-0.6.3-py3-none-any.whl.metadata (13 kB)
+Requirement already satisfied: packaging>=20 in C:\Python314\Lib\site-packages (from ocrmypdf) (26.2)
+Requirement already satisfied: pdfminer-six>=20220319 in C:\Python314\Lib\site-packages (from ocrmypdf) (20251230)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting pi-heif (from ocrmypdf)
+  Downloading pi_heif-1.3.0-cp314-cp314-win_amd64.whl.metadata (6.5 kB)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting pikepdf>=10 (from ocrmypdf)
+  Downloading pikepdf-10.7.2-cp314-abi3-win_amd64.whl.metadata (10 kB)
+Requirement already satisfied: pillow>=10.0.1 in C:\Python314\Lib\site-packages (from ocrmypdf) (12.2.0)
+Requirement already satisfied: pluggy>=1 in C:\Python314\Lib\site-packages (from ocrmypdf) (1.6.0)
+Requirement already satisfied: pydantic>=2.12.5 in C:\Python314\Lib\site-packages (from ocrmypdf) (2.13.4)
+Requirement already satisfied: pypdfium2>=5.0.0 in C:\Python314\Lib\site-packages (from ocrmypdf) (5.8.0)
+Requirement already satisfied: rich>=13 in C:\Python314\Lib\site-packages (from ocrmypdf) (15.0.0)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting uharfbuzz>=0.53.2 (from ocrmypdf)
+  Using cached uharfbuzz-0.54.1-cp310-abi3-win_amd64.whl.metadata (3.7 kB)
+Requirement already satisfied: defusedxml in C:\Python314\Lib\site-packages (from fpdf2>=2.8.0->ocrmypdf) (0.7.1)
+Requirement already satisfied: fonttools>=4.34.0 in C:\Python314\Lib\site-packages (from fpdf2>=2.8.0->ocrmypdf) (4.63.0)
+Requirement already satisfied: charset-normalizer>=2.0.0 in C:\Python314\Lib\site-packages (from pdfminer-six>=20220319->ocrmypdf) (3.4.7)
+Requirement already satisfied: cryptography>=36.0.0 in C:\Python314\Lib\site-packages (from pdfminer-six>=20220319->ocrmypdf) (48.0.0)
+Requirement already satisfied: cffi>=2.0.0 in C:\Python314\Lib\site-packages (from cryptography>=36.0.0->pdfminer-six>=20220319->ocrmypdf) (2.0.0)
+Requirement already satisfied: pycparser in C:\Python314\Lib\site-packages (from cffi>=2.0.0->cryptography>=36.0.0->pdfminer-six>=20220319->ocrmypdf) (3.0)
+Requirement already satisfied: lxml>=4.8 in C:\Python314\Lib\site-packages (from pikepdf>=10->ocrmypdf) (6.1.1)
+Requirement already satisfied: annotated-types>=0.6.0 in C:\Python314\Lib\site-packages (from pydantic>=2.12.5->ocrmypdf) (0.7.0)
+Requirement already satisfied: pydantic-core==2.46.4 in C:\Python314\Lib\site-packages (from pydantic>=2.12.5->ocrmypdf) (2.46.4)
+Requirement already satisfied: typing-extensions>=4.14.1 in C:\Python314\Lib\site-packages (from pydantic>=2.12.5->ocrmypdf) (4.15.0)
+Requirement already satisfied: typing-inspection>=0.4.2 in C:\Python314\Lib\site-packages (from pydantic>=2.12.5->ocrmypdf) (0.4.2)
+Requirement already satisfied: markdown-it-py>=2.2.0 in C:\Python314\Lib\site-packages (from rich>=13->ocrmypdf) (4.2.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in C:\Python314\Lib\site-packages (from rich>=13->ocrmypdf) (2.20.0)
+Requirement already satisfied: mdurl~=0.1 in C:\Python314\Lib\site-packages (from markdown-it-py>=2.2.0->rich>=13->ocrmypdf) (0.1.2)
+Using cached ocrmypdf-17.4.2-py3-none-any.whl (489 kB)
+Using cached deprecation-2.1.0-py2.py3-none-any.whl (11 kB)
+Using cached fpdf2-2.8.7-py3-none-any.whl (327 kB)
+Using cached img2pdf-0.6.3-py3-none-any.whl (49 kB)
+Downloading pikepdf-10.7.2-cp314-abi3-win_amd64.whl (3.2 MB)
+   ---------------------------------------- 3.2/3.2 MB 22.9 MB/s  0:00:00
+Using cached uharfbuzz-0.54.1-cp310-abi3-win_amd64.whl (1.3 MB)
+Downloading pi_heif-1.3.0-cp314-cp314-win_amd64.whl (2.0 MB)
+   ---------------------------------------- 2.0/2.0 MB 33.2 MB/s  0:00:00
+Installing collected packages: uharfbuzz, pikepdf, pi-heif, fpdf2, deprecation, img2pdf, ocrmypdf
+
+Successfully installed deprecation-2.1.0 fpdf2-2.8.7 img2pdf-0.6.3 ocrmypdf-17.4.2 pi-heif-1.3.0 pikepdf-10.7.2 uharfbuzz-0.54.1
