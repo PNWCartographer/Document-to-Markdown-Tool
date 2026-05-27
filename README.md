@@ -88,7 +88,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Confidence heatmap visualization — color-codes preview content by extraction quality
 
 ### Performance
-- Parallel workers (1, 2, 4, or Auto) for batch processing
+- Parallel workers (1, 2, 4, 8, 12, 16, or Auto) for batch processing — Auto (default) uses the system-recommended count based on detected CPU cores and RAM
 - Thread-safe output writing with file locking
 - GPU acceleration via ONNX Runtime (CUDA, DirectML, CoreML) — transparent to user
 - Auto-chunking splits large documents (30+ pages) into parallel chunks
@@ -205,7 +205,7 @@ See the `LICENSE` file for full terms.
 | RAG from Sidecar | Off | Generate RAG chunks from sidecar text |
 | Background Removal | Off | Remove colored backgrounds before OCR |
 | **Performance** | | |
-| Parallel Workers | 1 | Number of files to convert simultaneously (1, 2, 4, Auto) |
+| Parallel Workers | Auto | Number of files to convert simultaneously (1, 2, 4, 8, 12, 16, Auto). Auto uses system-detected recommendation |
 | Low Confidence Action | Ask me | Behavior when conversion confidence is low |
 | **Other** | | |
 | Rules Profile | None | Post-processing rules profile to apply |

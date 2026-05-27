@@ -123,7 +123,8 @@ class ConversionJob:
         # Resolve worker count
         workers_cfg = self._cfg.get("parallel_workers", "1")
         if workers_cfg == "Auto":
-            workers = min(os.cpu_count() or 1, 4)
+            from . import system_info
+            workers = system_info.detect_system().recommended_workers
         else:
             try:
                 workers = max(1, int(workers_cfg))

@@ -16,7 +16,7 @@ DEFAULTS: dict = {
     "detect_code_blocks":     True,
     "detect_footnotes":       True,
     "detect_equations":       True,
-    "parallel_workers":       1,
+    "parallel_workers":       "Auto",
     "quality_preset":         "Quality",
     "ocr_language":           "English",
     "output_format":          "Markdown",
@@ -39,6 +39,15 @@ DEFAULTS: dict = {
     "theme":                  "system",
     "last_output_folder":     "",
     "_dep_check_done":        False,
+    "_collapsed_sections": {
+        "conversion": False,
+        "content_handling": True,
+        "ocr": False,
+        "output": False,
+        "searchable_pdf": False,
+        "performance": False,
+        "post_processing": True,
+    },
 }
 
 
@@ -50,7 +59,7 @@ def load() -> dict:
             out = dict(DEFAULTS)
             out.update({k: v for k, v in data.items() if k in DEFAULTS})
             # Ensure numeric settings stay as int
-            for int_key in ("parallel_workers", "spdf_optimize"):
+            for int_key in ("spdf_optimize",):
                 try:
                     out[int_key] = int(out[int_key])
                 except (ValueError, TypeError):
