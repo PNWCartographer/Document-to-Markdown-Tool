@@ -3846,6 +3846,8 @@ class App:
 
     def _reset_conversion_screen(self):
         n = len(self._selected_files)
+        self._conv_overall_bar.set_indeterminate(False)
+        self._conv_file_bar.set_indeterminate(False)
         self._conv_overall_bar.set_progress(0.0)
         self._conv_file_bar.set_progress(0.0)
         label = "1 file" if n == 1 else f"{n} files"
@@ -3909,7 +3911,10 @@ class App:
         self._active_job.start()
 
     def _set_file_progress(self, fraction: float) -> None:
-        self._conv_file_bar.set_progress(fraction)
+        if fraction < 0:
+            self._conv_file_bar.set_indeterminate(True)
+        else:
+            self._conv_file_bar.set_progress(fraction)
 
     def _set_overall_progress(self, fraction: float) -> None:
         self._conv_overall_bar.set_progress(fraction)

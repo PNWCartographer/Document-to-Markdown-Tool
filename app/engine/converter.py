@@ -537,6 +537,7 @@ class ConversionJob:
                 prefer_engine=prefer_engine,
                 ocr_dpi_scale=ocr_dpi_scale,
                 page_range=self._page_ranges.get(source_file),
+                stage_callback=stage,
                 logger=logger,
                 progress_callback=progress,
             )

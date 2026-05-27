@@ -50,6 +50,7 @@ def convert(
     page_range: list[int] | None = None,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
+    stage_callback: Optional[Callable[[str], None]] = None,
 ) -> ConversionOutput:
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
@@ -62,6 +63,8 @@ def convert(
         confidence.add_warning(msg)
     def progress(p):
         if progress_callback: progress_callback(p)
+    def stage(s):
+        if stage_callback: stage_callback(s)
 
     log_info(f"PDF converter started | file={os.path.basename(source_file)} mode={conversion_mode}")
     progress(0.03)
@@ -123,7 +126,7 @@ def convert(
                 result = _convert_docling(
                     source_file, alias, output_root, preserve_images,
                     rebuild_toc, preserve_page_numbers, use_subfolder,
-                    embed_images, output, confidence, log_info, log_warn, progress,
+                    embed_images, output, confidence, log_info, log_warn, progress, stage,
                     pp_settings=pp_settings,
                 )
                 if result:
@@ -232,7 +235,7 @@ def _detect_scanned(pdf_path: str, log_info) -> bool:
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
     preserve_page_numbers, use_subfolder, embed_images,
-    output, confidence, log_info, log_warn, progress,
+    output, confidence, log_info, log_warn, progress, stage,
     pp_settings: Optional[dict] = None,
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
@@ -241,10 +244,13 @@ def _convert_docling(
     output.engine_used = "docling"
     progress(0.1)
 
+    stage("Converting PDF — this may take a while for large documents…")
+    progress(-1.0)
     converter = DocumentConverter()
     result = converter.convert(source_file)
     doc = result.document
     progress(0.55)
+    stage("Processing output…")
 
     md_text = doc.export_to_markdown()
     if not md_text.strip():

@@ -945,6 +945,10 @@ class PillProgressBar(tk.Canvas):
         self._track_color = "#1a1a2c"
         self._fill_color = "#a855f7"
         self._border_color = "#2a2a3c"
+        self._indeterminate = False
+        self._pulse_pos = 0.0
+        self._pulse_dir = 1
+        self._pulse_after_id = None
 
         self.bind("<Configure>", lambda _e: self._draw())
 
@@ -959,7 +963,36 @@ class PillProgressBar(tk.Canvas):
 
     def set_progress(self, fraction: float):
         self._progress = max(0.0, min(1.0, fraction))
+        if self._indeterminate:
+            self.set_indeterminate(False)
         self._draw()
+
+    def set_indeterminate(self, active: bool):
+        """Start or stop an animated bouncing highlight to show activity."""
+        if active and not self._indeterminate:
+            self._indeterminate = True
+            self._pulse_pos = 0.0
+            self._pulse_dir = 1
+            self._animate_pulse()
+        elif not active and self._indeterminate:
+            self._indeterminate = False
+            if self._pulse_after_id is not None:
+                self.after_cancel(self._pulse_after_id)
+                self._pulse_after_id = None
+            self._draw()
+
+    def _animate_pulse(self):
+        if not self._indeterminate:
+            return
+        self._pulse_pos += self._pulse_dir * 0.02
+        if self._pulse_pos >= 1.0:
+            self._pulse_pos = 1.0
+            self._pulse_dir = -1
+        elif self._pulse_pos <= 0.0:
+            self._pulse_pos = 0.0
+            self._pulse_dir = 1
+        self._draw()
+        self._pulse_after_id = self.after(30, self._animate_pulse)
 
     def _draw(self):
         self.delete("all")
@@ -974,6 +1007,18 @@ class PillProgressBar(tk.Canvas):
         _draw_pill_arcs(self, ins, ins, w - ins, h - ins,
                         fill=self._track_color, outline=self._border_color,
                         outline_w=_sf(1))
+
+        if self._indeterminate:
+            # ── Bouncing highlight pill ──────────────────────
+            fi = ins + _sf(1.5)
+            avail = w - 2 * fi
+            slug_w = max(_s(40), avail * 0.18)
+            x1 = fi + self._pulse_pos * (avail - slug_w)
+            x2 = min(x1 + slug_w, w - fi)
+            _draw_pill_arcs(self, x1, fi, x2, h - fi,
+                            fill=self._fill_color, outline="",
+                            outline_w=0)
+            return
 
         # ── Fill (partial pill, inset from track border) ─────
         if self._progress > 0.01:
