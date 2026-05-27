@@ -247,6 +247,17 @@ _TIPS = {
         "extracted from the document. Useful for indexing, search systems, or review "
         "of OCR results without opening the PDF."
     ),
+    "spdf_rag_sidecar": (
+        "Generates chunked JSONL output from the sidecar text for use with AI retrieval "
+        "systems and vector databases. Only available when Sidecar Text is enabled. "
+        "Each chunk includes source metadata and confidence data."
+    ),
+    "spdf_bg_removal": (
+        "Removes colored backgrounds and heavy noise from scanned pages before OCR. "
+        "Useful for documents scanned on colored paper or with visible stains. May "
+        "alter the appearance of the output PDF. Use with caution on documents where "
+        "background color is intentional."
+    ),
 }
 
 
@@ -331,6 +342,7 @@ class App:
         self._collapse_sections: dict = {}
         self._current_section_id: str = ""
         self._markdown_only_widgets: list[tk.Widget] = []
+        self._sidecar_only_widgets: list[tk.Widget] = []
         self._sysinfo_labels: list[tk.Label] = []
         self._sysinfo_card: "tk.Frame | None" = None
 
@@ -721,6 +733,8 @@ class App:
             "spdf_optimize":          tk.StringVar(value=str(self._cfg.get("spdf_optimize", 1))),
             "spdf_pdfa":              tk.BooleanVar(value=self._cfg.get("spdf_pdfa", False)),
             "spdf_sidecar":           tk.BooleanVar(value=self._cfg.get("spdf_sidecar", False)),
+            "spdf_rag_sidecar":       tk.BooleanVar(value=self._cfg.get("spdf_rag_sidecar", False)),
+            "spdf_bg_removal":        tk.BooleanVar(value=self._cfg.get("spdf_bg_removal", False)),
         }
         self._rule_profiles: list[_rules_mod.RuleProfile] = _rules_mod.load_profiles()
         for var in self._setting_vars.values():
@@ -905,6 +919,15 @@ class App:
             self._settings_content, "spdf_sidecar", "Sidecar Text",
             _TIPS["spdf_sidecar"], row, default_hint="default: off",
         )
+        row = self._settings_add_checkbox(
+            self._settings_content, "spdf_rag_sidecar", "RAG from Sidecar",
+            _TIPS["spdf_rag_sidecar"], row, default_hint="default: off",
+            conditional="sidecar",
+        )
+        row = self._settings_add_checkbox(
+            self._settings_content, "spdf_bg_removal", "Background Removal",
+            _TIPS["spdf_bg_removal"], row, default_hint="default: off",
+        )
 
         # ── Section: PERFORMANCE (expanded) ───────────────────
         row = self._settings_add_section(
@@ -1000,6 +1023,10 @@ class App:
         self._setting_vars["output_format"].trace_add(
             "write", lambda *_: self._update_format_visibility())
 
+        # ── Trace spdf_sidecar for RAG-from-sidecar visibility ──
+        self._setting_vars["spdf_sidecar"].trace_add(
+            "write", lambda *_: self._update_sidecar_visibility())
+
     def _settings_add_section(self, parent, title: str, row: int,
                               first=False, section_id: str = "",
                               collapsible: bool = True) -> int:
@@ -1060,6 +1087,8 @@ class App:
             self._collapse_sections[self._current_section_id]["children"].extend(all_widgets)
         if conditional == "markdown":
             self._markdown_only_widgets.extend(all_widgets)
+        elif conditional == "sidecar":
+            self._sidecar_only_widgets.extend(all_widgets)
         return row + 1
 
     def _settings_add_dropdown(self, parent, key, label, options, tip, row,
@@ -1176,6 +1205,7 @@ class App:
                 if not spdf_sec["collapsed"]:
                     for w in spdf_sec["children"]:
                         w.grid()
+                    self._update_sidecar_visibility()
                 else:
                     for w in spdf_sec["children"]:
                         w.grid_remove()
@@ -1184,6 +1214,17 @@ class App:
                 spdf_sec["sep"].grid_remove()
                 for w in spdf_sec["children"]:
                     w.grid_remove()
+
+    def _update_sidecar_visibility(self):
+        """Show/hide RAG-from-sidecar widgets based on sidecar toggle state."""
+        if not self._setting_vars:
+            return
+        sidecar_on = self._setting_vars["spdf_sidecar"].get()
+        for w in self._sidecar_only_widgets:
+            if sidecar_on:
+                w.grid()
+            else:
+                w.grid_remove()
 
     def _build_system_info_card(self, parent, row: int) -> int:
         """Build the system hardware info card at the bottom of Settings."""

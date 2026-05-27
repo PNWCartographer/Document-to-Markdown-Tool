@@ -36,6 +36,8 @@ DEFAULTS: dict = {
     "spdf_optimize":          1,
     "spdf_pdfa":              False,
     "spdf_sidecar":           False,
+    "spdf_rag_sidecar":       False,
+    "spdf_bg_removal":        False,
     "theme":                  "system",
     "last_output_folder":     "",
     "_dep_check_done":        False,

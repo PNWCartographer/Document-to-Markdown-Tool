@@ -170,6 +170,11 @@ def run_ocr(
     if prefer_engine == "paddle":
         prefer_engine = "rapidocr"
 
+    if prefer_engine == "ensemble":
+        if rapidocr_available() and tesseract_available():
+            return _run_ensemble(image, language)
+        # Fall through to single-engine if only one is available
+
     if prefer_engine == "rapidocr" and rapidocr_available():
         return _run_rapidocr(image, language)
     if prefer_engine == "tesseract" and tesseract_available():
@@ -292,6 +297,7 @@ def _run_tesseract(image, language: str) -> OcrResult:
         )
         lines: dict[int, list[str]] = {}
         confidences: dict[int, list[float]] = {}
+        regions = []
 
         for i, word in enumerate(data["text"]):
             if not word.strip():
@@ -303,9 +309,21 @@ def _run_tesseract(image, language: str) -> OcrResult:
             lines.setdefault(line_num, []).append(word)
             confidences.setdefault(line_num, []).append(conf / 100.0)
 
+            left = float(data["left"][i])
+            top_val = float(data["top"][i])
+            w = float(data["width"][i])
+            h = float(data["height"][i])
+            bbox = [[left, top_val], [left + w, top_val],
+                    [left + w, top_val + h], [left, top_val + h]]
+            regions.append(OcrTextRegion(
+                text=word, confidence=conf / 100.0,
+                bbox=bbox, cx=left + w / 2, cy=top_val + h / 2,
+            ))
+
         result.lines = [" ".join(words) for words in lines.values()]
         flat_conf = [c for confs in confidences.values() for c in confs]
         result.confidences = flat_conf
+        result.regions = regions
         result.text = "\n".join(result.lines)
         result.aggregate_confidence()
 
@@ -313,4 +331,63 @@ def _run_tesseract(image, language: str) -> OcrResult:
         result.text = f"[Tesseract error: {e}]"
         result.confidence_label = "Failed"
 
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Ensemble mode
+# ---------------------------------------------------------------------------
+
+def _run_ensemble(image, language: str) -> OcrResult:
+    """Run both RapidOCR and Tesseract, merge word-by-word by confidence."""
+    from .ocr_ensemble import WordBox, normalize_bbox, merge_word_results, words_to_text
+
+    result_a = _run_rapidocr(image, language) if rapidocr_available() else None
+    result_b = _run_tesseract(image, language) if tesseract_available() else None
+
+    if result_a and not result_b:
+        return result_a
+    if result_b and not result_a:
+        return result_b
+    if not result_a and not result_b:
+        return OcrResult(engine_used="none", confidence_label="Failed",
+                         text="[OCR unavailable — install RapidOCR or Tesseract]")
+
+    def regions_to_wordboxes(regions, engine):
+        boxes = []
+        for r in regions:
+            if not r.text.strip():
+                continue
+            try:
+                l, t, r2, b = normalize_bbox(r.bbox)
+            except (ValueError, IndexError):
+                continue
+            boxes.append(WordBox(
+                text=r.text, confidence=r.confidence,
+                left=l, top=t, right=r2, bottom=b, engine=engine,
+            ))
+        return boxes
+
+    words_a = regions_to_wordboxes(result_a.regions, "rapidocr")
+    words_b = regions_to_wordboxes(result_b.regions, "tesseract")
+
+    merged = merge_word_results(words_a, words_b)
+    text_lines, confidences = words_to_text(merged)
+
+    merged_regions = [
+        OcrTextRegion(
+            text=w.text, confidence=w.confidence,
+            bbox=[[w.left, w.top], [w.right, w.top],
+                  [w.right, w.bottom], [w.left, w.bottom]],
+            cx=w.cx, cy=w.cy,
+        )
+        for w in merged if w.text.strip()
+    ]
+
+    result = OcrResult(engine_used="ensemble (rapidocr+tesseract)")
+    result.lines = text_lines
+    result.confidences = confidences
+    result.regions = merged_regions
+    result.text = "\n".join(text_lines)
+    result.aggregate_confidence()
     return result

@@ -407,6 +407,9 @@ class ConversionJob:
         def progress(p: float):
             self._gui(self._on_file_progress, p)
 
+        ocr_engine_pref = cfg.get("ocr_engine", "Auto")
+        use_ensemble = (ocr_engine_pref == "Ensemble")
+
         return searchable_pdf.convert(
             source_file=source_file,
             alias=alias,
@@ -419,6 +422,9 @@ class ConversionJob:
             optimize_level=cfg.get("spdf_optimize", 1),
             pdfa=cfg.get("spdf_pdfa", False),
             sidecar=cfg.get("spdf_sidecar", False),
+            rag_sidecar=cfg.get("spdf_rag_sidecar", False),
+            bg_removal=cfg.get("spdf_bg_removal", False),
+            ensemble=use_ensemble,
             language=lang3,
             logger=logger,
             progress_callback=progress,
