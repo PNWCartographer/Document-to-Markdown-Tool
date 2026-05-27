@@ -28,7 +28,7 @@ except ImportError:
 from .converter import ConversionJob
 
 _SUPPORTED_EXTS = {
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
+    ".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".xls", ".csv",
     ".pptx", ".epub", ".dxf", ".html", ".htm",
     ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp",
     ".webp", ".gif",

@@ -38,6 +38,7 @@ from .markdown_writer import (
 )
 from .output_formats import write_output as write_alt_format, output_path_for
 from .rules_engine import load_profiles, get_profile_by_name
+from . import license_manager
 
 
 # Language display names → ISO 639-1 codes used by ocr_engine
@@ -193,9 +194,13 @@ class ConversionJob:
                     write_confidence_report(output.confidence)
                     results.append(output.confidence)
 
+                # Write per-file artifacts to the output folder
                 logger.end()
+                self._write_per_file_artifacts(
+                    output, logger, out_dir, use_subfolder)
                 logger.flush()
                 completed += 1
+                license_manager.increment_conversion_count(1)
                 self._gui(self._on_log, f"   ✓ Done → {out_dir}")
 
             except FileExistsError as e:
@@ -257,7 +262,12 @@ class ConversionJob:
                     write_confidence_report(output.confidence)
 
                 logger.end()
+                out_dir = output_dir_for(source_file, self._output_root,
+                                         alias, use_subfolder)
+                self._write_per_file_artifacts(
+                    output, logger, out_dir, use_subfolder)
                 logger.flush()
+                license_manager.increment_conversion_count(1)
                 return output.confidence, source_file, "ok"
 
             except FileExistsError as e:
@@ -354,6 +364,44 @@ class ConversionJob:
                 rebuild_toc=inc_toc,
                 overwrite=overwrite,
             )
+
+    # ------------------------------------------------------------------
+    # Per-file artifact writer
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _write_per_file_artifacts(
+        output: ConversionOutput,
+        logger: ConversionLogger,
+        out_dir: str,
+        use_subfolder: bool,
+    ) -> None:
+        """
+        Write confidence_report.txt and conversion_log.txt into the
+        per-file output folder alongside the converted output.
+        """
+        if not out_dir or not use_subfolder:
+            return  # only meaningful with subfolder structure
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+
+            # confidence_report.txt
+            if output.confidence:
+                report_path = os.path.join(out_dir, "confidence_report.txt")
+                with open(report_path, "w", encoding="utf-8") as fh:
+                    fh.write(output.confidence.to_report_text())
+
+            # conversion_log.txt
+            entries = logger.entries()
+            if entries:
+                log_path = os.path.join(out_dir, "conversion_log.txt")
+                with open(log_path, "w", encoding="utf-8") as fh:
+                    fh.write(f"Conversion Log — {os.path.basename(output.source_file)}\n")
+                    fh.write(f"{'=' * 60}\n\n")
+                    for entry in entries:
+                        fh.write(entry + "\n")
+        except OSError:
+            pass
 
     # ------------------------------------------------------------------
     # File type routing
@@ -519,6 +567,16 @@ class ConversionJob:
                 preserve_images=preserve_images,
                 use_subfolder=use_subfolder,
                 render_svg=dxf_svg_preview,
+                logger=logger,
+                progress_callback=progress,
+            )
+
+        elif ext == ".rtf":
+            stage("Parsing RTF document…")
+            from . import rtf_converter
+            return rtf_converter.convert(
+                source_file,
+                alias=alias,
                 logger=logger,
                 progress_callback=progress,
             )

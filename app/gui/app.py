@@ -14,6 +14,7 @@ import engine.converter as _converter_mod
 import engine.watch_folder as _watch_mod
 import engine.rules_engine as _rules_mod
 import engine.validation as _validation_mod
+import engine.license_manager as _license_mod
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -36,16 +37,16 @@ _SUPPORTED_EXTS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
                    ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
 
 _FILETYPES = [
-    ("Supported files",  "*.pdf *.docx *.doc *.xlsx *.xls *.csv *.pptx *.epub *.dxf *.html *.htm *.png *.jpg *.jpeg *.tiff *.bmp"),
+    ("Supported files",  "*.pdf *.docx *.doc *.rtf *.xlsx *.xls *.csv *.pptx *.epub *.dxf *.html *.htm *.png *.jpg *.jpeg *.tiff *.tif *.bmp *.webp *.gif"),
     ("PDF files",        "*.pdf"),
-    ("Word documents",   "*.docx *.doc"),
+    ("Word documents",   "*.docx *.doc *.rtf"),
     ("PowerPoint files", "*.pptx"),
     ("EPUB e-books",     "*.epub"),
     ("HTML files",       "*.html *.htm"),
     ("DXF drawings",     "*.dxf"),
     ("Excel files",      "*.xlsx *.xls"),
     ("CSV files",        "*.csv"),
-    ("Image files",      "*.png *.jpg *.jpeg *.tiff *.bmp"),
+    ("Image files",      "*.png *.jpg *.jpeg *.tiff *.tif *.bmp *.webp *.gif"),
     ("All files",        "*.*"),
 ]
 
@@ -391,12 +392,21 @@ class App:
         self._sidebar_spacer = tk.Frame(self._sidebar)
         self._sidebar_spacer.grid(row=9, column=0, sticky="nsew")
 
+        # License status label
+        self._license_status_lbl = tk.Label(
+            self._sidebar, text="", font=(_FONT_FAMILY, 9),
+            cursor="hand2",
+        )
+        self._license_status_lbl.grid(row=10, column=0, sticky="ew", padx=14, pady=(4, 2))
+        self._license_status_lbl.bind("<Button-1>", lambda _: self._show_about_window())
+        self._update_license_status()
+
         self._div_bot = tk.Frame(self._sidebar, height=1)
-        self._div_bot.grid(row=10, column=0, sticky="ew", padx=12, pady=(0, 4))
+        self._div_bot.grid(row=11, column=0, sticky="ew", padx=12, pady=(0, 4))
 
         # Theme toggle: [sun] [toggle] [moon]
         self._theme_row = tk.Frame(self._sidebar)
-        self._theme_row.grid(row=11, column=0, sticky="ew", padx=8, pady=(0, 14))
+        self._theme_row.grid(row=12, column=0, sticky="ew", padx=8, pady=(0, 14))
         self._theme_inner = tk.Frame(self._theme_row)
         self._theme_inner.pack(anchor="center")
 
@@ -2902,6 +2912,21 @@ class App:
                 "Please select a valid output folder before starting.",
             )
             return
+        # ── License / free-tier gate ──────────────────────────
+        if _license_mod.is_trial_expired():
+            self._show_license_prompt()
+            return
+        remaining = _license_mod.get_remaining_conversions()
+        file_count = len(self._selected_files)
+        if remaining != -1 and file_count > remaining:
+            messagebox.showinfo(
+                "Free Tier Limit",
+                f"You have {remaining} free conversion{'s' if remaining != 1 else ''} "
+                f"remaining, but {file_count} file{'s' if file_count != 1 else ''} "
+                f"queued.\n\nPlease reduce the file count or enter a license key "
+                f"to unlock unlimited conversions.",
+            )
+            return
         self._btn_start.set_state("disabled")
         self._reset_conversion_screen()
         self._show("Conversion")
@@ -2951,6 +2976,9 @@ class App:
         self._check_start_ready()
         self._log_write("")
         self._log_write(result.status_text)
+
+        # Update license status after conversions
+        self._update_license_status()
 
         # Populate Results screen
         try:
@@ -3186,6 +3214,232 @@ class App:
                 activeforeground=t["accent"]        if active else t["text"],
             )
 
+    # ── License management ───────────────────────────────────
+
+    def _update_license_status(self):
+        """Update the sidebar license status label."""
+        info = _license_mod.get_license_info()
+        t = self._t
+        if info["licensed"]:
+            self._license_status_lbl.config(
+                text="✓ Licensed", fg="#22c55e", bg=t["sidebar_bg"])
+        elif info["status"] == "Trial expired":
+            self._license_status_lbl.config(
+                text="Trial expired — click to activate", fg="#ef4444", bg=t["sidebar_bg"])
+        else:
+            remaining = info["remaining"]
+            self._license_status_lbl.config(
+                text=f"{remaining} free conversion{'s' if remaining != 1 else ''} left",
+                fg=t["text_secondary"], bg=t["sidebar_bg"])
+
+    def _show_license_prompt(self):
+        """Show the license activation dialog when trial is expired."""
+        t = self._t
+        win = tk.Toplevel(self.root)
+        win.title("License Required")
+        win.geometry(f"{int(480 * self._dpi)}x{int(340 * self._dpi)}")
+        win.config(bg=t["bg"])
+        win.transient(self.root)
+        win.grab_set()
+
+        info = _license_mod.get_license_info()
+
+        # Header
+        tk.Label(
+            win, text="Free Trial Expired",
+            font=(_FONT_FAMILY, 16, "bold"), fg=t["accent"], bg=t["bg"],
+        ).pack(pady=(24, 8))
+
+        tk.Label(
+            win,
+            text=f"You've used {info['conversion_count']} of {info['limit']} "
+                 f"free conversions.\n\n"
+                 f"Enter a license key to unlock unlimited conversions,\n"
+                 f"or visit darksquare.dev to purchase a license.",
+            font=(_FONT_FAMILY, 11), fg=t["text"], bg=t["bg"],
+            justify="center",
+        ).pack(pady=(0, 16))
+
+        # Key entry
+        key_frame = tk.Frame(win, bg=t["bg"])
+        key_frame.pack(fill="x", padx=32, pady=(0, 8))
+        tk.Label(
+            key_frame, text="License Key:", font=_FONT_SMALL,
+            fg=t["text_secondary"], bg=t["bg"],
+        ).pack(anchor="w")
+        key_var = tk.StringVar()
+        key_entry = tk.Entry(
+            key_frame, textvariable=key_var,
+            font=(_FONT_MONO, 11), bg=t["content_bg"], fg=t["text"],
+            insertbackground=t["text"], relief="flat", bd=0,
+        )
+        key_entry.pack(fill="x", ipady=6, pady=(4, 0))
+
+        status_lbl = tk.Label(
+            win, text="", font=_FONT_SMALL,
+            fg=t["text_secondary"], bg=t["bg"],
+        )
+        status_lbl.pack()
+
+        def activate():
+            key = key_var.get().strip()
+            if not key:
+                status_lbl.config(text="Please enter a license key.", fg="#ef4444")
+                return
+            success, msg = _license_mod.activate_license(key)
+            if success:
+                status_lbl.config(text=msg, fg="#22c55e")
+                win.after(1500, win.destroy)
+            else:
+                status_lbl.config(text=msg, fg="#ef4444")
+
+        btn_frame = tk.Frame(win, bg=t["bg"])
+        btn_frame.pack(fill="x", padx=32, pady=(12, 16))
+
+        btn_activate = PillButton(
+            btn_frame, text="Activate License", font=_FONT_BTN,
+            style="primary", padx=20, pady=8, command=activate,
+        )
+        btn_activate.pack(side="right")
+        btn_activate.set_colors(
+            fill=t["accent"], fg=t["text_on_accent"],
+            hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+            parent_bg=t["bg"],
+        )
+
+        btn_close = PillButton(
+            btn_frame, text="Close", font=_FONT_SMALL,
+            style="secondary", padx=14, pady=6, command=win.destroy,
+        )
+        btn_close.pack(side="left")
+        btn_close.set_colors(
+            fill=t["bg"], fg=t["text_secondary"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"],
+        )
+
+    # ── About / Help ─────────────────────────────────────────
+
+    def _show_about_window(self):
+        """Show the About / Help window with app info and quick-start guide."""
+        t = self._t
+        win = tk.Toplevel(self.root)
+        win.title("About — Doc to Markdown")
+        win.geometry(f"{int(560 * self._dpi)}x{int(520 * self._dpi)}")
+        win.config(bg=t["bg"])
+        win.transient(self.root)
+
+        info = _license_mod.get_license_info()
+
+        # Scrollable content
+        canvas = tk.Canvas(win, bg=t["bg"], highlightthickness=0)
+        sb = GlassScrollbar(win, canvas, orient="vertical")
+        frame = tk.Frame(canvas, bg=t["bg"])
+        canvas.create_window((0, 0), window=frame, anchor="nw")
+        frame.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+        canvas.configure(yscrollcommand=sb.set)
+
+        _sb_thumb = t["scrollbar_thumb"]
+        _sb_hover = t["scrollbar_hover"]
+        sb.set_colors(thumb=_sb_thumb, thumb_hover=_sb_hover, parent_bg=t["bg"])
+
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        pad = 28
+
+        # ── Title ──
+        tk.Label(
+            frame, text="Doc to Markdown", font=(_FONT_FAMILY, 20, "bold"),
+            fg=t["accent"], bg=t["bg"],
+        ).pack(anchor="w", padx=pad, pady=(24, 0))
+        tk.Label(
+            frame, text="by Darksquare", font=(_FONT_FAMILY, 12),
+            fg=t["text_secondary"], bg=t["bg"],
+        ).pack(anchor="w", padx=pad)
+        tk.Label(
+            frame, text="Version 1.0.0", font=(_FONT_FAMILY, 11),
+            fg=t["text_secondary"], bg=t["bg"],
+        ).pack(anchor="w", padx=pad, pady=(2, 12))
+
+        # ── License status ──
+        lic_frame = tk.Frame(frame, bg=t["sidebar_bg"], padx=16, pady=12)
+        lic_frame.pack(fill="x", padx=pad, pady=(0, 16))
+        status_color = "#22c55e" if info["licensed"] else (
+            "#ef4444" if info["status"] == "Trial expired" else t["accent"])
+        tk.Label(
+            lic_frame, text=f"License: {info['status']}",
+            font=(_FONT_FAMILY, 11, "bold"), fg=status_color, bg=t["sidebar_bg"],
+        ).pack(anchor="w")
+        if not info["licensed"]:
+            remaining = info["remaining"]
+            tk.Label(
+                lic_frame,
+                text=f"Conversions used: {info['conversion_count']} / {info['limit']}  "
+                     f"({remaining} remaining)",
+                font=_FONT_SMALL, fg=t["text_secondary"], bg=t["sidebar_bg"],
+            ).pack(anchor="w", pady=(4, 0))
+        else:
+            tk.Label(
+                lic_frame, text="Unlimited conversions",
+                font=_FONT_SMALL, fg=t["text_secondary"], bg=t["sidebar_bg"],
+            ).pack(anchor="w", pady=(4, 0))
+
+        # ── Quick Start ──
+        def _section(title, body):
+            tk.Label(
+                frame, text=title, font=(_FONT_FAMILY, 13, "bold"),
+                fg=t["text"], bg=t["bg"],
+            ).pack(anchor="w", padx=pad, pady=(12, 4))
+            tk.Label(
+                frame, text=body, font=(_FONT_FAMILY, 11),
+                fg=t["text_secondary"], bg=t["bg"],
+                wraplength=int(480 * self._dpi), justify="left",
+            ).pack(anchor="w", padx=pad)
+
+        _section("Getting Started", (
+            "1. Click 'Add Files' or drag files onto the Home screen\n"
+            "2. Choose an output folder\n"
+            "3. Adjust settings if needed (defaults work well)\n"
+            "4. Click 'Convert' and wait for results\n"
+            "5. Review output in the Preview window"
+        ))
+
+        _section("Supported Formats", (
+            "PDF, DOCX, DOC, XLSX, XLS, CSV, PPTX, EPUB, HTML, HTM, "
+            "RTF, DXF, PNG, JPG, JPEG, BMP, TIFF, TIF, WEBP, GIF"
+        ))
+
+        _section("Output Formats", (
+            "Markdown (.md), JSON (.json), HTML (.html), "
+            "Plain Text (.txt), RAG Chunks (.jsonl)"
+        ))
+
+        _section("Key Features", (
+            "• Multi-engine conversion with automatic fallback chains\n"
+            "• OCR for scanned documents (PaddleOCR + Tesseract)\n"
+            "• Offline translation for non-English documents\n"
+            "• Confidence scoring across 6 quality dimensions\n"
+            "• Post-processing rules with named profiles\n"
+            "• Watch Folder mode for automated batch conversion\n"
+            "• Dark and light themes"
+        ))
+
+        _section("Local Processing", (
+            "All files are processed locally on your machine. No documents "
+            "are uploaded to any cloud service, external API, or remote server. "
+            "Your data never leaves your computer."
+        ))
+
+        _section("Support", (
+            "Website: darksquare.dev\n"
+            "Email: support@darksquare.dev"
+        ))
+
+        # Bottom padding
+        tk.Frame(frame, bg=t["bg"], height=24).pack()
+
     # ── Theme ────────────────────────────────────────────────
 
     def _toggle_theme(self):
@@ -3293,6 +3547,7 @@ class App:
         self._div_bot.config(bg=t["border"])
         self._sidebar_spacer.config(bg=t["sidebar_bg"])
         self._lbl_title.config(bg=t["sidebar_bg"], fg=t["text"])
+        self._update_license_status()
 
         self._theme_row.config(bg=t["sidebar_bg"])
         self._theme_inner.config(bg=t["sidebar_bg"])

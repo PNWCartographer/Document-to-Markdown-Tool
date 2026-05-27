@@ -1,0 +1,42 @@
+Third-Party Software Licenses
+==============================
+
+Doc to Markdown incorporates the following open-source libraries.
+Each is governed by its own license terms as listed below.
+
+Package                 License         Usage
+-------                 -------         -----
+docling                 MIT             AI-powered document layout analysis (optional)
+pymupdf (fitz)          AGPL-3.0        PDF text/image extraction (local use only)
+pymupdf4llm             AGPL-3.0        PDF-to-Markdown wrapper (local use only)
+pdfplumber              MIT             PDF table extraction
+camelot-py              MIT             Lattice/bordered PDF table extraction
+python-docx             MIT             DOCX structural reading
+mammoth                 BSD-2-Clause    DOCX to semantic HTML/Markdown
+openpyxl                MIT             XLSX spreadsheet reading
+xlrd                    BSD-3-Clause    Legacy XLS reading
+pandas                  BSD-3-Clause    Data manipulation and CSV handling
+paddlepaddle            Apache-2.0      Deep learning framework (PaddleOCR dependency)
+paddleocr               Apache-2.0      Primary OCR engine
+pytesseract             Apache-2.0      Tesseract OCR wrapper
+python-pptx             MIT             PowerPoint reading
+ebooklib                AGPL-3.0        EPUB reading and spine extraction (local use only)
+beautifulsoup4          MIT             HTML parsing
+markdownify             MIT             HTML to Markdown conversion
+striprtf                BSD-3-Clause    RTF text extraction
+ezdxf                   MIT             AutoCAD DXF parsing
+fast-langdetect         MIT             Language detection
+argostranslate          MIT             Offline translation
+watchdog                Apache-2.0      File-system event monitoring
+Pillow                  HPND            Image processing
+opencv-python           Apache-2.0      Image preprocessing for OCR
+tkinterdnd2             MIT             Drag-and-drop for tkinter (optional)
+
+AGPL-3.0 Notice
+---------------
+pymupdf, pymupdf4llm, and ebooklib are licensed under the GNU Affero
+General Public License v3.0. This software uses these libraries strictly
+for local document processing on the end user's machine. No network
+services are provided, and no source code from these libraries has been
+modified. The AGPL-3.0 full license text is available at:
+https://www.gnu.org/licenses/agpl-3.0.html

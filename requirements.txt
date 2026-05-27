@@ -68,6 +68,11 @@ beautifulsoup4>=4.12.0          # HTML content → Markdown conversion
 markdownify>=0.14.1             # HTML → clean Markdown (primary engine for .html/.htm)
 
 # ---------------------------------------------------------------------------
+# RTF conversion
+# ---------------------------------------------------------------------------
+striprtf>=0.0.26                # RTF → plain text extraction (optional — regex fallback if missing)
+
+# ---------------------------------------------------------------------------
 # DXF (engineering drawings)
 # ---------------------------------------------------------------------------
 ezdxf>=1.4.0                    # AutoCAD DXF parsing, text extraction, SVG rendering

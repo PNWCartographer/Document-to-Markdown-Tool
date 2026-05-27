@@ -5,3 +5,4 @@ __pycache__/
 v1_source/
 app/config/settings.json
 .claude/
+tools/
