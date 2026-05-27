@@ -392,13 +392,23 @@ class App:
         self._sidebar_spacer = tk.Frame(self._sidebar)
         self._sidebar_spacer.grid(row=9, column=0, sticky="nsew")
 
-        # License status label
-        self._license_status_lbl = tk.Label(
-            self._sidebar, text="", font=(_FONT_FAMILY, 9),
-            cursor="hand2",
+        # About / License button
+        self._about_btn_frame = tk.Frame(self._sidebar)
+        self._about_btn_frame.grid(row=10, column=0, sticky="ew", padx=10, pady=(6, 2))
+
+        self._about_btn = tk.Label(
+            self._about_btn_frame, text="",
+            font=(_FONT_FAMILY, 9), cursor="hand2",
+            padx=10, pady=6, anchor="center",
         )
-        self._license_status_lbl.grid(row=10, column=0, sticky="ew", padx=14, pady=(4, 2))
-        self._license_status_lbl.bind("<Button-1>", lambda _: self._show_about_window())
+        self._about_btn.pack(fill="x")
+        self._about_btn.bind("<Button-1>", lambda _: self._show_about_window())
+        self._about_btn.bind("<Enter>", lambda _: self._about_btn.config(
+            bg=self._t.get("hover", self._t["sidebar_bg"])))
+        self._about_btn.bind("<Leave>", lambda _: self._about_btn.config(
+            bg=self._t["sidebar_bg"]))
+
+        self._license_status_lbl = self._about_btn  # alias for update method
         self._update_license_status()
 
         self._div_bot = tk.Frame(self._sidebar, height=1)
@@ -3217,19 +3227,22 @@ class App:
     # ── License management ───────────────────────────────────
 
     def _update_license_status(self):
-        """Update the sidebar license status label."""
+        """Update the sidebar About / license button."""
         info = _license_mod.get_license_info()
         t = self._t
+        self._about_btn_frame.config(bg=t["sidebar_bg"])
         if info["licensed"]:
             self._license_status_lbl.config(
-                text="✓ Licensed", fg="#22c55e", bg=t["sidebar_bg"])
+                text="ℹ  About  •  ✓ Licensed",
+                fg="#22c55e", bg=t["sidebar_bg"])
         elif info["status"] == "Trial expired":
             self._license_status_lbl.config(
-                text="Trial expired — click to activate", fg="#ef4444", bg=t["sidebar_bg"])
+                text="ℹ  About  •  Trial expired",
+                fg="#ef4444", bg=t["sidebar_bg"])
         else:
             remaining = info["remaining"]
             self._license_status_lbl.config(
-                text=f"{remaining} free conversion{'s' if remaining != 1 else ''} left",
+                text=f"ℹ  About  •  {remaining} free left",
                 fg=t["text_secondary"], bg=t["sidebar_bg"])
 
     def _show_license_prompt(self):
@@ -3325,15 +3338,16 @@ class App:
         t = self._t
         win = tk.Toplevel(self.root)
         win.title("About — Doc to Markdown")
-        win.geometry(f"{int(560 * self._dpi)}x{int(520 * self._dpi)}")
+        win.geometry(f"{int(560 * self._dpi)}x{int(560 * self._dpi)}")
         win.config(bg=t["bg"])
         win.transient(self.root)
+        self._set_titlebar_dark(self._dark, win)
 
         info = _license_mod.get_license_info()
 
         # Scrollable content
         canvas = tk.Canvas(win, bg=t["bg"], highlightthickness=0)
-        sb = GlassScrollbar(win, canvas, orient="vertical")
+        sb = GlassScrollbar(win, orient="vertical", command=canvas.yview)
         frame = tk.Frame(canvas, bg=t["bg"])
         canvas.create_window((0, 0), window=frame, anchor="nw")
         frame.bind("<Configure>", lambda e: canvas.configure(
@@ -3363,14 +3377,15 @@ class App:
             fg=t["text_secondary"], bg=t["bg"],
         ).pack(anchor="w", padx=pad, pady=(2, 12))
 
-        # ── License status ──
-        lic_frame = tk.Frame(frame, bg=t["sidebar_bg"], padx=16, pady=12)
-        lic_frame.pack(fill="x", padx=pad, pady=(0, 16))
+        # ── License status panel ──
+        lic_frame = tk.Frame(frame, bg=t["content_bg"], padx=16, pady=12,
+                             highlightbackground=t["border"], highlightthickness=1)
+        lic_frame.pack(fill="x", padx=pad, pady=(0, 4))
         status_color = "#22c55e" if info["licensed"] else (
             "#ef4444" if info["status"] == "Trial expired" else t["accent"])
         tk.Label(
             lic_frame, text=f"License: {info['status']}",
-            font=(_FONT_FAMILY, 11, "bold"), fg=status_color, bg=t["sidebar_bg"],
+            font=(_FONT_FAMILY, 11, "bold"), fg=status_color, bg=t["content_bg"],
         ).pack(anchor="w")
         if not info["licensed"]:
             remaining = info["remaining"]
@@ -3378,13 +3393,91 @@ class App:
                 lic_frame,
                 text=f"Conversions used: {info['conversion_count']} / {info['limit']}  "
                      f"({remaining} remaining)",
-                font=_FONT_SMALL, fg=t["text_secondary"], bg=t["sidebar_bg"],
+                font=_FONT_SMALL, fg=t["text_secondary"], bg=t["content_bg"],
             ).pack(anchor="w", pady=(4, 0))
         else:
             tk.Label(
                 lic_frame, text="Unlimited conversions",
-                font=_FONT_SMALL, fg=t["text_secondary"], bg=t["sidebar_bg"],
+                font=_FONT_SMALL, fg=t["text_secondary"], bg=t["content_bg"],
             ).pack(anchor="w", pady=(4, 0))
+
+        # ── License key entry ──
+        key_frame = tk.Frame(frame, bg=t["bg"])
+        key_frame.pack(fill="x", padx=pad, pady=(4, 16))
+
+        tk.Label(
+            key_frame, text="License Key:", font=(_FONT_FAMILY, 10),
+            fg=t["text_secondary"], bg=t["bg"],
+        ).pack(anchor="w", pady=(0, 4))
+
+        key_row = tk.Frame(key_frame, bg=t["bg"])
+        key_row.pack(fill="x")
+
+        key_entry = tk.Entry(
+            key_row, font=(_FONT_MONO, 11),
+            bg=t["content_bg"], fg=t["text"],
+            insertbackground=t["text"],
+            relief="flat", highlightthickness=1,
+            highlightbackground=t["border"],
+            highlightcolor=t["accent"],
+        )
+        key_entry.pack(side="left", fill="x", expand=True, ipady=5)
+
+        if info["licensed"]:
+            # Show the current key (masked) and a deactivate button
+            masked = info["license_key"][:7] + "••••-••••-" + info["license_key"][-4:]
+            key_entry.insert(0, masked)
+            key_entry.config(state="disabled", disabledbackground=t["content_bg"],
+                             disabledforeground=t["text_secondary"])
+
+            def _deactivate():
+                _license_mod.deactivate_license()
+                self._update_license_status()
+                win.destroy()
+                self._show_about_window()
+
+            deact_btn = PillButton(
+                key_row, text="Deactivate", font=_FONT_SMALL,
+                style="secondary", padx=12, pady=5, command=_deactivate,
+            )
+            deact_btn.pack(side="left", padx=(8, 0))
+            deact_btn.set_colors(
+                fill=t["bg"], fg="#ef4444", outline="#ef4444",
+                hover_fill="#ef4444", hover_fg="#ffffff", hover_outline="#ef4444",
+                parent_bg=t["bg"],
+            )
+        else:
+            key_entry.insert(0, "")
+
+            key_msg = tk.Label(
+                key_frame, text="", font=(_FONT_FAMILY, 9),
+                bg=t["bg"], anchor="w",
+            )
+            key_msg.pack(anchor="w", pady=(4, 0))
+
+            def _activate():
+                key = key_entry.get().strip()
+                if not key:
+                    key_msg.config(text="Please enter a license key.", fg="#ef4444")
+                    return
+                ok, msg = _license_mod.activate_license(key)
+                if ok:
+                    self._update_license_status()
+                    win.destroy()
+                    self._show_about_window()
+                else:
+                    key_msg.config(text=msg, fg="#ef4444")
+
+            act_btn = PillButton(
+                key_row, text="Activate", font=_FONT_SMALL,
+                style="primary", padx=14, pady=5, command=_activate,
+            )
+            act_btn.pack(side="left", padx=(8, 0))
+            act_btn.set_colors(
+                fill=t["accent"], fg=t["text_on_accent"], outline=t["accent"],
+                hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+                hover_outline=t["accent_hover"], parent_bg=t["bg"],
+            )
 
         # ── Quick Start ──
         def _section(title, body):

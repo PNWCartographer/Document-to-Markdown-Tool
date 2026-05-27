@@ -10,7 +10,7 @@
   "detect_code_blocks": true,
   "detect_footnotes": true,
   "detect_equations": true,
-  "parallel_workers": "1",
+  "parallel_workers": 1,
   "quality_preset": "Quality",
   "ocr_language": "English",
   "output_format": "Markdown",
@@ -19,6 +19,9 @@
   "overwrite_existing": false,
   "output_subfolder": false,
   "low_confidence_action": "Ask me",
+  "auto_translate": true,
+  "dxf_svg_preview": true,
+  "ocr_engine": "Auto",
   "rules_profile": "None",
   "theme": "dark"
 }
