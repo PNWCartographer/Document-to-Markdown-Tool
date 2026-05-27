@@ -16,6 +16,7 @@ Cross-platform: Windows, Linux, macOS.
 """
 
 import os
+import threading
 from typing import Optional
 
 
@@ -89,6 +90,7 @@ def language_name(code: str) -> str:
 
 _ARGOS_AVAILABLE: Optional[bool] = None
 _INSTALLED_PAIRS: Optional[set] = None
+_pairs_lock = threading.Lock()
 
 
 def argos_available() -> bool:
@@ -108,16 +110,20 @@ def _get_installed_pairs() -> set[tuple[str, str]]:
     global _INSTALLED_PAIRS
     if _INSTALLED_PAIRS is not None:
         return _INSTALLED_PAIRS
-    pairs = set()
-    try:
-        import argostranslate.translate
-        for lang in argostranslate.translate.get_installed_languages():
-            for translation in lang.translations_from:
-                pairs.add((lang.code, translation.to_lang.code))
-    except Exception:
-        pass
-    _INSTALLED_PAIRS = pairs
-    return pairs
+    with _pairs_lock:
+        # Double-check after acquiring lock
+        if _INSTALLED_PAIRS is not None:
+            return _INSTALLED_PAIRS
+        pairs = set()
+        try:
+            import argostranslate.translate
+            for lang in argostranslate.translate.get_installed_languages():
+                for translation in lang.translations_from:
+                    pairs.add((lang.code, translation.to_lang.code))
+        except Exception:
+            pass
+        _INSTALLED_PAIRS = pairs
+        return pairs
 
 
 def install_language_pair(from_code: str, to_code: str) -> bool:
@@ -164,8 +170,9 @@ def install_language_pair(from_code: str, to_code: str) -> bool:
                 except OSError:
                     pass
 
-        # Reset cache
-        _INSTALLED_PAIRS = None
+        # Reset cache so next lookup rescans
+        with _pairs_lock:
+            _INSTALLED_PAIRS = None
         return True
 
     except Exception:

@@ -232,7 +232,9 @@ def _run_paddle(image, language: str) -> OcrResult:
     try:
         engine = _get_paddle_engine(language)
         img_array = np.array(image.convert("RGB"))
-        raw = engine.ocr(img_array, cls=True)
+        # Hold the lock during inference — PaddleOCR is not thread-safe.
+        with _paddle_lock:
+            raw = engine.ocr(img_array, cls=True)
 
         lines = []
         confidences = []

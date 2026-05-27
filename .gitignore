@@ -4,3 +4,4 @@ __pycache__/
 *.egg-info/
 v1_source/
 app/config/settings.json
+.claude/

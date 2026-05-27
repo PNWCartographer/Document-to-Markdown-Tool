@@ -210,12 +210,13 @@ def _resolve_local_image(src: str, source_dir: str) -> Optional[str]:
         return None
     local_path = unquote(parsed.path)
     if os.path.isabs(local_path):
-        resolved = os.path.normpath(local_path)
+        resolved = os.path.realpath(os.path.normpath(local_path))
     else:
-        resolved = os.path.normpath(os.path.join(source_dir, local_path))
+        resolved = os.path.realpath(os.path.normpath(os.path.join(source_dir, local_path)))
     # Prevent path traversal — resolved path must stay within (or adjacent to)
-    # the source directory.
-    norm_source = os.path.normpath(source_dir)
+    # the source directory.  realpath resolves symlinks so a symlink pointing
+    # outside the source tree is correctly rejected.
+    norm_source = os.path.realpath(os.path.normpath(source_dir))
     if not resolved.startswith(norm_source + os.sep) and resolved != norm_source:
         return None
     return resolved

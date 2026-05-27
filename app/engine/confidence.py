@@ -9,6 +9,7 @@ Levels (plain language, per spec):
 """
 
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -104,7 +105,7 @@ class ConfidenceResult:
         return f"> Conversion confidence: {self.overall}.{review}"
 
 
-_log_write_lock = __import__("threading").Lock()
+_log_write_lock = threading.Lock()
 
 
 def write_confidence_report(result: ConfidenceResult) -> str:

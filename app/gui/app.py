@@ -232,7 +232,15 @@ class App:
             except Exception:
                 self._dpi = 1.0
         else:
-            self._dpi = 1.0
+            # Cross-platform fallback: Tk's 'scaling' reports pixels per point.
+            # 1 point = 1/72 inch; at 96 DPI the factor is ~1.333.
+            try:
+                _tk_scaling = self.root.tk.call('tk', 'scaling')
+                self._dpi = float(_tk_scaling) / 1.333333
+                if self._dpi < 0.5 or self._dpi > 5.0:
+                    self._dpi = 1.0
+            except Exception:
+                self._dpi = 1.0
 
         from .widgets import set_dpi_scale
         set_dpi_scale(self._dpi)
@@ -1472,19 +1480,27 @@ class App:
 
         cfg = dict(self._cfg)
 
-        self._watcher = _watch_mod.FolderWatcher(
-            watch_path=self._watch_input_path,
-            output_path=self._watch_output_path,
-            cfg=cfg,
-            root=self.root,
-            on_file_queued=self._watch_on_queued,
-            on_file_started=self._watch_on_started,
-            on_file_done=self._watch_on_done,
-            on_file_progress=self._watch_on_progress,
-            on_stage=self._watch_on_stage,
-            on_error=self._watch_on_error,
-        )
-        self._watcher.start()
+        try:
+            self._watcher = _watch_mod.FolderWatcher(
+                watch_path=self._watch_input_path,
+                output_path=self._watch_output_path,
+                cfg=cfg,
+                root=self.root,
+                on_file_queued=self._watch_on_queued,
+                on_file_started=self._watch_on_started,
+                on_file_done=self._watch_on_done,
+                on_file_progress=self._watch_on_progress,
+                on_stage=self._watch_on_stage,
+                on_error=self._watch_on_error,
+            )
+            self._watcher.start()
+        except Exception as exc:
+            messagebox.showerror(
+                "Watch Folder",
+                f"Could not start folder watcher:\n\n{exc}\n\n"
+                "Make sure the 'watchdog' package is installed.",
+            )
+            return
 
         self._btn_watch_start.set_text("Stop Watching")
         self._watch_status_lbl.config(text="Watching...", fg=self._t.get("accent", "#7c3aed"))
@@ -1906,11 +1922,12 @@ class App:
             rule.use_regex = rule_regex_var.get()
             refresh_rule_list()
 
-        rule_name_var.trace_add("write", save_current_rule)
-        rule_pattern_var.trace_add("write", save_current_rule)
-        rule_replace_var.trace_add("write", save_current_rule)
-        rule_enabled_var.trace_add("write", save_current_rule)
-        rule_regex_var.trace_add("write", save_current_rule)
+        _rule_traces = []
+        _rule_traces.append(("write", rule_name_var, rule_name_var.trace_add("write", save_current_rule)))
+        _rule_traces.append(("write", rule_pattern_var, rule_pattern_var.trace_add("write", save_current_rule)))
+        _rule_traces.append(("write", rule_replace_var, rule_replace_var.trace_add("write", save_current_rule)))
+        _rule_traces.append(("write", rule_enabled_var, rule_enabled_var.trace_add("write", save_current_rule)))
+        _rule_traces.append(("write", rule_regex_var, rule_regex_var.trace_add("write", save_current_rule)))
 
         def clear_rule_editor():
             rule_name_var.set("")
@@ -1987,12 +2004,22 @@ class App:
             msg += f"\n--- Before ---\n{sample[:200]}\n\n--- After ---\n{_after[:200]}"
             messagebox.showinfo("Rule Preview", msg, parent=win)
 
+        def _cleanup_rule_traces():
+            for mode, var, tid in _rule_traces:
+                try:
+                    var.trace_remove(mode, tid)
+                except Exception:
+                    pass
+
         def save_and_close():
             self._rule_profiles = profiles
             _rules_mod.save_profiles(profiles)
             profile_names = ["None"] + [p.name for p in profiles]
             self._rules_profile_dd.set_values(profile_names)
+            _cleanup_rule_traces()
             win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", save_and_close)
 
         btn_preview = PillButton(bottom, text="Preview Rules", font=_FONT_SMALL,
                                  style="secondary", padx=14, pady=6, command=preview_rules)
@@ -2199,6 +2226,11 @@ class App:
             preview_text.xview_scroll(self._scroll_units(e), "units")
             return "break"
         preview_text.bind("<Shift-MouseWheel>", _hscroll)
+        # Linux uses Shift-Button-4 / Shift-Button-5 for horizontal scroll
+        preview_text.bind("<Shift-Button-4>",
+                          lambda e: (preview_text.xview_scroll(-3, "units"), "break")[-1])
+        preview_text.bind("<Shift-Button-5>",
+                          lambda e: (preview_text.xview_scroll(3, "units"), "break")[-1])
         preview_text.grid(row=0, column=0, sticky="nsew")
         preview_sb.grid(row=0, column=1, sticky="ns")
 
@@ -2397,9 +2429,9 @@ class App:
 
                 if line.startswith("# "):
                     classified.append(("heading", line))
-                elif line.startswith(("## ", "### ")):
+                elif line.startswith("## "):
                     classified.append(("heading2", line))
-                elif line.startswith(("#### ", "##### ", "###### ")):
+                elif line.startswith(("### ", "#### ", "##### ", "###### ")):
                     classified.append(("heading3", line))
                 elif stripped.startswith("|"):
                     classified.append(("table", line))
@@ -2574,7 +2606,14 @@ class App:
             preview_text.tag_remove("search_active", "1.0", tk.END)
             if search_matches:
                 pos = search_matches[search_current_idx[0]]
-                end = f"{pos}+{len(search_var.get())}c"
+                # Use count_var (Tk-measured length) instead of Python len()
+                # so multi-byte Unicode characters highlight correctly.
+                _cnt = tk.IntVar()
+                preview_text.search(
+                    search_var.get(), pos, stopindex=tk.END,
+                    nocase=True, count=_cnt)
+                matched = _cnt.get() or len(search_var.get())
+                end = f"{pos}+{matched}c"
                 preview_text.tag_add("search_active", pos, end)
                 preview_text.see(pos)
             preview_text.config(state="disabled")
@@ -2809,9 +2848,11 @@ class App:
         if _sys.platform == "win32":
             os.startfile(path)
         elif _sys.platform == "darwin":
-            subprocess.Popen(["open", path])
+            subprocess.Popen(["open", path], close_fds=True,
+                             start_new_session=True)
         else:
-            subprocess.Popen(["xdg-open", path])
+            subprocess.Popen(["xdg-open", path], close_fds=True,
+                             start_new_session=True)
 
     def _on_cancel_conversion(self):
         if self._active_job and self._active_job.is_running():
@@ -2853,6 +2894,13 @@ class App:
 
     def _on_start(self):
         if self._active_job and self._active_job.is_running():
+            return
+        if not self._output_path or not os.path.isdir(self._output_path):
+            messagebox.showwarning(
+                "Output Folder",
+                "The output folder does not exist or was not set.\n\n"
+                "Please select a valid output folder before starting.",
+            )
             return
         self._btn_start.set_state("disabled")
         self._reset_conversion_screen()

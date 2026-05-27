@@ -111,6 +111,8 @@ def convert(
 
     if not ocr_engine.any_ocr_available():
         log_warn("No OCR engine available. Image saved without text extraction.")
+        if processed_pil is not pil_image:
+            processed_pil.close()
         confidence.text_extraction = "N/A"
         confidence.ocr_confidence = "N/A"
         _build_image_only_section(output, stem, asset_rel_path)
@@ -124,6 +126,8 @@ def convert(
     log_info(f"OCR complete | engine={ocr_result.engine_used} "
              f"confidence={ocr_result.confidence_label} "
              f"regions={len(ocr_result.regions)}")
+    if processed_pil is not pil_image:
+        processed_pil.close()
     progress(0.70)
 
     # ------------------------------------------------------------------

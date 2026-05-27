@@ -492,6 +492,9 @@ def write_output(
 # Internal helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
+_PAGE_ANCHOR_RE = re.compile(r'<a\s+id="page-\d+"></a>')
+
+
 def _esc(text: str) -> str:
     """HTML-escape special characters."""
     return (
@@ -513,6 +516,7 @@ def _md_body_to_html(body: str) -> str:
     out: list[str] = []
     in_table = False
     in_code = False
+    _thead_closed = False
 
     for line in body.split("\n"):
         stripped = line.strip()
@@ -549,11 +553,9 @@ def _md_body_to_html(body: str) -> str:
             out.append(f"<tr>{row_html}</tr>")
             continue
         elif in_table:
-            if _thead_closed:
-                out.append("</tbody></table>")
-            else:
-                out.append("</thead></table>")
+            out.append("</tbody></table>" if _thead_closed else "</thead></table>")
             in_table = False
+            _thead_closed = False
 
         # Images (file ref or base64)
         img_m = re.match(r"!\[([^\]]*)\]\(([^)]+)\)", stripped)
@@ -577,9 +579,8 @@ def _md_body_to_html(body: str) -> str:
             continue
 
         # Preserve page anchors (e.g. <a id="page-1"></a>) before escaping
-        _anchor_re = re.compile(r'<a\s+id="page-\d+"></a>')
-        anchors = _anchor_re.findall(line)
-        p = _anchor_re.sub("\x00ANCHOR\x00", line)
+        anchors = _PAGE_ANCHOR_RE.findall(line)
+        p = _PAGE_ANCHOR_RE.sub("\x00ANCHOR\x00", line)
 
         # Regular paragraph — apply inline formatting
         p = _esc(p)
@@ -595,10 +596,7 @@ def _md_body_to_html(body: str) -> str:
             out.append(f"<p>{p}</p>")
 
     if in_table:
-        if _thead_closed:
-            out.append("</tbody></table>")
-        else:
-            out.append("</thead></table>")
+        out.append("</tbody></table>" if _thead_closed else "</thead></table>")
     if in_code:
         out.append("</code></pre>")
 
