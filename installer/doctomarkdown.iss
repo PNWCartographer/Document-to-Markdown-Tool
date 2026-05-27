@@ -8,11 +8,11 @@
 ;   3. Compile this script:
 ;        iscc installer\doctomarkdown.iss
 ;
-; Output: installer\Output\DocToMarkdown_Setup_1.1.0.exe
+; Output: installer\Output\DocToMarkdown_Setup_1.2.0.exe
 ; ============================================================
 
 #define MyAppName       "Doc to Markdown"
-#define MyAppVersion    "1.1.0"
+#define MyAppVersion    "1.2.0"
 #define MyAppPublisher  "Darksquare"
 #define MyAppURL        "https://darksquare.dev"
 #define MyAppExeName    "DocToMarkdown.exe"

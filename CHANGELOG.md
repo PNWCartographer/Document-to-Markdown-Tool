@@ -2,6 +2,41 @@
 
 All notable changes to the Documentation to Markdown Converter Tool are documented in this file.
 
+## [1.2.0] - 2026-05-27 (Searchable PDF & OCR Overhaul)
+
+### Added
+- Searchable PDF output format — adds invisible OCR text layer to scanned PDFs for full-text search
+- RapidOCR engine replacing PaddlePaddle — 90% smaller install, same accuracy, cross-platform GPU support
+- Ensemble OCR mode — runs RapidOCR and Tesseract together, keeps highest-confidence result per word
+- GPU auto-detection and acceleration (CUDA for NVIDIA, DirectML for AMD/Intel, CoreML for macOS)
+- System hardware detection (CPU, RAM, GPU) with automatic performance configuration
+- Platform-aware OCR routing (RapidOCR on Windows/Linux, Apple Vision prep for macOS, Tesseract universal fallback)
+- Auto-chunking for large documents (30+ pages split into parallel chunks)
+- Sidecar text output alongside Searchable PDF with optional RAG chunk generation
+- Searchable PDF settings: deskew, clean pages, force OCR, optimize level, PDF/A compliance, background removal
+- Collapsible settings sections with persistent expand/collapse state
+- Conditional settings visibility (format-specific options appear only when relevant)
+- Performance info card in Settings showing detected CPU, RAM, GPU, and accelerator
+- Mixed content badges in Results screen (Text, Tables, Images, OCR, Scanned)
+- Watch Folder format indicator showing current output format
+- OCR Engine dropdown expanded: Auto, RapidOCR, Tesseract, Ensemble
+
+### Changed
+- OCR engine swapped from PaddlePaddle/PaddleOCR to RapidOCR (ONNX Runtime)
+- Settings screen reorganized into collapsible sections
+- Output Format dropdown includes Searchable PDF option
+- About window updated with GPU acceleration and Searchable PDF
+
+### Dependencies Added
+- rapidocr-onnxruntime >= 1.4.0 (replaces paddlepaddle and paddleocr)
+- ocrmypdf >= 17.0.0
+- psutil >= 5.9.0
+- pynvml >= 12.0.0 (optional)
+
+### Dependencies Removed
+- paddlepaddle
+- paddleocr
+
 ## [1.1.0] - 2026-05-14 (Feature Expansion)
 
 ### Added
@@ -42,7 +77,7 @@ All notable changes to the Documentation to Markdown Converter Tool are document
 - DOCX/DOC conversion with multi-engine fallback (docling, mammoth, python-docx)
 - XLSX/XLS spreadsheet conversion with openpyxl and xlrd
 - CSV conversion with pandas
-- Image OCR conversion for PNG, JPG, BMP, TIFF, WebP, GIF (PaddleOCR + Tesseract)
+- Image OCR conversion for PNG, JPG, BMP, TIFF, WebP, GIF (OCR engine + Tesseract)
 - Markdown output with heading hierarchy, tables, image links, and TOC
 - JSON structured output format
 - HTML standalone output format
