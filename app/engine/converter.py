@@ -167,11 +167,27 @@ class ConversionJob:
         completed = 0
         failed = 0
 
+        # Install a wrapper so that per-file progress updates also move the
+        # overall bar.  Overall = (completed_files + current_file_fraction) / total,
+        # giving smooth overall progress even during long single-file conversions.
+        _orig_file_progress = self._on_file_progress
+        _orig_overall_progress = self._on_overall_progress
+        self._seq_cur_idx = 0
+
+        def _blended_file_progress(p: float):
+            _orig_file_progress(p)
+            if p >= 0:
+                composite = (self._seq_cur_idx + p) / total
+                _orig_overall_progress(composite)
+
+        self._on_file_progress = _blended_file_progress
+
         for idx, source_file in enumerate(self._files):
             if self._cancel_event.is_set():
                 self._gui(self._on_log, "Conversion cancelled.")
                 break
 
+            self._seq_cur_idx = idx
             filename = os.path.basename(source_file)
             alias = self._aliases.get(source_file, "")
 
@@ -244,6 +260,8 @@ class ConversionJob:
             self._gui(self._on_file_progress, 1.0)
             self._gui(self._on_stage, "")
 
+        # Restore original callback
+        self._on_file_progress = _orig_file_progress
         return completed, failed, results
 
     # ------------------------------------------------------------------

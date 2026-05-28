@@ -107,6 +107,7 @@ def convert(
     # ------------------------------------------------------------------
     is_scanned = False
     if conversion_mode == "Auto-detect":
+        stage("Detecting document type…")
         is_scanned = _detect_scanned(source_file, log_info)
         if is_scanned:
             log_info("Auto-detect: PDF appears to be scanned/image-based — enabling OCR path.")
@@ -254,26 +255,37 @@ def _convert_docling(
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
 
+    import time as _time
+
     log_info("Using docling engine for PDF.")
     output.engine_used = "docling"
     progress(0.1)
 
+    stage("Loading docling models…")
+    converter = DocumentConverter()
+    progress(0.15)
+
     stage("Converting PDF — this may take a while for large documents…")
     progress(-1.0)
-    converter = DocumentConverter()
 
     # Run the blocking docling call in a sub-thread so we can poll cancel
+    # and update the stage text with elapsed time so the user sees activity.
     if cancel_event:
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+        t0 = _time.monotonic()
         with ThreadPoolExecutor(1) as pool:
             future = pool.submit(converter.convert, source_file)
+            tick = 0
             while not future.done():
                 if cancel_event.is_set():
                     raise ConversionCancelled("Conversion cancelled by user")
                 try:
-                    future.result(timeout=0.5)
+                    future.result(timeout=2.0)
                 except FutureTimeout:
-                    continue
+                    tick += 1
+                    elapsed = int(_time.monotonic() - t0)
+                    m, s = divmod(elapsed, 60)
+                    stage(f"Converting PDF — {m}:{s:02d} elapsed…")
             result = future.result()
     else:
         result = converter.convert(source_file)
