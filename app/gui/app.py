@@ -9,7 +9,7 @@ from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
 from .tooltip import Tooltip
 from .widgets import (PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown,
-                      PillProgressBar, _draw_circle)
+                      PillProgressBar, _draw_circle, monitor_area)
 import config.settings as _cfg_mod
 import engine.converter as _converter_mod
 import engine.watch_folder as _watch_mod
@@ -3318,11 +3318,12 @@ class App:
             zoom_win.transient(win)
             self._set_titlebar_dark(self._dark, zoom_win)
 
-            # Fit image to screen (max 90% of screen dimensions)
-            screen_w = zoom_win.winfo_screenwidth()
-            screen_h = zoom_win.winfo_screenheight()
-            max_w = int(screen_w * 0.9)
-            max_h = int(screen_h * 0.85)
+            # Fit image to the monitor the app lives on (max 90%)
+            mon_l, mon_t, mon_r, mon_b = monitor_area(self.root)
+            mon_w = mon_r - mon_l
+            mon_h = mon_b - mon_t
+            max_w = int(mon_w * 0.9)
+            max_h = int(mon_h * 0.85)
             display_img = img.copy()
             if display_img.width > max_w or display_img.height > max_h:
                 display_img.thumbnail((max_w, max_h), _PILImage.LANCZOS)
@@ -3331,7 +3332,7 @@ class App:
             win_h = display_img.height + 60
             rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
             ry = self.root.winfo_y() + (self.root.winfo_height() - win_h) // 2
-            zoom_win.geometry(f"{win_w}x{win_h}+{max(0, rx)}+{max(0, ry)}")
+            zoom_win.geometry(f"{win_w}x{win_h}+{rx}+{ry}")
 
             # Image label
             photo = _PILImageTk.PhotoImage(display_img)
@@ -4413,7 +4414,7 @@ class App:
         win_h = int(520 * self._dpi)
         rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
         ry = self.root.winfo_y() + (self.root.winfo_height() - win_h) // 2
-        win.geometry(f"{win_w}x{win_h}+{max(0, rx)}+{max(0, ry)}")
+        win.geometry(f"{win_w}x{win_h}+{rx}+{ry}")
         win.config(bg=t["bg"])
         win.transient(self.root)
         win.grab_set()
@@ -5577,7 +5578,7 @@ class App:
         # Centre on the main window
         rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
         ry = self.root.winfo_y() + (self.root.winfo_height() - win_h_px) // 2
-        win.geometry(f"{win_w}x{win_h_px}+{max(0, rx)}+{max(0, ry)}")
+        win.geometry(f"{win_w}x{win_h_px}+{rx}+{ry}")
         win.config(bg=t["bg"])
         win.resizable(False, False)
         win.transient(self.root)

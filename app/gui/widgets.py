@@ -12,6 +12,7 @@ DPI factor.  Call ``set_dpi_scale(factor)`` once before building widgets.
 """
 
 import math
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
 
@@ -20,6 +21,50 @@ try:
     _HAS_PIL = True
 except ImportError:
     _HAS_PIL = False
+
+
+# ── Multi-monitor helper ──────────────────────────────────────
+
+def monitor_area(widget: tk.Widget) -> tuple[int, int, int, int]:
+    """Return (left, top, right, bottom) work area of the monitor containing *widget*.
+
+    On Windows uses the Win32 ``MonitorFromWindow`` API for accurate
+    per-monitor bounds.  On other platforms, falls back to the widget's
+    toplevel position plus ``winfo_screenwidth/height`` (adequate for
+    single-monitor and most tiling-WM setups).
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            import ctypes.wintypes
+
+            class _MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_ulong),
+                    ("rcMonitor", ctypes.wintypes.RECT),
+                    ("rcWork", ctypes.wintypes.RECT),
+                    ("dwFlags", ctypes.c_ulong),
+                ]
+
+            hwnd = widget.winfo_id()
+            # MONITOR_DEFAULTTONEAREST = 2
+            hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, 2)
+            mi = _MONITORINFO()
+            mi.cbSize = ctypes.sizeof(mi)
+            if ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                wa = mi.rcWork
+                return (wa.left, wa.top, wa.right, wa.bottom)
+        except Exception:
+            pass
+
+    # Fallback: primary-monitor dimensions offset by the widget's toplevel.
+    # Not perfect on multi-monitor Linux/macOS, but prevents popup teleport.
+    try:
+        sw = widget.winfo_screenwidth()
+        sh = widget.winfo_screenheight()
+    except Exception:
+        sw, sh = 1920, 1080
+    return (0, 0, sw, sh)
 
 
 # ── DPI helpers ─────────────────────────────────────────────
@@ -853,13 +898,14 @@ class GlassDropdown(tk.Canvas):
         pw = max(self._dd_w, popup.winfo_reqwidth())
         ph = popup.winfo_reqheight()
 
-        # Clamp to screen boundaries
-        screen_h = self.winfo_screenheight()
-        screen_w = self.winfo_screenwidth()
-        if y + ph > screen_h - _s(20):
+        # Clamp to the monitor the dropdown actually lives on
+        mon_l, mon_t, mon_r, mon_b = monitor_area(self)
+        if y + ph > mon_b - _s(20):
             y = self.winfo_rooty() - ph - _s(3)   # open above instead
-        if x + pw > screen_w - _s(10):
-            x = screen_w - pw - _s(10)
+        if x + pw > mon_r - _s(10):
+            x = mon_r - pw - _s(10)
+        if x < mon_l:
+            x = mon_l
 
         popup.geometry(f"{pw}x{ph}+{x}+{y}")
         popup.deiconify()
