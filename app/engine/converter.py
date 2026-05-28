@@ -182,86 +182,88 @@ class ConversionJob:
 
         self._on_file_progress = _blended_file_progress
 
-        for idx, source_file in enumerate(self._files):
-            if self._cancel_event.is_set():
-                self._gui(self._on_log, "Conversion cancelled.")
-                break
+        try:
+            for idx, source_file in enumerate(self._files):
+                if self._cancel_event.is_set():
+                    self._gui(self._on_log, "Conversion cancelled.")
+                    break
 
-            self._seq_cur_idx = idx
-            filename = os.path.basename(source_file)
-            alias = self._aliases.get(source_file, "")
+                self._seq_cur_idx = idx
+                filename = os.path.basename(source_file)
+                alias = self._aliases.get(source_file, "")
 
-            self._gui(self._on_file_start, filename, idx + 1, total)
-            self._gui(self._on_overall_progress, idx / total)
-            self._gui(self._on_file_progress, 0.0)
-            self._gui(self._on_stage, "Initialising…")
-            self._gui(self._on_log, f"── [{idx + 1}/{total}] {filename}")
+                self._gui(self._on_file_start, filename, idx + 1, total)
+                self._gui(self._on_overall_progress, idx / total)
+                self._gui(self._on_file_progress, 0.0)
+                self._gui(self._on_stage, "Initialising…")
+                self._gui(self._on_log, f"── [{idx + 1}/{total}] {filename}")
 
-            use_subfolder = self._cfg.get("output_subfolder", True)
-            out_dir = output_dir_for(source_file, self._output_root, alias, use_subfolder)
+                use_subfolder = self._cfg.get("output_subfolder", True)
+                out_dir = output_dir_for(source_file, self._output_root, alias, use_subfolder)
 
-            logger = ConversionLogger(
-                source_file=source_file,
-                gui_callback=lambda line: self._gui(self._on_log, line),
-            )
-            logger.start()
+                logger = ConversionLogger(
+                    source_file=source_file,
+                    gui_callback=lambda line: self._gui(self._on_log, line),
+                )
+                logger.start()
 
-            try:
-                fmt = self._cfg.get("output_format", "Markdown")
+                try:
+                    fmt = self._cfg.get("output_format", "Markdown")
 
-                if fmt == "Searchable PDF":
-                    self._gui(self._on_stage, "Creating searchable PDF…")
-                    output = self._convert_searchable_pdf(
-                        source_file, alias, use_subfolder, logger,
-                    )
-                else:
-                    output = self._convert_file(source_file, alias, logger)
-                    self._gui(self._on_stage, "Writing output…")
-                    self._write_output(output, use_subfolder)
+                    if fmt == "Searchable PDF":
+                        self._gui(self._on_stage, "Creating searchable PDF…")
+                        output = self._convert_searchable_pdf(
+                            source_file, alias, use_subfolder, logger,
+                        )
+                    else:
+                        output = self._convert_file(source_file, alias, logger)
+                        self._gui(self._on_stage, "Writing output…")
+                        self._write_output(output, use_subfolder)
 
-                if output.confidence:
-                    write_confidence_report(output.confidence)
-                    results.append(output.confidence)
+                    if output.confidence:
+                        write_confidence_report(output.confidence)
+                        results.append(output.confidence)
 
-                # Write per-file artifacts to the output folder
-                logger.end()
-                self._write_per_file_artifacts(
-                    output, logger, out_dir, use_subfolder)
-                logger.flush()
-                completed += 1
-                license_manager.increment_conversion_count(1)
-                self._gui(self._on_log, f"   ✓ Done → {out_dir}")
+                    # Write per-file artifacts to the output folder
+                    logger.end()
+                    self._write_per_file_artifacts(
+                        output, logger, out_dir, use_subfolder)
+                    logger.flush()
+                    completed += 1
+                    license_manager.increment_conversion_count(1)
+                    self._gui(self._on_log, f"   ✓ Done → {out_dir}")
 
-            except _CancelledError:
-                logger.info("Conversion cancelled by user.")
-                logger.end()
-                logger.flush()
-                self._gui(self._on_log, f"   ⊘ Cancelled — {filename}")
-                app_logger.info(f"Cancelled: {source_file}")
-                break
+                except _CancelledError:
+                    logger.info("Conversion cancelled by user.")
+                    logger.end()
+                    logger.flush()
+                    self._gui(self._on_log, f"   ⊘ Cancelled — {filename}")
+                    app_logger.info(f"Cancelled: {source_file}")
+                    break
 
-            except FileExistsError as e:
-                logger.warning(f"Skipped — output already exists: {e}")
-                logger.end()
-                logger.flush()
-                self._gui(self._on_log, f"   ⚠ Skipped (file exists) — {filename}")
-                app_logger.warning(f"Skipped (exists): {source_file}")
+                except FileExistsError as e:
+                    logger.warning(f"Skipped — output already exists: {e}")
+                    logger.end()
+                    logger.flush()
+                    self._gui(self._on_log, f"   ⚠ Skipped (file exists) — {filename}")
+                    app_logger.warning(f"Skipped (exists): {source_file}")
 
-            except Exception as e:
-                logger.error(f"Conversion failed: {e}")
-                logger.end()
-                logger.flush()
-                failed += 1
-                self._gui(self._on_log, f"   ✗ Failed — {filename}: {e}")
-                app_logger.error(f"Failed: {source_file} | {e}")
+                except Exception as e:
+                    logger.error(f"Conversion failed: {e}")
+                    logger.end()
+                    logger.flush()
+                    failed += 1
+                    self._gui(self._on_log, f"   ✗ Failed — {filename}: {e}")
+                    app_logger.error(f"Failed: {source_file} | {e}")
 
-            overall_frac = (idx + 1) / total
-            self._gui(self._on_overall_progress, overall_frac)
-            self._gui(self._on_file_progress, 1.0)
-            self._gui(self._on_stage, "")
+                overall_frac = (idx + 1) / total
+                self._gui(self._on_overall_progress, overall_frac)
+                self._gui(self._on_file_progress, 1.0)
+                self._gui(self._on_stage, "")
+        finally:
+            # Restore original callback even if an unexpected exception propagates
+            self._on_file_progress = _orig_file_progress
 
-        # Restore original callback
-        self._on_file_progress = _orig_file_progress
         return completed, failed, results
 
     # ------------------------------------------------------------------
@@ -376,9 +378,9 @@ class ConversionJob:
         """Write conversion output in the configured format."""
         fmt = self._cfg.get("output_format", "Markdown")
         overwrite = self._cfg.get("overwrite_existing", False)
-        inc_pages = self._cfg.get("preserve_page_numbers", False)
-        inc_toc = self._cfg.get("rebuild_toc", False)
-        front_matter = self._cfg.get("yaml_front_matter", False)
+        inc_pages = self._cfg.get("preserve_page_numbers", True)
+        inc_toc = self._cfg.get("rebuild_toc", True)
+        front_matter = self._cfg.get("yaml_front_matter", True)
         flavor = self._cfg.get("markdown_flavor", "GFM")
 
         profile_name = self._cfg.get("rules_profile", "None")
@@ -505,8 +507,8 @@ class ConversionJob:
         lang = _LANG_MAP.get(cfg.get("ocr_language", "English"), "en")
         mode = cfg.get("conversion_mode", "Auto-detect")
         preserve_images = cfg.get("preserve_images", True)
-        rebuild_toc = cfg.get("rebuild_toc", False)
-        preserve_pages = cfg.get("preserve_page_numbers", False)
+        rebuild_toc = cfg.get("rebuild_toc", True)
+        preserve_pages = cfg.get("preserve_page_numbers", True)
 
         # New settings
         auto_translate = cfg.get("auto_translate", True)

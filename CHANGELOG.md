@@ -20,12 +20,20 @@ All notable changes to the Documentation to Markdown Converter Tool are document
 - Mixed content badges in Results screen (Text, Tables, Images, OCR, Scanned)
 - Watch Folder format indicator showing current output format
 - OCR Engine dropdown expanded: Auto, RapidOCR, Tesseract, Ensemble
+- Parallel workers expanded to 1, 2, 4, 8, 12, 16, Auto
+- Indeterminate progress bar for long-running conversions
+- Responsive cancel with mid-file interruption support
+- Composite overall progress bar blending per-file progress into batch total
+- Conversion elapsed timer on the Conversion screen
+- Per-file results badges on the Results screen with confidence-colored chips
+- Keyboard shortcuts: Escape to cancel, Ctrl+Enter to start conversion
 
 ### Changed
 - OCR engine swapped from PaddlePaddle/PaddleOCR to RapidOCR (ONNX Runtime)
 - Settings screen reorganized into collapsible sections
 - Output Format dropdown includes Searchable PDF option
 - About window updated with GPU acceleration and Searchable PDF
+- Fast quality preset now skips docling entirely for faster text-based PDF conversion
 
 ### Dependencies Added
 - rapidocr-onnxruntime >= 1.2.0 (replaces paddlepaddle and paddleocr)
@@ -50,7 +58,7 @@ All notable changes to the Documentation to Markdown Converter Tool are document
 - EPUB (.epub) e-book support with chapter order, images, and table of contents
 - RAG Chunks output format (.jsonl) for vector database and AI retrieval ingestion
 - Debug/Preview mode on the Results screen showing engine details, confidence scores, and warnings
-- Parallel workers setting (1, 2, 4, or Auto) for faster batch processing
+- Parallel workers setting (1, 2, 4, 8, 12, 16, Auto) for faster batch processing
 - Conversion quality presets (Fast, Balanced, Quality) controlling speed vs. accuracy tradeoff
 - Post-processor pipeline running between conversion and output writing
 - 8 new tooltip texts for new settings

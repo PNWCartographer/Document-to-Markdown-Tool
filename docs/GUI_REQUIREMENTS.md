@@ -188,9 +188,9 @@ documents.
 **Parallel Workers**
 ```
 Parallel Workers:
-Controls how many files are converted at the same time. Higher values convert
-batches faster but use more memory and CPU. Start with 1 and increase if you
-are converting many files and have available system resources.
+Controls how many files are converted at the same time. Auto uses the
+recommended worker count based on your CPU cores and available RAM. Decrease
+to 1 if you experience memory pressure on large files.
 ```
 
 **Quality Preset**

@@ -85,18 +85,16 @@ def convert(
     # ------------------------------------------------------------------
     try:
         import fitz as _fitz_check
-        _doc_check = _fitz_check.open(source_file)
-        if _doc_check.is_encrypted:
-            _doc_check.close()
-            log_warn("PDF is password-protected or encrypted. Cannot extract content.")
-            confidence.overall = "Low"
-            confidence.text_extraction = "Low"
-            confidence.manual_review_recommended = True
-            output.add_section(
-                body="*This PDF is password-protected or encrypted. "
-                     "Please remove the password and try again.*")
-            return output
-        _doc_check.close()
+        with _fitz_check.open(source_file) as _doc_check:
+            if _doc_check.is_encrypted:
+                log_warn("PDF is password-protected or encrypted. Cannot extract content.")
+                confidence.overall = "Low"
+                confidence.text_extraction = "Low"
+                confidence.manual_review_recommended = True
+                output.add_section(
+                    body="*This PDF is password-protected or encrypted. "
+                         "Please remove the password and try again.*")
+                return output
     except Exception:
         pass  # will be caught by the actual converter below
 
@@ -169,7 +167,7 @@ def convert(
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=False, pp_settings=pp_settings,
                 ocr_dpi_scale=ocr_dpi_scale, prefer_engine=prefer_engine,
-                cancel_event=cancel_event,
+                cancel_event=cancel_event, page_range=page_range,
             )
 
     # ------------------------------------------------------------------
@@ -183,7 +181,7 @@ def convert(
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=True, pp_settings=pp_settings,
                 ocr_dpi_scale=ocr_dpi_scale, prefer_engine=prefer_engine,
-                cancel_event=cancel_event,
+                cancel_event=cancel_event, page_range=page_range,
             )
 
     log_warn("No PDF conversion engine available.")
@@ -715,6 +713,7 @@ def _convert_pymupdf(
     ocr_dpi_scale: float = 4.0,
     prefer_engine: str = "rapidocr",
     cancel_event: Optional[threading.Event] = None,
+    page_range: list[int] | None = None,
 ) -> ConversionOutput:
     import fitz
 
@@ -752,16 +751,19 @@ def _convert_pymupdf(
             os.makedirs(assets_dir, exist_ok=True)
 
         saved_xrefs: set[int] = set()
+        active_pages = len(page_range) if page_range else total_pages
+        pages_done = 0
 
         for page_idx in range(total_pages):
             if cancel_event and cancel_event.is_set():
                 raise ConversionCancelled("Conversion cancelled by user")
             page_num = page_idx + 1
-            # Skip pages not in the selected range (0-indexed in page_range)
+            # Skip pages not in the selected range
             if page_range and page_num not in page_range:
                 continue
             page = doc[page_idx]
-            prog = 0.1 + (page_idx / total_pages) * 0.75
+            prog = 0.1 + (pages_done / max(active_pages, 1)) * 0.75
+            pages_done += 1
             progress(prog)
 
             page_parts = []

@@ -305,6 +305,7 @@ def convert(
     confidence.image_extraction = "High" if svg_ref else "Low"
     confidence.image_placement = "High" if svg_ref else "N/A"
     confidence.document_order = "High"
+    confidence.ocr_confidence = "N/A"
     confidence.derive_overall()
 
     # Store title block metadata for front-matter enrichment

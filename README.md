@@ -209,10 +209,10 @@ See the `LICENSE` file for full terms.
 | **Performance** | | |
 | Parallel Workers | Auto | Number of files to convert simultaneously (1, 2, 4, 8, 12, 16, Auto). Auto uses system-detected recommendation |
 | Low Confidence Action | Ask me | Behavior when conversion confidence is low |
-| **Interface** | | |
+| **Post-Processing** | | |
 | Rules Profile | None | Post-processing rules profile to apply |
+| **Interface** | | |
 | Theme | System | Interface theme (System, Dark, Light) |
-| Page Range | All pages | Select specific PDF pages to convert (right-click a PDF file) |
 
 ## Output Structure
 
@@ -340,6 +340,7 @@ Detailed specifications are available in the `docs/` folder:
 | `LOGGING_REQUIREMENTS.md` | Logging requirements |
 | `INSTALLER_UNINSTALLER_REQUIREMENTS.md` | Install and uninstall expectations |
 | `DEVELOPMENT_WORKFLOW.md` | Build and development workflow |
+| `CLAUDE_PROMPT_TEMPLATES.md` | Reusable prompts for Claude Code sessions |
 
 ## License
 

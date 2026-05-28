@@ -117,6 +117,7 @@ def _process_chunk(
     ensemble: bool,
     bg_removal: bool,
     mode: Optional[str],
+    sidecar: Optional[str] = None,
 ) -> tuple[int, str]:
     """Process a single PDF chunk through ocrmypdf. Runs in a worker process."""
     import ocrmypdf as _ocrmypdf
@@ -126,19 +127,25 @@ def _process_chunk(
     _plugin.BACKGROUND_REMOVAL = bg_removal
     _ensure_ghostscript_on_path()
 
+    ocr_kwargs: dict = dict(
+        language=[language],
+        deskew=deskew,
+        clean=clean,
+        mode=mode,
+        optimize=optimize,
+        output_type=output_type,
+        plugins=[plugin_path],
+        progress_bar=False,
+        jobs=1,
+    )
+    if sidecar:
+        ocr_kwargs["sidecar"] = sidecar
+
     try:
         result = _ocrmypdf.ocr(
             source_chunk,
             output_chunk,
-            language=[language],
-            deskew=deskew,
-            clean=clean,
-            mode=mode,
-            optimize=optimize,
-            output_type=output_type,
-            plugins=[plugin_path],
-            progress_bar=False,
-            jobs=1,
+            **ocr_kwargs,
         )
         return (result, output_chunk)
     except _ocrmypdf.PriorOcrFoundError:
@@ -439,6 +446,7 @@ def _convert_chunked(
                     ensemble,
                     bg_removal,
                     ocr_mode,
+                    chunk_sidecar,
                 )
                 futures[fut] = i
 

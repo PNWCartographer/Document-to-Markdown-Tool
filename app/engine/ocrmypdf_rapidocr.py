@@ -78,27 +78,30 @@ class RapidOcrEngine(ocrmypdf.OcrEngine):
         from rapidocr_onnxruntime import RapidOCR
 
         img = Image.open(input_file)
-        width, height = img.size
-        img_array = np.array(img.convert("RGB"))
+        try:
+            width, height = img.size
+            img_array = np.array(img.convert("RGB"))
 
-        if BACKGROUND_REMOVAL:
-            img_array = _remove_background(img_array)
+            if BACKGROUND_REMOVAL:
+                img_array = _remove_background(img_array)
 
-        engine = RapidOCR()
-        raw, _ = engine(img_array)
+            engine = RapidOCR()
+            raw, _ = engine(img_array)
 
-        if ENSEMBLE_MODE:
-            word_elements, lines_text = _generate_ensemble_hocr(
-                img, img_array, raw, width, height,
-            )
-        else:
-            word_elements, lines_text = _generate_rapidocr_hocr(
-                raw, width, height,
-            )
+            if ENSEMBLE_MODE:
+                word_elements, lines_text = _generate_ensemble_hocr(
+                    img, img_array, raw, width, height,
+                )
+            else:
+                word_elements, lines_text = _generate_rapidocr_hocr(
+                    raw, width, height,
+                )
 
-        hocr = _build_hocr(width, height, word_elements)
-        output_hocr.write_text(hocr, encoding="utf-8")
-        output_text.write_text("\n".join(lines_text), encoding="utf-8")
+            hocr = _build_hocr(width, height, word_elements)
+            output_hocr.write_text(hocr, encoding="utf-8")
+            output_text.write_text("\n".join(lines_text), encoding="utf-8")
+        finally:
+            img.close()
 
     @staticmethod
     def generate_pdf(

@@ -4712,7 +4712,12 @@ class App:
             success, msg = _license_mod.activate_license(key)
             if success:
                 status_lbl.config(text=msg, fg="#22c55e")
-                win.after(1500, win.destroy)
+                def _safe_close():
+                    try:
+                        win.destroy()
+                    except Exception:
+                        pass
+                win.after(1500, _safe_close)
             else:
                 status_lbl.config(text=msg, fg="#ef4444")
 
@@ -5387,7 +5392,10 @@ class App:
             download_url = data.get("download_url", "https://darksquare.dev")
             if latest and latest != self._APP_VERSION:
                 # Schedule UI notification on the main thread
-                self.root.after(0, lambda: self._show_update_banner(latest, download_url))
+                try:
+                    self.root.after(0, lambda: self._show_update_banner(latest, download_url))
+                except Exception:
+                    pass  # root may have been destroyed during shutdown
         except Exception:
             pass  # silent — no network is fine
 
@@ -5460,7 +5468,10 @@ class App:
             return
 
         # Schedule the themed dialog on the main thread
-        self.root.after(500, lambda m=missing: self._show_dependency_dialog(m))
+        try:
+            self.root.after(500, lambda m=missing: self._show_dependency_dialog(m))
+        except Exception:
+            pass  # root may have been destroyed during shutdown
 
     def _show_dependency_dialog(self, missing: list):
         """Show a themed dialog listing missing optional components.

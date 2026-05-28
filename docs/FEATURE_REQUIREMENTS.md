@@ -126,7 +126,7 @@ output/
     SourceDocumentName.md
     assets/
     confidence_report.txt
-    logs/
+    conversion_log.txt
 ```
 
 ### Auto-Chunking for Large Documents
