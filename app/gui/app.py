@@ -660,6 +660,7 @@ class App:
         )
         self._glass_scrollbars.append(self._file_scrollbar)
         self._file_listbox.config(yscrollcommand=self._file_scrollbar.set)
+        self._bind_scroll(self._file_listbox)
 
         # ── File count ───────────────────────────────────────
         self._lbl_file_count = tk.Label(f, text="0 files selected", font=_FONT_SMALL, anchor="w")
@@ -787,11 +788,10 @@ class App:
         self._settings_content.bind("<Configure>", _on_content_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
 
-        self._settings_scroll_outer.bind(
+        self._bind_scroll(self._settings_scroll_outer, target=canvas)
+        self._bind_scroll(canvas)
+        self._settings_content.bind(
             "<Enter>", lambda _e: setattr(self, '_scroll_target', canvas))
-        self._settings_scroll_outer.bind(
-            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
-            if self._scroll_target is canvas else None)
 
         self._settings_canvas = canvas
 
@@ -1356,6 +1356,7 @@ class App:
         self._conv_log.config(yscrollcommand=self._conv_log_sb.set)
         self._conv_log.grid(row=0, column=0, sticky="nsew")
         self._conv_log_sb.grid(row=0, column=1, sticky="ns")
+        self._bind_scroll(self._conv_log)
 
         # ── Cancel button ────────────────────────────────────
         self._btn_cancel = PillButton(
@@ -1403,11 +1404,9 @@ class App:
         rc.bind("<Configure>", _on_rc_configure)
         r_canvas.bind("<Configure>", _on_rcanvas_configure)
 
-        self._results_scroll_outer.bind(
-            "<Enter>", lambda _e: setattr(self, '_scroll_target', r_canvas))
-        self._results_scroll_outer.bind(
-            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
-            if self._scroll_target is r_canvas else None)
+        self._bind_scroll(self._results_scroll_outer, target=r_canvas)
+        self._bind_scroll(r_canvas)
+        rc.bind("<Enter>", lambda _e: setattr(self, '_scroll_target', r_canvas))
 
         self._results_canvas = r_canvas
         self._results_content = rc
@@ -1501,11 +1500,7 @@ class App:
 
         self._results_files_canvas = files_canvas
 
-        files_canvas.bind(
-            "<Enter>", lambda _e: setattr(self, '_scroll_target', files_canvas))
-        files_canvas.bind(
-            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
-            if self._scroll_target is files_canvas else None)
+        self._bind_scroll(files_canvas, parent_target=r_canvas)
         self._results_files_inner.bind(
             "<Enter>", lambda _e: setattr(self, '_scroll_target', files_canvas))
 
@@ -1609,6 +1604,7 @@ class App:
             yscrollcommand=self._results_val_issues_sb.set)
         self._results_val_issues_text.grid(row=0, column=0, sticky="nsew")
         self._results_val_issues_sb.grid(row=0, column=1, sticky="ns")
+        self._bind_scroll(self._results_val_issues_text, parent_target=r_canvas)
 
         # ── Warnings ─────────────────────────────────────────
         self._results_warn_lbl = tk.Label(rc, text="Warnings", font=_FONT_SMALL, anchor="w")
@@ -1636,6 +1632,7 @@ class App:
         self._results_warn_text.config(yscrollcommand=self._results_warn_sb.set)
         self._results_warn_text.grid(row=0, column=0, sticky="nsew")
         self._results_warn_sb.grid(row=0, column=1, sticky="ns")
+        self._bind_scroll(self._results_warn_text, parent_target=r_canvas)
 
         # ── Button row ───────────────────────────────────────
         self._results_btn_row = tk.Frame(rc)
@@ -1856,6 +1853,7 @@ class App:
         self._watch_log.config(yscrollcommand=self._watch_log_sb.set)
         self._watch_log.grid(row=0, column=0, sticky="nsew")
         self._watch_log_sb.grid(row=0, column=1, sticky="ns")
+        self._bind_scroll(self._watch_log)
 
         # ── Bottom button row ────────────────────────────────
         self._watch_btn_row = tk.Frame(f)
@@ -2108,6 +2106,13 @@ class App:
         text.config(yscrollcommand=sb.set)
         text.grid(row=0, column=0, sticky="nsew")
         sb.grid(row=0, column=1, sticky="ns")
+        self._bind_scroll(text)
+
+        def _on_debug_close():
+            if self._scroll_target is text:
+                self._scroll_target = None
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _on_debug_close)
 
         lines = []
         lines.append("═══  CONVERSION DEBUG INFO  ═══\n")
@@ -2282,6 +2287,7 @@ class App:
             highlightbackground=t["border"],
         )
         profile_listbox.grid(row=0, column=0, sticky="nsew")
+        self._bind_scroll(profile_listbox)
 
         # Right: rules panel
         right = tk.Frame(body, bg=t["bg"])
@@ -2341,6 +2347,7 @@ class App:
             highlightbackground=t["border"], height=6,
         )
         rule_listbox.grid(row=1, column=0, sticky="nsew")
+        self._bind_scroll(rule_listbox)
 
         # Rule editor fields
         editor = tk.Frame(right, bg=t["bg"])
@@ -2499,6 +2506,8 @@ class App:
             profile_names = ["None"] + [p.name for p in profiles]
             self._rules_profile_dd.set_values(profile_names)
             _cleanup_rule_traces()
+            if self._scroll_target in (profile_listbox, rule_listbox):
+                self._scroll_target = None
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", save_and_close)
@@ -2923,6 +2932,7 @@ class App:
             padx=12, pady=8, state="disabled",
         )
         source_text.pack(fill="both", expand=True)
+        self._bind_scroll(source_text)
 
         # Pages view (scrollable canvas for rendered source pages)
         source_pages_frame = tk.Frame(left_frame, bg=t["bg"])
@@ -3202,6 +3212,7 @@ class App:
                           lambda e: (preview_text.xview_scroll(3, "units"), "break")[-1])
         preview_text.grid(row=0, column=0, sticky="nsew")
         preview_sb.grid(row=0, column=1, sticky="ns")
+        self._bind_scroll(preview_text)
 
         # ── Text tags for syntax highlighting ────────────────
         preview_text.tag_configure("heading", font=(_FONT_FAMILY, 14, "bold"), foreground=t["accent"])
@@ -3784,6 +3795,13 @@ class App:
             except Exception: pass
             try: file_var.trace_remove("write", _file_trace)
             except Exception: pass
+            # Clear scroll target if it pointed to a widget inside this window
+            try:
+                st = self._scroll_target
+                if st is not None and st.winfo_toplevel() is win:
+                    self._scroll_target = None
+            except Exception:
+                pass
             win.destroy()
         win.protocol("WM_DELETE_WINDOW", _on_preview_close)
 
@@ -3882,6 +3900,7 @@ class App:
         lb.config(yscrollcommand=sb.set)
         lb.grid(row=0, column=0, sticky="nsew", padx=(4, 0), pady=4)
         sb.grid(row=0, column=1, sticky="ns", pady=4)
+        self._bind_scroll(lb)
 
         for f in found:
             if f in already:
@@ -3890,13 +3909,19 @@ class App:
                 lb.insert(tk.END, f"  {os.path.basename(f)}")
 
         # ── Button row (already packed at bottom) ────────────
+        def _close_dlg():
+            if self._scroll_target is lb:
+                self._scroll_target = None
+            dlg.destroy()
+
         def confirm():
             for f in new_files:
                 self._selected_files.append(f)
             self._update_file_list()
-            dlg.destroy()
+            _close_dlg()
 
-        btn_cancel = PillButton(btn_row, text="Cancel", command=dlg.destroy,
+        dlg.protocol("WM_DELETE_WINDOW", _close_dlg)
+        btn_cancel = PillButton(btn_row, text="Cancel", command=_close_dlg,
                                 font=_FONT_SMALL, style="secondary", padx=14, pady=6)
         btn_cancel.set_colors(
             fill=t["content_bg"], fg=t["accent"], outline=t["border"],
@@ -4539,6 +4564,11 @@ class App:
         btn_bar = tk.Frame(win, bg=t["bg"])
         btn_bar.pack(fill="x", padx=16, pady=(0, 16))
 
+        def _close_page_dlg():
+            if self._scroll_target is canvas:
+                self._scroll_target = None
+            win.destroy()
+
         def _apply():
             selected = sorted(p for p, v in page_selected.items() if v.get())
             if len(selected) == total or not selected:
@@ -4546,8 +4576,9 @@ class App:
             else:
                 self._file_page_ranges[pdf_path] = selected
             self._update_file_list()
-            win.destroy()
+            _close_page_dlg()
 
+        win.protocol("WM_DELETE_WINDOW", _close_page_dlg)
         btn_apply = PillButton(btn_bar, text="Apply", font=(_FONT_FAMILY, 10, "bold"),
                                style="primary", padx=24, pady=8, command=_apply)
         btn_apply.pack(side="right", padx=(4, 0))
@@ -4556,7 +4587,7 @@ class App:
 
         btn_cancel = PillButton(btn_bar, text="Cancel", font=_FONT_SMALL,
                                 style="secondary", padx=16, pady=6,
-                                command=win.destroy)
+                                command=_close_page_dlg)
         btn_cancel.pack(side="right", padx=(0, 4))
         btn_cancel.set_colors(fill=t["bg"], fg=t["text"],
                               hover_fill=t["accent"], parent_bg=t["bg"])
@@ -5381,6 +5412,36 @@ class App:
                 return -event.delta
             return -1 * (event.delta // 120)
         return 0
+
+    def _bind_scroll(self, widget, target=None, parent_target=None):
+        """Bind mouse-wheel scroll support on *widget*.
+
+        Parameters
+        ----------
+        widget : tk widget
+            The widget that receives <Enter>/<Leave> events.
+        target : tk widget or None
+            The scrollable widget whose yview_scroll is called.
+            Defaults to *widget* itself.
+        parent_target : tk widget or None
+            If set, <Leave> restores _scroll_target to this widget
+            (useful for nested scrollable areas inside a canvas).
+            If None, <Leave> clears _scroll_target to None.
+        """
+        target = target or widget
+        widget.bind("<Enter>", lambda _e, t=target: setattr(self, '_scroll_target', t))
+        if parent_target is not None:
+            widget.bind(
+                "<Leave>",
+                lambda _e, t=target, p=parent_target:
+                    setattr(self, '_scroll_target', p)
+                    if self._scroll_target is t else None)
+        else:
+            widget.bind(
+                "<Leave>",
+                lambda _e, t=target:
+                    setattr(self, '_scroll_target', None)
+                    if self._scroll_target is t else None)
 
     # ── Startup checks ──────────────────────────────────────
 
