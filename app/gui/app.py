@@ -2083,7 +2083,10 @@ class App:
         t = self._t
         win = tk.Toplevel(self.root)
         win.title("Debug Info — Conversion Diagnostics")
-        win.geometry("680x500")
+        _dw, _dh = 680, 500
+        _dx = self.root.winfo_x() + (self.root.winfo_width() - _dw) // 2
+        _dy = self.root.winfo_y() + (self.root.winfo_height() - _dh) // 2
+        win.geometry(f"{_dw}x{_dh}+{_dx}+{_dy}")
         win.config(bg=t["bg"])
         self._set_titlebar_dark(self._dark, win)
 
@@ -2210,7 +2213,10 @@ class App:
         t = self._t
         win = tk.Toplevel(self.root)
         win.title("Post-Processing Rules")
-        win.geometry("780x520")
+        _rw, _rh = 780, 520
+        _rx = self.root.winfo_x() + (self.root.winfo_width() - _rw) // 2
+        _ry = self.root.winfo_y() + (self.root.winfo_height() - _rh) // 2
+        win.geometry(f"{_rw}x{_rh}+{_rx}+{_ry}")
         win.config(bg=t["bg"])
         self._set_titlebar_dark(self._dark, win)
         win.transient(self.root)
@@ -2542,7 +2548,12 @@ class App:
         t = self._t
         win = tk.Toplevel(self.root)
         win.title("Preview — Source vs. Converted Output")
-        win.geometry(f"{int(1100 * self._dpi)}x{int(650 * self._dpi)}")
+        win_w = int(1100 * self._dpi)
+        win_h = int(650 * self._dpi)
+        # Centre on the main window so it opens on the same monitor
+        rx = self.root.winfo_x() + (self.root.winfo_width() - win_w) // 2
+        ry = self.root.winfo_y() + (self.root.winfo_height() - win_h) // 2
+        win.geometry(f"{win_w}x{win_h}+{rx}+{ry}")
         win.minsize(int(800 * self._dpi), int(400 * self._dpi))
         win.config(bg=t["bg"])
         self._set_titlebar_dark(self._dark, win)
@@ -3848,7 +3859,10 @@ class App:
         t = self._t
         dlg = tk.Toplevel(self.root)
         dlg.title("Confirm Files to Add")
-        dlg.geometry("520x400")
+        _fw, _fh = 520, 400
+        _fx = self.root.winfo_x() + (self.root.winfo_width() - _fw) // 2
+        _fy = self.root.winfo_y() + (self.root.winfo_height() - _fh) // 2
+        dlg.geometry(f"{_fw}x{_fh}+{_fx}+{_fy}")
         dlg.resizable(True, True)
         dlg.minsize(400, 300)
         self._set_titlebar_dark(self._dark, dlg)
@@ -4707,7 +4721,11 @@ class App:
         t = self._t
         win = tk.Toplevel(self.root)
         win.title("License Required")
-        win.geometry(f"{int(480 * self._dpi)}x{int(340 * self._dpi)}")
+        _lw = int(480 * self._dpi)
+        _lh = int(340 * self._dpi)
+        _lx = self.root.winfo_x() + (self.root.winfo_width() - _lw) // 2
+        _ly = self.root.winfo_y() + (self.root.winfo_height() - _lh) // 2
+        win.geometry(f"{_lw}x{_lh}+{_lx}+{_ly}")
         win.config(bg=t["bg"])
         win.transient(self.root)
         win.grab_set()
@@ -4800,7 +4818,11 @@ class App:
         t = self._t
         win = tk.Toplevel(self.root)
         win.title("About — Doc to Markdown")
-        win.geometry(f"{int(560 * self._dpi)}x{int(560 * self._dpi)}")
+        _aw = int(560 * self._dpi)
+        _ah = int(560 * self._dpi)
+        _ax = self.root.winfo_x() + (self.root.winfo_width() - _aw) // 2
+        _ay = self.root.winfo_y() + (self.root.winfo_height() - _ah) // 2
+        win.geometry(f"{_aw}x{_ah}+{_ax}+{_ay}")
         win.config(bg=t["bg"])
         win.transient(self.root)
         self._set_titlebar_dark(self._dark, win)
