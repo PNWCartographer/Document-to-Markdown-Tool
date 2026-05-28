@@ -637,10 +637,318 @@ def test_overwrite_protection():
 
 
 # ═══════════════════════════════════════════════════════════════════
+# STRESS TESTS — activated via --stress <path>
+# ═══════════════════════════════════════════════════════════════════
+
+_STRESS_TIMEOUT = 7200  # 2 hours per conversion (large books)
+
+
+def _run_stress(files, cfg_overrides=None, page_ranges=None):
+    """Like run_conversion() but with a much longer timeout for large files."""
+    from engine.converter import ConversionJob
+
+    cfg_base = {
+        "conversion_mode": "Auto-detect",
+        "preserve_images": True,
+        "preserve_page_numbers": True,
+        "rebuild_toc": True,
+        "embed_images": False,        # False for stress — avoids huge base64 output
+        "remove_headers_footers": True,
+        "skip_blank_pages": True,
+        "strip_line_numbers": False,
+        "detect_code_blocks": True,
+        "detect_footnotes": True,
+        "detect_equations": True,
+        "parallel_workers": "Auto",   # Use system-recommended parallelism
+        "quality_preset": "Fast",
+        "ocr_language": "English",
+        "output_format": "Markdown",
+        "markdown_flavor": "GFM",
+        "yaml_front_matter": True,
+        "overwrite_existing": True,
+        "output_subfolder": True,
+        "auto_translate": True,
+        "dxf_svg_preview": True,
+        "ocr_engine": "Auto",
+        "rules_profile": "None",
+        "spdf_deskew": True,
+        "spdf_clean": False,
+        "spdf_force_ocr": False,
+        "spdf_optimize": 1,
+        "spdf_pdfa": False,
+        "spdf_sidecar": False,
+        "spdf_rag_sidecar": False,
+        "spdf_bg_removal": False,
+    }
+    if cfg_overrides:
+        cfg_base.update(cfg_overrides)
+
+    output_dir = os.path.join(TEST_OUTPUT_ROOT, f"stress_{int(time.time()*1000)}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    root = _SHARED_ROOT
+    log_lines = []
+    done_event = threading.Event()
+    result_holder = [None]
+    progress_holder = [0.0]
+
+    def on_log(msg): log_lines.append(msg)
+    def on_file_progress(p):
+        if p >= 0:
+            progress_holder[0] = p
+    def on_overall_progress(p): pass
+    def on_file_start(fname, idx, total):
+        log(f"    → [{idx}/{total}] {fname}")
+    def on_stage(s):
+        if s:
+            log(f"    stage: {s}")
+    def on_done(batch_result):
+        result_holder[0] = batch_result
+        done_event.set()
+
+    job = ConversionJob(
+        files=files,
+        aliases={},
+        output_root=output_dir,
+        cfg=cfg_base,
+        root=root,
+        on_log=on_log,
+        on_file_progress=on_file_progress,
+        on_overall_progress=on_overall_progress,
+        on_file_start=on_file_start,
+        on_stage=on_stage,
+        on_done=on_done,
+        page_ranges=page_ranges,
+    )
+    job._gui = lambda fn, *a: fn(*a)
+    job.start()
+
+    # Long timeout for stress tests — report progress every 30s
+    deadline = time.time() + _STRESS_TIMEOUT
+    last_report = time.time()
+    while not done_event.is_set() and time.time() < deadline:
+        try:
+            root.update()
+        except Exception:
+            break
+        time.sleep(0.1)
+        now = time.time()
+        if now - last_report > 30:
+            elapsed = int(now - (deadline - _STRESS_TIMEOUT))
+            pct = progress_holder[0] * 100
+            log(f"    ... {elapsed}s elapsed, ~{pct:.0f}% file progress")
+            last_report = now
+
+    return result_holder[0], output_dir, log_lines
+
+
+def stress_full_markdown_fast(stress_file):
+    """Stress S1: Full book — Markdown, Fast preset."""
+    log("\n═══ STRESS S1: Full book — Markdown (Fast) ═══")
+    t0 = time.time()
+    result, out_dir, logs = _run_stress([stress_file], {"quality_preset": "Fast"})
+    elapsed = time.time() - t0
+    log(f"    Elapsed: {elapsed:.1f}s")
+
+    check("S1 — conversion completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}")
+    md = read_output(out_dir)
+    check("S1 — output file exists", md is not None)
+    if md:
+        size_kb = len(md.encode("utf-8")) / 1024
+        log(f"    Output size: {size_kb:.0f} KB")
+        check("S1 — output > 10 KB", size_kb > 10, f"only {size_kb:.0f} KB")
+        # Spot-check structure
+        check("S1 — has headings", "##" in md or "# " in md, "no markdown headings found")
+        check("S1 — has page markers", "Page" in md or "page" in md, "no page references")
+    if result and result.all_confidence:
+        c = result.all_confidence[0]
+        log(f"    Confidence: overall={c.overall}, text={c.text_extraction}, "
+            f"tables={c.table_structure}, images={c.image_extraction}")
+
+
+def stress_full_markdown_balanced(stress_file):
+    """Stress S2: Full book — Markdown, Balanced preset (docling)."""
+    log("\n═══ STRESS S2: Full book — Markdown (Balanced) ═══")
+    t0 = time.time()
+    result, out_dir, logs = _run_stress([stress_file], {"quality_preset": "Balanced"})
+    elapsed = time.time() - t0
+    log(f"    Elapsed: {elapsed:.1f}s")
+
+    check("S2 — conversion completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}")
+    md = read_output(out_dir)
+    if md:
+        size_kb = len(md.encode("utf-8")) / 1024
+        log(f"    Output size: {size_kb:.0f} KB")
+        check("S2 — output > 10 KB", size_kb > 10, f"only {size_kb:.0f} KB")
+        # Compare table rendering — docling should produce proper tables
+        table_count = md.count("| --- |") + md.count("|---|")
+        check("S2 — tables detected", table_count > 0, "no markdown tables found")
+
+
+def stress_full_searchable_pdf(stress_file):
+    """Stress S3: Full book — Searchable PDF output."""
+    log("\n═══ STRESS S3: Full book — Searchable PDF ═══")
+    t0 = time.time()
+    result, out_dir, logs = _run_stress(
+        [stress_file],
+        {"output_format": "Searchable PDF", "quality_preset": "Fast"},
+    )
+    elapsed = time.time() - t0
+    log(f"    Elapsed: {elapsed:.1f}s")
+
+    check("S3 — conversion completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}")
+    # Check for PDF output
+    pdf_out = find_output_file(out_dir, ".pdf")
+    check("S3 — searchable PDF exists", pdf_out is not None, "no .pdf output found")
+    if pdf_out:
+        size_mb = os.path.getsize(pdf_out) / (1024 * 1024)
+        log(f"    PDF size: {size_mb:.1f} MB")
+        check("S3 — PDF > 1 MB", size_mb > 1, f"only {size_mb:.2f} MB")
+
+
+def stress_page_range_samples(stress_file):
+    """Stress S4: Spot-check specific page ranges from the book."""
+    log("\n═══ STRESS S4: Page range spot-checks ═══")
+
+    # First 20 pages (title, TOC, intro)
+    result, out_dir, _ = _run_stress(
+        [stress_file],
+        {"quality_preset": "Fast"},
+        page_ranges={stress_file: list(range(1, 21))},
+    )
+    md = read_output(out_dir)
+    check("S4a — pages 1-20 converts", md is not None and len(md.strip()) > 100)
+
+    # Mid-book pages (likely content-heavy)
+    result, out_dir, _ = _run_stress(
+        [stress_file],
+        {"quality_preset": "Fast"},
+        page_ranges={stress_file: list(range(500, 521))},
+    )
+    md = read_output(out_dir)
+    check("S4b — pages 500-520 converts", md is not None and len(md.strip()) > 100)
+
+    # Near-end pages
+    result, out_dir, _ = _run_stress(
+        [stress_file],
+        {"quality_preset": "Fast"},
+        page_ranges={stress_file: list(range(1380, 1401))},
+    )
+    md = read_output(out_dir)
+    check("S4c — near-end pages convert",
+          md is not None and len(md.strip()) > 50,
+          "output too short or missing — page range may exceed book length (OK)")
+
+
+def stress_cancel_large(stress_file):
+    """Stress S5: Cancel mid-conversion on the large file."""
+    log("\n═══ STRESS S5: Cancel large file mid-conversion ═══")
+
+    root = _SHARED_ROOT
+    done_event = threading.Event()
+    result_holder = [None]
+
+    def on_done(br):
+        result_holder[0] = br
+        done_event.set()
+
+    from engine.converter import ConversionJob
+
+    output_dir = os.path.join(TEST_OUTPUT_ROOT, f"stress_cancel_{int(time.time()*1000)}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    job = ConversionJob(
+        files=[stress_file], aliases={}, output_root=output_dir,
+        cfg={"parallel_workers": "1", "output_format": "Markdown",
+             "overwrite_existing": True, "output_subfolder": True,
+             "ocr_engine": "Auto", "yaml_front_matter": True,
+             "preserve_page_numbers": True, "rebuild_toc": True,
+             "embed_images": False, "quality_preset": "Fast",
+             "conversion_mode": "Auto-detect", "preserve_images": True,
+             "remove_headers_footers": True, "skip_blank_pages": True,
+             "strip_line_numbers": False, "detect_code_blocks": True,
+             "detect_footnotes": True, "detect_equations": True,
+             "auto_translate": True, "dxf_svg_preview": True,
+             "rules_profile": "None", "ocr_language": "English",
+             "markdown_flavor": "GFM"},
+        root=root,
+        on_log=lambda m: None, on_file_progress=lambda p: None,
+        on_overall_progress=lambda p: None,
+        on_file_start=lambda f, i, t: None,
+        on_stage=lambda s: None, on_done=on_done,
+    )
+    job._gui = lambda fn, *a: fn(*a)
+    job.start()
+
+    # Let it run 5 seconds then cancel
+    cancel_at = time.time() + 5
+    while not done_event.is_set() and time.time() < cancel_at:
+        try:
+            root.update()
+        except Exception:
+            break
+        time.sleep(0.05)
+
+    if not done_event.is_set():
+        job.cancel()
+        deadline = time.time() + 60
+        while not done_event.is_set() and time.time() < deadline:
+            try:
+                root.update()
+            except Exception:
+                break
+            time.sleep(0.05)
+
+    result = result_holder[0]
+    check("S5 — cancel completes without crash", result is not None)
+    check("S5 — cancelled flag set",
+          result is not None and result.cancelled,
+          f"cancelled={getattr(result, 'cancelled', '?')}")
+
+
+def stress_memory_check(stress_file):
+    """Stress S6: Monitor peak memory during full conversion."""
+    log("\n═══ STRESS S6: Memory usage during conversion ═══")
+    import psutil
+    process = psutil.Process(os.getpid())
+    mem_before = process.memory_info().rss / (1024 * 1024)
+    log(f"    Memory before: {mem_before:.0f} MB")
+
+    result, out_dir, _ = _run_stress([stress_file], {"quality_preset": "Fast"})
+
+    mem_after = process.memory_info().rss / (1024 * 1024)
+    log(f"    Memory after:  {mem_after:.0f} MB")
+    log(f"    Delta:         {mem_after - mem_before:.0f} MB")
+
+    check("S6 — conversion completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}")
+    # Warn if memory grew by more than 2 GB
+    if mem_after - mem_before > 2048:
+        warn("S6 — memory grew > 2 GB", f"delta={mem_after - mem_before:.0f} MB")
+    else:
+        check("S6 — memory within bounds", True)
+
+
+# ═══════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Document-to-Markdown Engine Tests")
+    parser.add_argument("--stress", metavar="FILE",
+                        help="Path to a large PDF for stress testing")
+    parser.add_argument("--stress-only", action="store_true",
+                        help="Skip normal tests, run only stress tests")
+    args = parser.parse_args()
+
     start = time.time()
     log("╔══════════════════════════════════════════════════════════╗")
     log("║   Document-to-Markdown Headless Engine Test Suite       ║")
@@ -651,32 +959,69 @@ def main():
 
     clean_output()
 
-    # Run all test suites
-    tests = [
-        test_basic_conversion_all_types,
-        test_yaml_front_matter,
-        test_preserve_page_numbers,
-        test_output_subfolder,
-        test_embed_images,
-        test_rebuild_toc,
-        test_ocr_engine_settings,
-        test_quality_presets,
-        test_mixed_batch,
-        test_edge_empty_file,
-        test_edge_unsupported_type,
-        test_cancel_midway,
-        test_page_range,
-        test_overwrite_protection,
-    ]
+    # ── Normal test suites ────────────────────────────────
+    if not args.stress_only:
+        tests = [
+            test_basic_conversion_all_types,
+            test_yaml_front_matter,
+            test_preserve_page_numbers,
+            test_output_subfolder,
+            test_embed_images,
+            test_rebuild_toc,
+            test_ocr_engine_settings,
+            test_quality_presets,
+            test_mixed_batch,
+            test_edge_empty_file,
+            test_edge_unsupported_type,
+            test_cancel_midway,
+            test_page_range,
+            test_overwrite_protection,
+        ]
 
-    for test_fn in tests:
-        try:
-            test_fn()
-        except Exception as e:
-            log(f"\n  ✗ SUITE CRASHED: {test_fn.__name__} — {e}")
-            traceback.print_exc()
-            global FAIL
+        for test_fn in tests:
+            try:
+                test_fn()
+            except Exception as e:
+                log(f"\n  ✗ SUITE CRASHED: {test_fn.__name__} — {e}")
+                traceback.print_exc()
+                global FAIL
+                FAIL += 1
+
+    # ── Stress tests (if file provided) ───────────────────
+    if args.stress:
+        stress_file = os.path.abspath(args.stress)
+        if not os.path.isfile(stress_file):
+            log(f"\n  ✗ Stress file not found: {stress_file}")
             FAIL += 1
+        else:
+            # Get page count for the log
+            try:
+                import fitz
+                with fitz.open(stress_file) as doc:
+                    pages = len(doc)
+                log(f"\n{'='*60}")
+                log(f"STRESS FILE: {os.path.basename(stress_file)}")
+                log(f"Pages: {pages:,}  |  Size: {os.path.getsize(stress_file)/(1024*1024):.1f} MB")
+                log(f"{'='*60}")
+            except Exception:
+                log(f"\n  Stress file: {stress_file}")
+
+            stress_tests = [
+                lambda: stress_full_markdown_fast(stress_file),
+                lambda: stress_full_markdown_balanced(stress_file),
+                lambda: stress_full_searchable_pdf(stress_file),
+                lambda: stress_page_range_samples(stress_file),
+                lambda: stress_cancel_large(stress_file),
+                lambda: stress_memory_check(stress_file),
+            ]
+
+            for test_fn in stress_tests:
+                try:
+                    test_fn()
+                except Exception as e:
+                    log(f"\n  ✗ STRESS CRASHED: {e}")
+                    traceback.print_exc()
+                    FAIL += 1
 
     elapsed = time.time() - start
     log(f"\n{'='*60}")

@@ -27,6 +27,34 @@ except ImportError:
 
 from .converter import ConversionJob
 
+# ---------------------------------------------------------------------------
+# Per-file timeout for watch folder conversions
+# ---------------------------------------------------------------------------
+# Base timeout (seconds) — minimum regardless of file size/page count.
+_BASE_TIMEOUT = 300
+# Extra seconds per page for PDF files (covers OCR + searchable PDF).
+_SECONDS_PER_PAGE = 30
+
+
+def _estimate_timeout(path: str) -> int:
+    """Return a generous conversion timeout in seconds based on file type.
+
+    PDFs are probed for page count so large documents don't time out.
+    Non-PDF files and unreadable PDFs fall back to the base timeout.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        try:
+            import fitz  # pymupdf — fast page count without full parse
+            with fitz.open(path) as doc:
+                pages = len(doc)
+            return max(_BASE_TIMEOUT, pages * _SECONDS_PER_PAGE)
+        except Exception:
+            pass
+    # Non-PDF or probe failed: generous 1-hour default
+    return max(_BASE_TIMEOUT, 3600)
+
+
 _SUPPORTED_EXTS = {
     ".pdf", ".docx", ".doc", ".rtf", ".xlsx", ".xls", ".csv",
     ".pptx", ".epub", ".dxf", ".html", ".htm",
@@ -249,7 +277,8 @@ class FolderWatcher:
             )
             job.start()
 
-            done_event.wait(timeout=300)
+            timeout = _estimate_timeout(path)
+            done_event.wait(timeout=timeout)
 
             if result_holder:
                 br = result_holder[0]

@@ -33,6 +33,25 @@ class ConversionCancelled(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Shared PDF utility
+# ---------------------------------------------------------------------------
+
+def get_pdf_page_count(path: str) -> int | None:
+    """Return the number of pages in a PDF, or None on error.
+
+    Uses pymupdf (fitz) for fast page count without full content parse.
+    This is intentionally cheap — it only reads the PDF catalog, so even
+    a 1400-page file returns in milliseconds.
+    """
+    try:
+        import fitz
+        with fitz.open(path) as doc:
+            return len(doc)
+    except Exception:
+        return None
+
+
 def convert(
     source_file: str,
     alias: str = "",

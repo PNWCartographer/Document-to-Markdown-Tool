@@ -351,9 +351,10 @@ class App:
         self._results_files_inner: "tk.Frame | None" = None
         self._results_files_canvas: "tk.Canvas | None" = None
 
-        # Elapsed timer state (Item 3)
+        # Elapsed timer + ETA state
         self._elapsed_start: float = 0.0
         self._elapsed_after_id = None
+        self._overall_progress_frac: float = 0.0  # 0..1, updated by callback
         # Results nav flash state (Item 5)
         self._results_notify_id = None
         # Watch folder flash state
@@ -1898,7 +1899,13 @@ class App:
 
     def _tick_elapsed(self) -> None:
         delta = int(time.monotonic() - self._elapsed_start)
-        self._conv_elapsed_lbl.config(text=self._format_elapsed(delta))
+        text = self._format_elapsed(delta)
+        # Append ETA once we have meaningful progress (>5% and >10s elapsed)
+        frac = self._overall_progress_frac
+        if 0.05 < frac < 1.0 and delta > 10:
+            remaining = int(delta / frac * (1.0 - frac))
+            text += f"  ·  ~{self._format_elapsed(remaining)} left"
+        self._conv_elapsed_lbl.config(text=text)
         self._elapsed_after_id = self.root.after(1000, self._tick_elapsed)
 
     def _stop_elapsed_timer(self) -> None:
@@ -3990,6 +3997,10 @@ class App:
             self._lbl_empty.grid()
         else:
             label = f"1 file selected" if count == 1 else f"{count} files selected"
+            # Show total PDF page count when relevant
+            page_info = self._get_pdf_page_summary()
+            if page_info:
+                label += f"  ·  {page_info}"
             self._lbl_file_count.config(text=label)
             # Show listbox, hide empty state
             self._lbl_empty.grid_remove()
@@ -3997,6 +4008,27 @@ class App:
             self._file_scrollbar.grid(row=0, column=1, sticky="ns", pady=4)
 
         self._check_start_ready()
+
+    def _get_pdf_page_summary(self) -> str:
+        """Return a short page-count string like '~1,400 pages' for PDFs.
+
+        Only shown when there are PDFs in the selection and the total
+        page count is notable (>= 20 pages).  Uses pymupdf for a fast
+        catalog-only read — no content parsing.
+        """
+        total = 0
+        for p in self._selected_files:
+            if os.path.splitext(p)[1].lower() == ".pdf":
+                try:
+                    from engine.pdf_converter import get_pdf_page_count
+                    n = get_pdf_page_count(p)
+                    if n:
+                        total += n
+                except Exception:
+                    pass
+        if total >= 20:
+            return f"~{total:,} pages"
+        return ""
 
     def _check_start_ready(self):
         ready = bool(self._selected_files) and bool(self._output_path)
@@ -4067,6 +4099,7 @@ class App:
 
     def _reset_conversion_screen(self):
         n = len(self._selected_files)
+        self._overall_progress_frac = 0.0
         self._conv_overall_bar.set_indeterminate(False)
         self._conv_file_bar.set_indeterminate(False)
         self._conv_overall_bar.set_progress(0.0)
@@ -4143,6 +4176,7 @@ class App:
         if fraction < 0:
             self._conv_overall_bar.set_indeterminate(True)
         else:
+            self._overall_progress_frac = fraction
             self._conv_overall_bar.set_progress(fraction)
 
     def _on_file_start(self, filename: str, idx: int, total: int) -> None:
