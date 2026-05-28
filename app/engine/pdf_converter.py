@@ -53,6 +53,7 @@ def convert(
     auto_translate: bool = True,
     prefer_engine: str = "rapidocr",
     ocr_dpi_scale: float = 4.0,
+    quality: str = "Quality",
     page_range: list[int] | None = None,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
@@ -129,10 +130,13 @@ def convert(
 
     # ------------------------------------------------------------------
     # Standard path: docling → pymupdf4llm → pymupdf
+    # Fast quality skips docling (heavy ML models) for maximum speed.
     # ------------------------------------------------------------------
     if conversion_mode == "Standard":
 
-        if _docling_available():
+        if quality == "Fast":
+            log_info("Fast mode — skipping docling, using lightweight engines.")
+        elif _docling_available():
             try:
                 result = _convert_docling(
                     source_file, alias, output_root, preserve_images,

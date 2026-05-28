@@ -563,6 +563,7 @@ class ConversionJob:
                 auto_translate=auto_translate,
                 prefer_engine=prefer_engine,
                 ocr_dpi_scale=ocr_dpi_scale,
+                quality=quality,
                 page_range=self._page_ranges.get(source_file),
                 stage_callback=stage,
                 cancel_event=self._cancel_event,
