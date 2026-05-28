@@ -179,6 +179,11 @@ class ConversionJob:
             if p >= 0:
                 composite = (self._seq_cur_idx + p) / total
                 _orig_overall_progress(composite)
+            else:
+                # Indeterminate file progress — pulse the overall bar too
+                # so the user sees activity on both bars during long
+                # blocking calls (e.g. docling).
+                _orig_overall_progress(-1.0)
 
         self._on_file_progress = _blended_file_progress
 

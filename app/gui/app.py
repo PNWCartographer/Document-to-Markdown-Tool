@@ -4100,7 +4100,10 @@ class App:
             self._conv_file_bar.set_progress(fraction)
 
     def _set_overall_progress(self, fraction: float) -> None:
-        self._conv_overall_bar.set_progress(fraction)
+        if fraction < 0:
+            self._conv_overall_bar.set_indeterminate(True)
+        else:
+            self._conv_overall_bar.set_progress(fraction)
 
     def _on_file_start(self, filename: str, idx: int, total: int) -> None:
         self._conv_file_name_lbl.config(text=filename)
