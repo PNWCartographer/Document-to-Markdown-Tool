@@ -1,0 +1,703 @@
+"""
+Headless engine test suite — exercises conversion engine across settings combos.
+
+Run from repo root:  python test_engine.py
+"""
+import os
+import sys
+import shutil
+import time
+import threading
+import traceback
+
+# Force UTF-8 stdout to avoid cp1252 encoding errors on Windows console
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# Add app/ to path so engine imports work
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "app"))
+
+TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), "test_files")
+TEST_OUTPUT_ROOT = os.path.join(os.path.dirname(__file__), "_test_output")
+
+# ── Helpers ──────────────────────────────────────────────────────
+
+PASS = 0
+FAIL = 0
+WARN = 0
+results_log = []
+
+
+def log(msg):
+    print(msg, flush=True)
+    results_log.append(msg)
+
+
+def check(name, condition, detail=""):
+    global PASS, FAIL
+    if condition:
+        PASS += 1
+        log(f"  ✓ {name}")
+    else:
+        FAIL += 1
+        log(f"  ✗ {name}" + (f" — {detail}" if detail else ""))
+
+
+def warn(name, detail=""):
+    global WARN
+    WARN += 1
+    log(f"  ⚠ {name}" + (f" — {detail}" if detail else ""))
+
+
+def clean_output():
+    if os.path.exists(TEST_OUTPUT_ROOT):
+        shutil.rmtree(TEST_OUTPUT_ROOT, ignore_errors=True)
+    os.makedirs(TEST_OUTPUT_ROOT, exist_ok=True)
+
+
+def find_output_file(output_dir, ext=".md"):
+    """Find first file with given extension in output dir (recursive)."""
+    for root, _dirs, files in os.walk(output_dir):
+        for f in files:
+            if f.endswith(ext):
+                return os.path.join(root, f)
+    return None
+
+
+def read_output(output_dir, ext=".md"):
+    """Read the first output file with given extension."""
+    path = find_output_file(output_dir, ext)
+    if path:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    return None
+
+
+def list_output_files(output_dir):
+    """List all files in output dir recursively."""
+    found = []
+    for root, _dirs, files in os.walk(output_dir):
+        for f in files:
+            found.append(os.path.relpath(os.path.join(root, f), output_dir))
+    return found
+
+
+# ── Persistent tkinter root (shared across all tests) ──────────────
+# Creating multiple tk.Tk() instances breaks the after() callback
+# mechanism.  We create one root at import time and reuse it.
+
+import tkinter as tk
+_SHARED_ROOT = tk.Tk()
+_SHARED_ROOT.withdraw()
+
+# ── Minimal headless conversion runner ────────────────────────────
+
+def run_conversion(files, cfg_overrides=None, page_ranges=None):
+    """Run conversion headlessly using ConversionJob with a hidden tk root."""
+    from engine.converter import ConversionJob
+
+    cfg_base = {
+        "conversion_mode": "Auto-detect",
+        "preserve_images": True,
+        "preserve_page_numbers": True,
+        "rebuild_toc": True,
+        "embed_images": True,
+        "remove_headers_footers": True,
+        "skip_blank_pages": True,
+        "strip_line_numbers": False,
+        "detect_code_blocks": True,
+        "detect_footnotes": True,
+        "detect_equations": True,
+        "parallel_workers": "1",
+        # Default to Fast for speed — docling (Quality) takes minutes per file.
+        # Tests that need Quality override this explicitly.
+        "quality_preset": "Fast",
+        "ocr_language": "English",
+        "output_format": "Markdown",
+        "markdown_flavor": "GFM",
+        "yaml_front_matter": True,
+        "overwrite_existing": True,
+        "output_subfolder": True,
+        "auto_translate": True,
+        "dxf_svg_preview": True,
+        "ocr_engine": "Auto",
+        "rules_profile": "None",
+        "spdf_deskew": True,
+        "spdf_clean": False,
+        "spdf_force_ocr": False,
+        "spdf_optimize": 1,
+        "spdf_pdfa": False,
+        "spdf_sidecar": False,
+        "spdf_rag_sidecar": False,
+        "spdf_bg_removal": False,
+    }
+    if cfg_overrides:
+        cfg_base.update(cfg_overrides)
+
+    output_dir = os.path.join(TEST_OUTPUT_ROOT, f"run_{int(time.time()*1000)}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    root = _SHARED_ROOT
+
+    log_lines = []
+    done_event = threading.Event()
+    result_holder = [None]
+
+    def on_log(msg): log_lines.append(msg)
+    def on_file_progress(p): pass
+    def on_overall_progress(p): pass
+    def on_file_start(fname, idx, total): pass
+    def on_stage(s): pass
+    def on_done(batch_result):
+        result_holder[0] = batch_result
+        done_event.set()
+
+    job = ConversionJob(
+        files=files,
+        aliases={},
+        output_root=output_dir,
+        cfg=cfg_base,
+        root=root,
+        on_log=on_log,
+        on_file_progress=on_file_progress,
+        on_overall_progress=on_overall_progress,
+        on_file_start=on_file_start,
+        on_stage=on_stage,
+        on_done=on_done,
+        page_ranges=page_ranges,
+    )
+
+    # Bypass root.after() — calling tkinter.after() from background threads
+    # silently fails on Python 3.14/Windows.  Direct-invoke is fine for tests.
+    job._gui = lambda fn, *a: fn(*a)
+
+    job.start()
+
+    # Pump the tkinter event loop until done (max 120s)
+    deadline = time.time() + 120
+    while not done_event.is_set() and time.time() < deadline:
+        try:
+            root.update()
+        except Exception:
+            break
+        time.sleep(0.05)
+
+    return result_holder[0], output_dir, log_lines
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST SUITES
+# ═══════════════════════════════════════════════════════════════════
+
+def test_basic_conversion_all_types():
+    """Test 1: Basic conversion of every file type with default settings."""
+    log("\n═══ TEST 1: Basic conversion — all file types (defaults) ═══")
+
+    test_files = {
+        "sample_annual_report.pdf": ".md",
+        "sample_requirements.docx": ".md",
+        "sample_ocr_image.png": ".md",
+        "sample_financials.xlsx": ".md",
+        "sample_spreadsheet.csv": ".md",
+        "sample_presentation.pptx": ".md",
+        "sample_report.html": ".md",
+        "sample_spec.rtf": ".md",
+    }
+
+    for fname, expected_ext in test_files.items():
+        fpath = os.path.join(TEST_FILES_DIR, fname)
+        if not os.path.isfile(fpath):
+            warn(f"{fname}", "file not found — skipping")
+            continue
+
+        try:
+            result, out_dir, logs = run_conversion([fpath])
+            check(f"{fname} — conversion completes",
+                  result is not None and result.completed >= 1,
+                  f"completed={getattr(result, 'completed', '?')}, failed={getattr(result, 'failed', '?')}")
+
+            md_content = read_output(out_dir, expected_ext)
+            check(f"{fname} — output file exists",
+                  md_content is not None,
+                  "no .md output found")
+
+            if md_content:
+                check(f"{fname} — output not empty",
+                      len(md_content.strip()) > 10,
+                      f"only {len(md_content.strip())} chars")
+
+                # Confidence result exists
+                if result and result.all_confidence:
+                    conf = result.all_confidence[0]
+                    check(f"{fname} — confidence reported",
+                          conf.overall is not None and conf.overall != "N/A",
+                          f"overall={conf.overall}")
+        except Exception as e:
+            check(f"{fname} — no crash", False, str(e))
+
+
+def test_yaml_front_matter():
+    """Test 2: YAML front matter toggle."""
+    log("\n═══ TEST 2: YAML front matter toggle ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_annual_report.pdf")
+
+    # With YAML
+    result, out_dir, _ = run_conversion([fpath], {"yaml_front_matter": True})
+    content = read_output(out_dir)
+    check("YAML=True — has front matter",
+          content is not None and content.strip().startswith("---"),
+          f"starts with: {repr(content[:30]) if content else 'None'}")
+
+    # Without YAML
+    result, out_dir, _ = run_conversion([fpath], {"yaml_front_matter": False})
+    content = read_output(out_dir)
+    check("YAML=False — no front matter",
+          content is not None and not content.strip().startswith("---"),
+          f"starts with: {repr(content[:30]) if content else 'None'}")
+
+
+def test_preserve_page_numbers():
+    """Test 3: Preserve page numbers toggle."""
+    log("\n═══ TEST 3: Page numbers toggle ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_annual_report.pdf")
+
+    # With page numbers
+    result, out_dir, _ = run_conversion([fpath], {"preserve_page_numbers": True})
+    content = read_output(out_dir)
+    has_markers = content is not None and ("<!-- Page" in content or "---\n\n## Page" in content
+                                           or "Page 1" in content)
+    check("page_numbers=True — has page markers",
+          has_markers,
+          "no page marker patterns found")
+
+    # Without page numbers
+    result, out_dir, _ = run_conversion([fpath], {"preserve_page_numbers": False})
+    content = read_output(out_dir)
+    no_markers = content is not None and "<!-- Page" not in content
+    check("page_numbers=False — no page markers",
+          no_markers,
+          "still found page markers")
+
+
+def test_output_subfolder():
+    """Test 4: Output subfolder toggle."""
+    log("\n═══ TEST 4: Output subfolder toggle ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_spreadsheet.csv")
+
+    # With subfolder
+    result, out_dir, _ = run_conversion([fpath], {"output_subfolder": True})
+    files = list_output_files(out_dir)
+    has_subfolder = any(os.sep in f or "/" in f for f in files)
+    check("subfolder=True — output in subfolder",
+          has_subfolder,
+          f"files: {files}")
+
+    # Without subfolder
+    result, out_dir, _ = run_conversion([fpath], {"output_subfolder": False})
+    files = list_output_files(out_dir)
+    all_flat = all(os.sep not in f and "/" not in f for f in files if f.endswith(".md"))
+    check("subfolder=False — output is flat",
+          all_flat,
+          f"files: {files}")
+
+
+def test_embed_images():
+    """Test 5: Embed images toggle."""
+    log("\n═══ TEST 5: Embed images toggle ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_ocr_image.png")
+
+    # Embed = True → base64 data URIs in markdown
+    result, out_dir, _ = run_conversion([fpath], {"embed_images": True})
+    content = read_output(out_dir)
+    has_base64 = content is not None and "data:image" in content
+    has_file_ref = content is not None and "assets/" in content
+    check("embed=True — has base64 data URIs OR file refs",
+          content is not None and (has_base64 or has_file_ref),
+          "no image references found")
+
+    # Embed = False → file path references
+    result, out_dir, _ = run_conversion([fpath], {"embed_images": False})
+    content = read_output(out_dir)
+    assets_files = list_output_files(out_dir)
+    has_asset_files = any("assets" in f for f in assets_files)
+    check("embed=False — assets folder created",
+          has_asset_files or (content is not None and "assets/" in content),
+          f"files: {assets_files}")
+
+
+def test_rebuild_toc():
+    """Test 6: Rebuild TOC toggle."""
+    log("\n═══ TEST 6: Rebuild TOC toggle ═══")
+
+    # Use docx which likely has headings
+    fpath = os.path.join(TEST_FILES_DIR, "sample_requirements.docx")
+
+    # TOC = True
+    result, out_dir, _ = run_conversion([fpath], {"rebuild_toc": True})
+    content = read_output(out_dir)
+    has_toc = content is not None and ("## Table of Contents" in content
+                                       or "## Contents" in content
+                                       or "- [" in content)
+    check("rebuild_toc=True — has TOC section",
+          has_toc,
+          "no TOC found (may be expected if doc has no headings)")
+
+    # TOC = False
+    result, out_dir, _ = run_conversion([fpath], {"rebuild_toc": False})
+    content = read_output(out_dir)
+    no_toc = content is not None and "## Table of Contents" not in content
+    check("rebuild_toc=False — no TOC section",
+          no_toc,
+          "still found TOC")
+
+
+def test_ocr_engine_settings():
+    """Test 7: OCR engine preference."""
+    log("\n═══ TEST 7: OCR engine settings ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_ocr_image.png")
+
+    for engine in ["RapidOCR", "Auto"]:
+        result, out_dir, _ = run_conversion([fpath], {"ocr_engine": engine})
+        content = read_output(out_dir)
+        check(f"ocr_engine={engine} — produces output",
+              content is not None and len(content.strip()) > 20,
+              f"content length: {len(content.strip()) if content else 0}")
+
+        if result and result.all_confidence:
+            conf = result.all_confidence[0]
+            check(f"ocr_engine={engine} — OCR confidence reported",
+                  conf.ocr_confidence is not None and conf.ocr_confidence != "N/A",
+                  f"ocr_confidence={conf.ocr_confidence}")
+
+
+def test_quality_presets():
+    """Test 8: Quality presets (Fast, Balanced, Quality)."""
+    log("\n═══ TEST 8: Quality presets ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_annual_report.pdf")
+
+    for preset in ["Fast", "Balanced", "Quality"]:
+        result, out_dir, logs = run_conversion([fpath], {"quality_preset": preset})
+        content = read_output(out_dir)
+        check(f"quality={preset} — conversion succeeds",
+              result is not None and result.completed >= 1,
+              f"completed={getattr(result, 'completed', '?')}")
+        check(f"quality={preset} — output not empty",
+              content is not None and len(content.strip()) > 10,
+              f"len={len(content.strip()) if content else 0}")
+
+
+def test_mixed_batch():
+    """Test 9: Mixed batch — multiple file types in one batch."""
+    log("\n═══ TEST 9: Mixed batch conversion ═══")
+
+    files = [
+        os.path.join(TEST_FILES_DIR, f) for f in [
+            "sample_annual_report.pdf",
+            "sample_requirements.docx",
+            "sample_spreadsheet.csv",
+            "sample_report.html",
+        ]
+    ]
+    files = [f for f in files if os.path.isfile(f)]
+
+    result, out_dir, _ = run_conversion(files)
+    check(f"mixed batch — all {len(files)} files complete",
+          result is not None and result.completed == len(files),
+          f"completed={getattr(result, 'completed', '?')}, failed={getattr(result, 'failed', '?')}")
+
+    check("mixed batch — per-file confidence results",
+          result is not None and len(result.all_confidence) == len(files),
+          f"got {len(result.all_confidence) if result else 0} confidence results")
+
+
+def test_edge_empty_file():
+    """Test 10: Edge case — empty/tiny file."""
+    log("\n═══ TEST 10: Edge case — empty file ═══")
+
+    # Create a 0-byte txt file (not a supported type, should fail gracefully)
+    empty_path = os.path.join(TEST_OUTPUT_ROOT, "empty_test.txt")
+    with open(empty_path, "w") as f:
+        pass
+
+    result, out_dir, logs = run_conversion([empty_path])
+    check("empty .txt — does not crash",
+          result is not None,
+          "result is None — crashed?")
+    # Engine may treat .txt as convertible plain text — either outcome is fine
+    check("empty .txt — handled gracefully",
+          result is not None and (result.failed >= 1 or result.completed >= 1),
+          f"completed={getattr(result, 'completed', '?')}, failed={getattr(result, 'failed', '?')}")
+
+
+def test_edge_unsupported_type():
+    """Test 11: Edge case — unsupported file type."""
+    log("\n═══ TEST 11: Edge case — unsupported extension ═══")
+
+    fake_path = os.path.join(TEST_OUTPUT_ROOT, "fake_file.zip")
+    with open(fake_path, "wb") as f:
+        f.write(b"PK\x03\x04")  # Minimal zip header
+
+    result, out_dir, logs = run_conversion([fake_path])
+    check("unsupported .zip — does not crash",
+          result is not None,
+          "result is None — crashed?")
+    # Engine handles gracefully — may report completed (with minimal output) or failed
+    check("unsupported .zip — handled gracefully",
+          result is not None and (result.failed >= 1 or result.completed >= 1),
+          f"completed={getattr(result, 'completed', '?')}, failed={getattr(result, 'failed', '?')}")
+
+
+def test_cancel_midway():
+    """Test 12: Cancel mid-conversion."""
+    log("\n═══ TEST 12: Cancel mid-conversion ═══")
+
+    # Use all files for a longer batch
+    files = [
+        os.path.join(TEST_FILES_DIR, f) for f in [
+            "sample_annual_report.pdf",
+            "sample_requirements.docx",
+            "sample_ocr_image.png",
+            "sample_financials.xlsx",
+            "sample_spreadsheet.csv",
+            "sample_presentation.pptx",
+            "sample_report.html",
+            "sample_spec.rtf",
+        ]
+    ]
+    files = [f for f in files if os.path.isfile(f)]
+
+    from engine.converter import ConversionJob
+
+    output_dir = os.path.join(TEST_OUTPUT_ROOT, f"cancel_test_{int(time.time()*1000)}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    root = _SHARED_ROOT
+
+    done_event = threading.Event()
+    result_holder = [None]
+    file_count = [0]
+
+    def on_done(br):
+        result_holder[0] = br
+        done_event.set()
+
+    def on_file_start(fname, idx, total):
+        file_count[0] = idx
+
+    job = ConversionJob(
+        files=files, aliases={}, output_root=output_dir,
+        cfg={"parallel_workers": "1", "output_format": "Markdown",
+             "overwrite_existing": True, "output_subfolder": True,
+             "ocr_engine": "Auto", "yaml_front_matter": True,
+             "preserve_page_numbers": True, "rebuild_toc": True,
+             "embed_images": True, "quality_preset": "Fast",
+             "conversion_mode": "Auto-detect", "preserve_images": True,
+             "remove_headers_footers": True, "skip_blank_pages": True,
+             "strip_line_numbers": False, "detect_code_blocks": True,
+             "detect_footnotes": True, "detect_equations": True,
+             "auto_translate": True, "dxf_svg_preview": True,
+             "rules_profile": "None", "ocr_language": "English",
+             "markdown_flavor": "GFM"},
+        root=root,
+        on_log=lambda m: None, on_file_progress=lambda p: None,
+        on_overall_progress=lambda p: None,
+        on_file_start=on_file_start,
+        on_stage=lambda s: None, on_done=on_done,
+    )
+    job._gui = lambda fn, *a: fn(*a)
+
+    job.start()
+
+    # Let it process for 2 seconds then cancel
+    deadline_cancel = time.time() + 2
+    while not done_event.is_set() and time.time() < deadline_cancel:
+        try:
+            root.update()
+        except Exception:
+            break
+        time.sleep(0.05)
+
+    if not done_event.is_set():
+        job.cancel()
+        # Wait for it to finish
+        deadline = time.time() + 30
+        while not done_event.is_set() and time.time() < deadline:
+            try:
+                root.update()
+            except Exception:
+                break
+            time.sleep(0.05)
+
+    result = result_holder[0]
+    check("cancel — job stopped without crash",
+          result is not None,
+          "result is None")
+    check("cancel — cancelled flag set",
+          result is not None and result.cancelled,
+          f"cancelled={getattr(result, 'cancelled', '?')}")
+    check("cancel — not all files processed",
+          result is not None and result.completed < len(files),
+          f"completed={getattr(result, 'completed', '?')}/{len(files)}")
+
+
+def test_page_range():
+    """Test 13: Page range selection on PDF."""
+    log("\n═══ TEST 13: Page range selection ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_annual_report.pdf")
+
+    # First convert full PDF to count pages
+    result_full, out_dir_full, _ = run_conversion([fpath])
+    content_full = read_output(out_dir_full)
+
+    # Now convert only page 1
+    result_p1, out_dir_p1, _ = run_conversion(
+        [fpath],
+        page_ranges={fpath: [1]},
+    )
+    content_p1 = read_output(out_dir_p1)
+
+    check("page_range=[1] — conversion succeeds",
+          result_p1 is not None and result_p1.completed >= 1,
+          f"completed={getattr(result_p1, 'completed', '?')}")
+
+    if content_full and content_p1:
+        check("page_range=[1] — output shorter than full",
+              len(content_p1) < len(content_full),
+              f"p1={len(content_p1)} vs full={len(content_full)}")
+
+
+def test_overwrite_protection():
+    """Test 14: Overwrite existing protection."""
+    log("\n═══ TEST 14: Overwrite protection ═══")
+
+    fpath = os.path.join(TEST_FILES_DIR, "sample_spreadsheet.csv")
+
+    # First conversion
+    result1, out_dir, _ = run_conversion([fpath], {"overwrite_existing": False})
+    check("first run — succeeds",
+          result1 is not None and result1.completed >= 1, "")
+
+    # Second conversion to same dir — should skip
+    from engine.converter import ConversionJob
+
+    root = _SHARED_ROOT
+    done_event = threading.Event()
+    result_holder = [None]
+    log_lines = []
+
+    def on_done(br):
+        result_holder[0] = br
+        done_event.set()
+
+    job = ConversionJob(
+        files=[fpath], aliases={}, output_root=out_dir,
+        cfg={"parallel_workers": "1", "output_format": "Markdown",
+             "overwrite_existing": False, "output_subfolder": True,
+             "ocr_engine": "Auto", "yaml_front_matter": True,
+             "preserve_page_numbers": True, "rebuild_toc": True,
+             "embed_images": True, "quality_preset": "Fast",
+             "conversion_mode": "Auto-detect", "preserve_images": True,
+             "remove_headers_footers": True, "skip_blank_pages": True,
+             "strip_line_numbers": False, "detect_code_blocks": True,
+             "detect_footnotes": True, "detect_equations": True,
+             "auto_translate": True, "dxf_svg_preview": True,
+             "rules_profile": "None", "ocr_language": "English",
+             "markdown_flavor": "GFM"},
+        root=root,
+        on_log=lambda m: log_lines.append(m),
+        on_file_progress=lambda p: None,
+        on_overall_progress=lambda p: None,
+        on_file_start=lambda f, i, t: None,
+        on_stage=lambda s: None, on_done=on_done,
+    )
+    job._gui = lambda fn, *a: fn(*a)
+    job.start()
+
+    deadline = time.time() + 30
+    while not done_event.is_set() and time.time() < deadline:
+        try:
+            root.update()
+        except Exception:
+            break
+        time.sleep(0.05)
+
+    result2 = result_holder[0]
+    skipped = any("skip" in line.lower() or "exists" in line.lower() for line in log_lines)
+    check("overwrite=False — second run skips or fails",
+          result2 is not None and (result2.failed >= 1 or skipped),
+          f"completed={getattr(result2, 'completed', '?')}, logs mention skip: {skipped}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════
+
+def main():
+    start = time.time()
+    log("╔══════════════════════════════════════════════════════════╗")
+    log("║   Document-to-Markdown Headless Engine Test Suite       ║")
+    log("╚══════════════════════════════════════════════════════════╝")
+    log(f"\nTest files: {TEST_FILES_DIR}")
+    log(f"Output dir: {TEST_OUTPUT_ROOT}")
+    log(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+    clean_output()
+
+    # Run all test suites
+    tests = [
+        test_basic_conversion_all_types,
+        test_yaml_front_matter,
+        test_preserve_page_numbers,
+        test_output_subfolder,
+        test_embed_images,
+        test_rebuild_toc,
+        test_ocr_engine_settings,
+        test_quality_presets,
+        test_mixed_batch,
+        test_edge_empty_file,
+        test_edge_unsupported_type,
+        test_cancel_midway,
+        test_page_range,
+        test_overwrite_protection,
+    ]
+
+    for test_fn in tests:
+        try:
+            test_fn()
+        except Exception as e:
+            log(f"\n  ✗ SUITE CRASHED: {test_fn.__name__} — {e}")
+            traceback.print_exc()
+            global FAIL
+            FAIL += 1
+
+    elapsed = time.time() - start
+    log(f"\n{'='*60}")
+    log(f"RESULTS:  {PASS} passed  |  {FAIL} failed  |  {WARN} warnings")
+    log(f"Elapsed:  {elapsed:.1f}s")
+    log(f"{'='*60}")
+
+    # Write report to file
+    report_path = os.path.join(TEST_OUTPUT_ROOT, "test_report.txt")
+    with open(report_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(results_log))
+    log(f"\nFull report: {report_path}")
+
+    # Clean up the shared tkinter root
+    try:
+        _SHARED_ROOT.destroy()
+    except Exception:
+        pass
+
+    return 0 if FAIL == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
