@@ -40,6 +40,7 @@ from .output_formats import write_output as write_alt_format, output_path_for
 from .rules_engine import load_profiles, get_profile_by_name
 from . import license_manager
 from . import searchable_pdf
+from .pdf_converter import ConversionCancelled as _CancelledError
 
 
 # Language display names → ISO 639-1 codes used by ocr_engine
@@ -214,6 +215,14 @@ class ConversionJob:
                 completed += 1
                 license_manager.increment_conversion_count(1)
                 self._gui(self._on_log, f"   ✓ Done → {out_dir}")
+
+            except _CancelledError:
+                logger.info("Conversion cancelled by user.")
+                logger.end()
+                logger.flush()
+                self._gui(self._on_log, f"   ⊘ Cancelled — {filename}")
+                app_logger.info(f"Cancelled: {source_file}")
+                break
 
             except FileExistsError as e:
                 logger.warning(f"Skipped — output already exists: {e}")
@@ -538,6 +547,7 @@ class ConversionJob:
                 ocr_dpi_scale=ocr_dpi_scale,
                 page_range=self._page_ranges.get(source_file),
                 stage_callback=stage,
+                cancel_event=self._cancel_event,
                 logger=logger,
                 progress_callback=progress,
             )

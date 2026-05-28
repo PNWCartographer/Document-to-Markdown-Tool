@@ -3827,7 +3827,7 @@ class App:
     def _on_cancel_conversion(self):
         if self._active_job and self._active_job.is_running():
             self._active_job.cancel()
-            self._log_write("Cancellation requested — waiting for current file to finish…")
+            self._log_write("Cancellation requested — stopping…")
         else:
             messagebox.showinfo(
                 "No Active Conversion",

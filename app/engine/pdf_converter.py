@@ -18,6 +18,7 @@ Outputs:
 
 import os
 import re
+import threading
 from typing import Optional, Callable
 
 from .confidence import ConfidenceResult
@@ -25,6 +26,11 @@ from .markdown_writer import ConversionOutput
 from .logger import ConversionLogger
 from . import ocr_engine
 from . import table_extractor
+
+
+class ConversionCancelled(Exception):
+    """Raised when the user cancels a conversion mid-file."""
+    pass
 
 
 def convert(
@@ -51,6 +57,7 @@ def convert(
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
     stage_callback: Optional[Callable[[str], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> ConversionOutput:
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
@@ -65,6 +72,9 @@ def convert(
         if progress_callback: progress_callback(p)
     def stage(s):
         if stage_callback: stage_callback(s)
+    def check_cancel():
+        if cancel_event and cancel_event.is_set():
+            raise ConversionCancelled("Conversion cancelled by user")
 
     log_info(f"PDF converter started | file={os.path.basename(source_file)} mode={conversion_mode}")
     progress(0.03)
@@ -128,6 +138,7 @@ def convert(
                     rebuild_toc, preserve_page_numbers, use_subfolder,
                     embed_images, output, confidence, log_info, log_warn, progress, stage,
                     pp_settings=pp_settings,
+                    cancel_event=cancel_event,
                 )
                 if result:
                     return result
@@ -153,6 +164,7 @@ def convert(
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=False, pp_settings=pp_settings,
                 ocr_dpi_scale=ocr_dpi_scale, prefer_engine=prefer_engine,
+                cancel_event=cancel_event,
             )
 
     # ------------------------------------------------------------------
@@ -166,6 +178,7 @@ def convert(
                 output, confidence, log_info, log_warn, progress,
                 use_ocr=True, pp_settings=pp_settings,
                 ocr_dpi_scale=ocr_dpi_scale, prefer_engine=prefer_engine,
+                cancel_event=cancel_event,
             )
 
     log_warn("No PDF conversion engine available.")
@@ -237,6 +250,7 @@ def _convert_docling(
     preserve_page_numbers, use_subfolder, embed_images,
     output, confidence, log_info, log_warn, progress, stage,
     pp_settings: Optional[dict] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
 
@@ -247,7 +261,23 @@ def _convert_docling(
     stage("Converting PDF — this may take a while for large documents…")
     progress(-1.0)
     converter = DocumentConverter()
-    result = converter.convert(source_file)
+
+    # Run the blocking docling call in a sub-thread so we can poll cancel
+    if cancel_event:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+        with ThreadPoolExecutor(1) as pool:
+            future = pool.submit(converter.convert, source_file)
+            while not future.done():
+                if cancel_event.is_set():
+                    raise ConversionCancelled("Conversion cancelled by user")
+                try:
+                    future.result(timeout=0.5)
+                except FutureTimeout:
+                    continue
+            result = future.result()
+    else:
+        result = converter.convert(source_file)
+
     doc = result.document
     progress(0.55)
     stage("Processing output…")
@@ -668,6 +698,7 @@ def _convert_pymupdf(
     pp_settings: Optional[dict] = None,
     ocr_dpi_scale: float = 4.0,
     prefer_engine: str = "rapidocr",
+    cancel_event: Optional[threading.Event] = None,
 ) -> ConversionOutput:
     import fitz
 
@@ -707,6 +738,8 @@ def _convert_pymupdf(
         saved_xrefs: set[int] = set()
 
         for page_idx in range(total_pages):
+            if cancel_event and cancel_event.is_set():
+                raise ConversionCancelled("Conversion cancelled by user")
             page_num = page_idx + 1
             # Skip pages not in the selected range (0-indexed in page_range)
             if page_range and page_num not in page_range:
