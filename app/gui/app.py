@@ -2,6 +2,7 @@ import math
 import os
 import re
 import sys
+import time
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
@@ -346,6 +347,16 @@ class App:
         self._sysinfo_labels: list[tk.Label] = []
         self._sysinfo_card: "tk.Frame | None" = None
 
+        # Per-file results list (Item 1: badges)
+        self._results_files_inner: "tk.Frame | None" = None
+        self._results_files_canvas: "tk.Canvas | None" = None
+
+        # Elapsed timer state (Item 3)
+        self._elapsed_start: float = 0.0
+        self._elapsed_after_id = None
+        # Results nav flash state (Item 5)
+        self._results_notify_id = None
+
         # Custom widget tracking (filled by _build_* methods, themed in _apply_theme)
         self._primary_pills:    list = []   # filled accent PillButtons
         self._secondary_pills:  list = []   # outline PillButtons
@@ -409,6 +420,10 @@ class App:
         self._show("Home")
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # ── Keyboard shortcuts ────────────────────────────────
+        self.root.bind_all("<Escape>", self._shortcut_escape)
+        self.root.bind_all("<Control-Return>", self._shortcut_ctrl_enter)
 
         # Non-blocking startup checks (run after mainloop starts)
         self.root.after(500, self._startup_checks)
@@ -526,6 +541,9 @@ class App:
         self._build_conversion()
         self._build_results()
         self._build_watch()
+
+        # Initial format label on Watch screen (needs setting_vars from _build_settings)
+        self._update_watch_format()
 
     # ── Screens ─────────────────────────────────────────────
 
@@ -1020,8 +1038,10 @@ class App:
         self._update_format_visibility()
 
         # ── Trace output_format for conditional visibility ────
-        self._setting_vars["output_format"].trace_add(
-            "write", lambda *_: self._update_format_visibility())
+        def _on_format_change(*_):
+            self._update_format_visibility()
+            self._update_watch_format()
+        self._setting_vars["output_format"].trace_add("write", _on_format_change)
 
         # ── Trace spdf_sidecar for RAG-from-sidecar visibility ──
         self._setting_vars["spdf_sidecar"].trace_add(
@@ -1272,7 +1292,7 @@ class App:
         # ── Overall progress ─────────────────────────────────
         self._conv_overall_row = tk.Frame(f)
         self._conv_overall_row.grid(row=2, column=0, sticky="ew", padx=32, pady=(0, 4))
-        self._conv_overall_row.grid_columnconfigure(0, weight=1)
+        self._conv_overall_row.grid_columnconfigure(1, weight=1)
 
         self._conv_overall_lbl = tk.Label(
             self._conv_overall_row, text="Overall Progress", font=_FONT_SMALL, anchor="w")
@@ -1281,6 +1301,10 @@ class App:
         self._conv_overall_count_lbl = tk.Label(
             self._conv_overall_row, text="0 of 0 files", font=_FONT_SMALL, anchor="e")
         self._conv_overall_count_lbl.grid(row=0, column=1, sticky="e")
+
+        self._conv_elapsed_lbl = tk.Label(
+            self._conv_overall_row, text="", font=_FONT_SMALL, anchor="e")
+        self._conv_elapsed_lbl.grid(row=0, column=2, sticky="e", padx=(12, 0))
 
         self._conv_overall_bar = PillProgressBar(f, height=10)
         self._conv_overall_bar.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 16))
@@ -1433,17 +1457,72 @@ class App:
                 "Open the output folder in your system file explorer.",
                 lambda: self._t)
 
+        # ── Per-file list with content badges ────────────────
+        self._results_files_section_lbl = tk.Label(
+            rc, text="FILES", font=_FONT_SECTION, anchor="w")
+        self._results_files_section_lbl.grid(
+            row=2, column=0, sticky="ew", padx=32, pady=(0, 2))
+
+        self._results_files_div = tk.Frame(rc, height=1)
+        self._results_files_div.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 6))
+
+        self._results_files_outer = tk.Frame(rc, highlightthickness=1)
+        self._results_files_outer.grid(
+            row=4, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_files_outer.grid_rowconfigure(0, weight=1)
+        self._results_files_outer.grid_columnconfigure(0, weight=1)
+
+        files_canvas = tk.Canvas(
+            self._results_files_outer, bd=0, highlightthickness=0,
+            height=int(120 * self._dpi))
+        files_canvas.grid(row=0, column=0, sticky="nsew")
+        files_vsb = GlassScrollbar(
+            self._results_files_outer, orient="vertical",
+            command=files_canvas.yview)
+        files_vsb.grid(row=0, column=1, sticky="ns")
+        self._glass_scrollbars.append(files_vsb)
+        files_canvas.configure(yscrollcommand=files_vsb.set)
+
+        self._results_files_inner = tk.Frame(files_canvas)
+        files_canvas.create_window((0, 0), window=self._results_files_inner, anchor="nw")
+        self._results_files_inner.bind(
+            "<Configure>",
+            lambda _e: files_canvas.configure(scrollregion=files_canvas.bbox("all")))
+        files_canvas.bind(
+            "<Configure>",
+            lambda e: files_canvas.itemconfig(
+                files_canvas.find_all()[0], width=e.width)
+            if files_canvas.find_all() else None)
+
+        self._results_files_canvas = files_canvas
+
+        files_canvas.bind(
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', files_canvas))
+        files_canvas.bind(
+            "<Leave>", lambda _e: setattr(self, '_scroll_target', None)
+            if self._scroll_target is files_canvas else None)
+        self._results_files_inner.bind(
+            "<Enter>", lambda _e: setattr(self, '_scroll_target', files_canvas))
+
+        # Placeholder when no results yet
+        self._results_files_placeholder = tk.Label(
+            self._results_files_inner,
+            text="No files converted yet.",
+            font=_FONT_SMALL, anchor="w", padx=10, pady=8,
+        )
+        self._results_files_placeholder.pack(anchor="w")
+
         # ── Confidence summary ───────────────────────────────
         self._results_conf_section_lbl = tk.Label(
             rc, text="CONFIDENCE SUMMARY", font=_FONT_SECTION, anchor="w")
         self._results_conf_section_lbl.grid(
-            row=2, column=0, sticky="ew", padx=32, pady=(0, 2))
+            row=5, column=0, sticky="ew", padx=32, pady=(0, 2))
 
         self._results_conf_div = tk.Frame(rc, height=1)
-        self._results_conf_div.grid(row=3, column=0, sticky="ew", padx=32, pady=(0, 6))
+        self._results_conf_div.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 6))
 
         self._results_conf_frame = tk.Frame(rc)
-        self._results_conf_frame.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_conf_frame.grid(row=7, column=0, sticky="ew", padx=32, pady=(0, 16))
         self._results_conf_frame.grid_columnconfigure(0, weight=1)
 
         self._results_conf_level_lbls: list[tk.Label] = []
@@ -1461,13 +1540,13 @@ class App:
         self._results_val_section_lbl = tk.Label(
             rc, text="VALIDATION", font=_FONT_SECTION, anchor="w")
         self._results_val_section_lbl.grid(
-            row=5, column=0, sticky="ew", padx=32, pady=(0, 2))
+            row=8, column=0, sticky="ew", padx=32, pady=(0, 2))
 
         self._results_val_div = tk.Frame(rc, height=1)
-        self._results_val_div.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 6))
+        self._results_val_div.grid(row=9, column=0, sticky="ew", padx=32, pady=(0, 6))
 
         self._results_val_frame = tk.Frame(rc)
-        self._results_val_frame.grid(row=7, column=0, sticky="ew", padx=32, pady=(0, 16))
+        self._results_val_frame.grid(row=10, column=0, sticky="ew", padx=32, pady=(0, 16))
         self._results_val_frame.grid_columnconfigure(1, weight=1)
 
         _val_rows = [
@@ -1507,7 +1586,7 @@ class App:
         # Validation issues (scrollable text box)
         self._results_val_issues_frame = tk.Frame(rc, highlightthickness=1)
         self._results_val_issues_frame.grid(
-            row=8, column=0, sticky="nsew", padx=32, pady=(0, 8))
+            row=11, column=0, sticky="nsew", padx=32, pady=(0, 8))
         self._results_val_issues_frame.grid_rowconfigure(0, weight=1)
         self._results_val_issues_frame.grid_columnconfigure(0, weight=1)
 
@@ -1528,10 +1607,10 @@ class App:
 
         # ── Warnings ─────────────────────────────────────────
         self._results_warn_lbl = tk.Label(rc, text="Warnings", font=_FONT_SMALL, anchor="w")
-        self._results_warn_lbl.grid(row=9, column=0, sticky="w", padx=32, pady=(0, 4))
+        self._results_warn_lbl.grid(row=12, column=0, sticky="w", padx=32, pady=(0, 4))
 
         self._results_warn_frame = tk.Frame(rc, highlightthickness=1)
-        self._results_warn_frame.grid(row=10, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._results_warn_frame.grid(row=13, column=0, sticky="nsew", padx=32, pady=(0, 8))
         self._results_warn_frame.grid_rowconfigure(0, weight=1)
         self._results_warn_frame.grid_columnconfigure(0, weight=1)
 
@@ -1555,7 +1634,7 @@ class App:
 
         # ── Button row ───────────────────────────────────────
         self._results_btn_row = tk.Frame(rc)
-        self._results_btn_row.grid(row=11, column=0, sticky="ew", padx=32, pady=(0, 28))
+        self._results_btn_row.grid(row=14, column=0, sticky="ew", padx=32, pady=(0, 28))
 
         self._btn_open_output = PillButton(
             self._results_btn_row,
@@ -1613,7 +1692,7 @@ class App:
 
     def _build_watch(self):
         f = self._new_screen("Watch")
-        f.grid_rowconfigure(8, weight=1)
+        f.grid_rowconfigure(9, weight=1)
 
         self._heading(
             f, "Watch Folder",
@@ -1683,9 +1762,22 @@ class App:
         self._btn_watch_browse_output.grid(row=0, column=2)
         self._secondary_pills.append(self._btn_watch_browse_output)
 
+        # ── Format indicator ─────────────────────────────────
+        self._watch_format_row = tk.Frame(f)
+        self._watch_format_row.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 12))
+        self._watch_format_row.grid_columnconfigure(0, weight=1)
+
+        self._watch_format_lbl = tk.Label(
+            self._watch_format_row, text="", font=_FONT_SMALL, anchor="w")
+        self._watch_format_lbl.grid(row=0, column=0, sticky="w")
+
+        self._watch_format_note_lbl = tk.Label(
+            self._watch_format_row, text="", font=(_FONT_FAMILY, 9), anchor="w")
+        self._watch_format_note_lbl.grid(row=1, column=0, sticky="w")
+
         # ── Controls row ─────────────────────────────────────
         self._watch_ctrl_row = tk.Frame(f)
-        self._watch_ctrl_row.grid(row=4, column=0, sticky="ew", padx=32, pady=(0, 8))
+        self._watch_ctrl_row.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 8))
         self._watch_ctrl_row.grid_columnconfigure(2, weight=1)
 
         self._btn_watch_start = PillButton(
@@ -1717,7 +1809,7 @@ class App:
 
         # ── Per-file progress section ────────────────────────
         self._watch_progress_row = tk.Frame(f)
-        self._watch_progress_row.grid(row=5, column=0, sticky="ew", padx=32, pady=(0, 4))
+        self._watch_progress_row.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 4))
         self._watch_progress_row.grid_columnconfigure(0, weight=1)
 
         self._watch_file_lbl = tk.Label(
@@ -1729,17 +1821,17 @@ class App:
         self._watch_stage_lbl.grid(row=0, column=1, sticky="e")
 
         self._watch_progress_bar = PillProgressBar(f, height=6)
-        self._watch_progress_bar.grid(row=6, column=0, sticky="ew", padx=32, pady=(0, 12))
+        self._watch_progress_bar.grid(row=7, column=0, sticky="ew", padx=32, pady=(0, 12))
 
         # ── Activity log section label ───────────────────────
         self._watch_log_section_lbl = tk.Label(
             f, text="ACTIVITY LOG", font=_FONT_SECTION, anchor="w")
         self._watch_log_section_lbl.grid(
-            row=7, column=0, sticky="ew", padx=32, pady=(0, 2))
+            row=8, column=0, sticky="ew", padx=32, pady=(0, 2))
 
         # ── Activity log ─────────────────────────────────────
         self._watch_log_frame = tk.Frame(f, highlightthickness=1)
-        self._watch_log_frame.grid(row=8, column=0, sticky="nsew", padx=32, pady=(0, 8))
+        self._watch_log_frame.grid(row=9, column=0, sticky="nsew", padx=32, pady=(0, 8))
         self._watch_log_frame.grid_rowconfigure(0, weight=1)
         self._watch_log_frame.grid_columnconfigure(0, weight=1)
 
@@ -1762,7 +1854,7 @@ class App:
 
         # ── Bottom button row ────────────────────────────────
         self._watch_btn_row = tk.Frame(f)
-        self._watch_btn_row.grid(row=9, column=0, sticky="ew", padx=32, pady=(0, 28))
+        self._watch_btn_row.grid(row=10, column=0, sticky="ew", padx=32, pady=(0, 28))
 
         self._btn_watch_clear_log = PillButton(
             self._watch_btn_row,
@@ -1776,6 +1868,45 @@ class App:
         self._secondary_pills.append(self._btn_watch_clear_log)
 
     # ── Watch Folder handlers ───────────────────────────────
+
+    def _update_watch_format(self):
+        """Update the Watch screen format indicator based on current settings."""
+        if not self._setting_vars:
+            return
+        fmt = self._setting_vars["output_format"].get()
+        self._watch_format_lbl.config(text=f"Output: {fmt}")
+        if fmt == "Searchable PDF":
+            self._watch_format_note_lbl.config(text="OCR will be applied to incoming files")
+        else:
+            self._watch_format_note_lbl.config(text="")
+
+    # ── Elapsed timer helpers ─────────────────────────────
+
+    def _start_elapsed_timer(self) -> None:
+        self._elapsed_start = time.monotonic()
+        self._conv_elapsed_lbl.config(text="0:00")
+        self._tick_elapsed()
+
+    def _tick_elapsed(self) -> None:
+        delta = int(time.monotonic() - self._elapsed_start)
+        if delta >= 3600:
+            txt = f"{delta // 3600}:{(delta % 3600) // 60:02d}:{delta % 60:02d}"
+        else:
+            txt = f"{delta // 60}:{delta % 60:02d}"
+        self._conv_elapsed_lbl.config(text=txt)
+        self._elapsed_after_id = self.root.after(1000, self._tick_elapsed)
+
+    def _stop_elapsed_timer(self) -> None:
+        if self._elapsed_after_id is not None:
+            self.root.after_cancel(self._elapsed_after_id)
+            self._elapsed_after_id = None
+        # Final update
+        delta = int(time.monotonic() - self._elapsed_start)
+        if delta >= 3600:
+            txt = f"{delta // 3600}:{(delta % 3600) // 60:02d}:{delta % 60:02d}"
+        else:
+            txt = f"{delta // 60}:{delta % 60:02d}"
+        self._conv_elapsed_lbl.config(text=txt)
 
     def _pick_watch_input(self):
         path = filedialog.askdirectory(title="Select folder to watch")
@@ -1921,6 +2052,24 @@ class App:
                 if self._current != "Watch":
                     btn.config(fg=self._t["text"])
             self._watch_notify_id = self.root.after(2000, _restore)
+
+    def _results_notify(self):
+        """Flash the Results nav button briefly to signal conversion completion."""
+        btn = self._nav_btns.get("Results")
+        if btn and self._current != "Results":
+            pending = getattr(self, "_results_notify_id", None)
+            if pending is not None:
+                try:
+                    self.root.after_cancel(pending)
+                except Exception:
+                    pass
+            btn.config(fg=self._t.get("accent", "#7c3aed"))
+
+            def _restore():
+                self._results_notify_id = None
+                if self._current != "Results":
+                    btn.config(fg=self._t["text"])
+            self._results_notify_id = self.root.after(2000, _restore)
 
     # ── Debug / Preview window ──────────────────────────────
 
@@ -3824,6 +3973,30 @@ class App:
             subprocess.Popen(["xdg-open", path], close_fds=True,
                              start_new_session=True)
 
+    # ── Keyboard shortcut handlers ────────────────────────
+
+    def _shortcut_escape(self, event):
+        """Escape → cancel conversion (only on Conversion screen, root window)."""
+        try:
+            if str(event.widget.winfo_toplevel()) != str(self.root):
+                return
+        except Exception:
+            return
+        if self._current == "Conversion":
+            self._on_cancel_conversion()
+            return "break"
+
+    def _shortcut_ctrl_enter(self, event):
+        """Ctrl+Enter → start conversion (only on Home screen, root window)."""
+        try:
+            if str(event.widget.winfo_toplevel()) != str(self.root):
+                return
+        except Exception:
+            return
+        if self._current == "Home" and self._btn_start._state == "normal":
+            self._on_start()
+            return "break"
+
     def _on_cancel_conversion(self):
         if self._active_job and self._active_job.is_running():
             self._active_job.cancel()
@@ -3854,6 +4027,7 @@ class App:
         self._conv_overall_count_lbl.config(text=f"0 of {label}")
         self._conv_file_name_lbl.config(text="Preparing…")
         self._conv_stage_lbl.config(text="")
+        self._conv_elapsed_lbl.config(text="")
         self._conv_log.config(state="normal")
         self._conv_log.delete("1.0", tk.END)
         self._conv_log.config(state="disabled")
@@ -3908,6 +4082,7 @@ class App:
             on_done=self._on_conversion_done,
             page_ranges=dict(self._file_page_ranges),
         )
+        self._start_elapsed_timer()
         self._active_job.start()
 
     def _set_file_progress(self, fraction: float) -> None:
@@ -3927,6 +4102,7 @@ class App:
         self._conv_stage_lbl.config(text=stage)
 
     def _on_conversion_done(self, result: "_converter_mod.BatchResult") -> None:
+        self._stop_elapsed_timer()
         # Final bar states — only show 100% when not cancelled
         if result.cancelled:
             frac = result.completed / max(result.total, 1)
@@ -3951,7 +4127,11 @@ class App:
             self._populate_results(result)
         except Exception as e:
             self._log_write(f"Error populating results: {e}")
-        self._show("Results")
+
+        if self._current == "Conversion":
+            self._show("Results")
+        else:
+            self._results_notify()
 
     def _populate_results(self, result: "_converter_mod.BatchResult") -> None:
         self._last_batch_result = result
@@ -4035,6 +4215,82 @@ class App:
         else:
             self._results_warn_text.insert(tk.END, "No warnings.")
         self._results_warn_text.config(state="disabled")
+
+        # Per-file list with content badges
+        self._populate_file_list(result)
+
+    # ── Per-file badge list ──────────────────────────────────
+
+    _BADGE_COLORS = {
+        "High":   "#22c55e",
+        "Medium": "#eab308",
+        "Low":    "#ef4444",
+        "Failed": "#ef4444",
+    }
+
+    def _populate_file_list(self, result: "_converter_mod.BatchResult") -> None:
+        """Fill the FILES section on the Results screen with per-file badges."""
+        inner = self._results_files_inner
+        if inner is None:
+            return
+
+        # Clear previous content
+        for w in inner.winfo_children():
+            w.destroy()
+
+        t = self._t
+        confs = result.all_confidence
+        if not confs:
+            lbl = tk.Label(
+                inner, text="No file details available.",
+                font=_FONT_SMALL, anchor="w", padx=10, pady=8,
+                bg=t["bg"], fg=t["text_secondary"],
+            )
+            lbl.pack(anchor="w")
+            return
+
+        _badge_font = (_FONT_FAMILY, 8, "bold")
+
+        # Map dimension fields to badge labels
+        _dims = [
+            ("text_extraction", "Text"),
+            ("table_structure", "Tables"),
+            ("image_extraction", "Images"),
+            ("ocr_confidence", "OCR"),
+        ]
+
+        for conf in confs:
+            row_frame = tk.Frame(inner, bg=t["bg"])
+            row_frame.pack(fill="x", padx=8, pady=2)
+
+            fname = os.path.basename(conf.source_file) if conf.source_file else "Unknown"
+            name_lbl = tk.Label(
+                row_frame, text=fname, font=_FONT_SMALL,
+                anchor="w", bg=t["bg"], fg=t["text"],
+            )
+            name_lbl.pack(side="left", padx=(4, 8))
+
+            for attr, badge_text in _dims:
+                level = getattr(conf, attr, "N/A") or "N/A"
+                if level == "N/A":
+                    continue
+                color = self._BADGE_COLORS.get(level, t["text_secondary"])
+                badge = tk.Label(
+                    row_frame, text=f" {badge_text} ",
+                    font=_badge_font, fg=color, bg=t["bg"],
+                    highlightthickness=1, highlightbackground=color,
+                    padx=3, pady=0,
+                )
+                badge.pack(side="left", padx=(0, 4))
+
+            # Overall confidence on the right
+            overall = conf.overall or "N/A"
+            overall_color = self._BADGE_COLORS.get(overall, t["text_secondary"])
+            overall_lbl = tk.Label(
+                row_frame, text=overall, font=(_FONT_FAMILY, 9),
+                anchor="e", bg=t["bg"], fg=overall_color,
+            )
+            overall_lbl.pack(side="right", padx=(8, 4))
 
     def _on_listbox_select(self, _event=None):
         sel = self._file_listbox.curselection()
@@ -4897,6 +5153,24 @@ class App:
         self._results_out_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._results_out_path_lbl.config(bg=t["bg"], fg=t["text_secondary"])
 
+        # Per-file list theming
+        self._results_files_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._results_files_div.config(bg=t["border"])
+        self._results_files_outer.config(bg=t["bg"], highlightbackground=t["border"])
+        if self._results_files_canvas:
+            self._results_files_canvas.config(bg=t["bg"])
+        if self._results_files_inner:
+            self._results_files_inner.config(bg=t["bg"])
+            for child in self._results_files_inner.winfo_children():
+                if child.winfo_class() == "Frame":
+                    child.config(bg=t["bg"])
+                    for sub in child.winfo_children():
+                        if sub.winfo_class() == "Label":
+                            # Preserve badge-specific colors — only set bg
+                            sub.config(bg=t["bg"])
+                elif child.winfo_class() == "Label":
+                    child.config(bg=t["bg"], fg=t["text_secondary"])
+
         self._results_conf_section_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
         self._results_conf_div.config(bg=t["border"])
         self._results_conf_frame.config(bg=t["content_bg"])
@@ -4931,6 +5205,10 @@ class App:
         self._watch_output_path_frame.config(bg=t["bg"], highlightbackground=t["border"])
         self._watch_output_path_lbl.config(bg=t["bg"], fg=t["text_secondary"])
 
+        self._watch_format_row.config(bg=t["content_bg"])
+        self._watch_format_lbl.config(bg=t["content_bg"], fg=t["text"])
+        self._watch_format_note_lbl.config(bg=t["content_bg"], fg=t["accent_secondary"])
+
         self._watch_ctrl_row.config(bg=t["content_bg"])
         self._watch_status_lbl.config(bg=t["content_bg"])
         if not (self._watcher and self._watcher.is_running):
@@ -4954,6 +5232,7 @@ class App:
         self._conv_overall_row.config(bg=t["content_bg"])
         self._conv_overall_lbl.config(bg=t["content_bg"], fg=t["text"])
         self._conv_overall_count_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
+        self._conv_elapsed_lbl.config(bg=t["content_bg"], fg=t["text_secondary"])
 
         self._conv_overall_bar.set_colors(
             track=t["bg"], fill=t["accent"], border=t["border"],
@@ -5301,12 +5580,13 @@ class App:
         if self._watcher and self._watcher.is_running:
             self._watcher.stop()
         # Cancel pending after() callbacks to prevent TclError on destroyed root
-        pending = getattr(self, "_watch_notify_id", None)
-        if pending is not None:
-            try:
-                self.root.after_cancel(pending)
-            except Exception:
-                pass
+        for attr in ("_watch_notify_id", "_elapsed_after_id", "_results_notify_id"):
+            pending = getattr(self, attr, None)
+            if pending is not None:
+                try:
+                    self.root.after_cancel(pending)
+                except Exception:
+                    pass
         self.root.destroy()
 
     # ── Run ──────────────────────────────────────────────────
