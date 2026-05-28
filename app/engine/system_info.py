@@ -95,7 +95,7 @@ def _detect_cpu_name() -> str:
             if result.returncode == 0:
                 return result.stdout.strip()
         else:
-            with open("/proc/cpuinfo", "r") as f:
+            with open("/proc/cpuinfo", "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     if line.startswith("model name"):
                         return line.split(":", 1)[1].strip()

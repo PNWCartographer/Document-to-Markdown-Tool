@@ -24,7 +24,7 @@ _TESSERACT_SEARCH_PATHS = [
     # Windows
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-    os.path.join(os.path.expanduser("~"), r"AppData\Local\Tesseract-OCR\tesseract.exe"),
+    os.path.join(os.path.expanduser("~"), "AppData", "Local", "Tesseract-OCR", "tesseract.exe"),
     # Linux
     "/usr/bin/tesseract",
     "/usr/local/bin/tesseract",

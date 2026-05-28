@@ -38,13 +38,20 @@ def convert(
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
-    import ebooklib
-    from ebooklib import epub
-    from bs4 import BeautifulSoup
-
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
     output.confidence = confidence
+
+    try:
+        import ebooklib
+        from ebooklib import epub
+        from bs4 import BeautifulSoup
+    except ImportError as e:
+        confidence.text_extraction = "Failed"
+        confidence.overall = "Failed"
+        confidence.add_warning(f"Required library not installed: {e}")
+        return output
+
     output.engine_used = "ebooklib"
 
     def log_info(msg):

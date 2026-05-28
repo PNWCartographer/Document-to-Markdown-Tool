@@ -95,11 +95,18 @@ def convert(
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
     """Convert a .dxf file to structured Markdown."""
-    import ezdxf
-
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
     output.confidence = confidence
+
+    try:
+        import ezdxf
+    except ImportError as e:
+        confidence.text_extraction = "Failed"
+        confidence.overall = "Failed"
+        confidence.add_warning(f"ezdxf not installed: {e}")
+        return output
+
     output.engine_used = "ezdxf"
 
     def log_info(msg):

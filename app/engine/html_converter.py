@@ -46,11 +46,18 @@ def convert(
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
-    from bs4 import BeautifulSoup
-
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
     output.confidence = confidence
+
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as e:
+        confidence.text_extraction = "Failed"
+        confidence.overall = "Failed"
+        confidence.add_warning(f"beautifulsoup4 not installed: {e}")
+        return output
+
     output.engine_used = "markdownify" if _HAS_MARKDOWNIFY else "beautifulsoup4"
 
     def log_info(msg):

@@ -32,12 +32,19 @@ def convert(
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
 ) -> ConversionOutput:
-    from pptx import Presentation
-    from pptx.enum.shapes import MSO_SHAPE_TYPE
-
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
     output.confidence = confidence
+
+    try:
+        from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
+    except ImportError as e:
+        confidence.text_extraction = "Failed"
+        confidence.overall = "Failed"
+        confidence.add_warning(f"python-pptx not installed: {e}")
+        return output
+
     output.engine_used = "python-pptx"
 
     def log_info(msg):

@@ -112,7 +112,8 @@ def convert(
             log_info(f"Loaded CSV via python engine | rows={len(df)} cols={df.shape[1]}")
         except Exception as e:
             errors.append(str(e))
-            log_warn(f"pandas could not parse CSV: {errors[-1]}")
+            last_err = errors[-1] if errors else "unknown error"
+            log_warn(f"pandas could not parse CSV: {last_err}")
             return _fallback_stdlib(source_file, alias, logger, progress_callback, confidence, output)
 
     progress(0.5)

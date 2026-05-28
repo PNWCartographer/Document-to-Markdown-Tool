@@ -579,8 +579,9 @@ def _extract_fitz_images(
     """
     try:
         import fitz
-        from .markdown_writer import assets_dir_for
+        from .markdown_writer import assets_dir_for, assets_rel_prefix_for
         assets_dir = assets_dir_for(source_file, output_root, alias, use_subfolder)
+        rel_prefix = assets_rel_prefix_for(source_file, alias, use_subfolder)
         os.makedirs(assets_dir, exist_ok=True)
 
         with fitz.open(source_file) as doc:
@@ -604,7 +605,7 @@ def _extract_fitz_images(
                         img_path = os.path.join(assets_dir, filename)
                         with open(img_path, "wb") as fh:
                             fh.write(img_bytes)
-                        output.asset_paths.append(f"assets/{filename}")
+                        output.asset_paths.append(f"{rel_prefix}{filename}")
                         saved_xrefs.add(xref)
                         log_info(f"Saved image: {filename} ({len(img_bytes)} bytes)")
                     except Exception as e:
