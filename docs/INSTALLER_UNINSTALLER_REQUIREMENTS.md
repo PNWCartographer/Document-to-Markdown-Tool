@@ -4,17 +4,19 @@
 The installer should make the tool easy for a non technical user to install on Windows.
 
 ## Installer File
-The project should include an installer script, likely named:
+The installer is an InnoSetup script compiled into a Windows `.exe` installer:
 
 ```text
-Installer.bat
+installer/doctomarkdown.iss
 ```
+
+The build is automated via `installer/build_installer.bat`, which runs PyInstaller to create the frozen application and then InnoSetup to compile the final installer executable.
 
 ## Installer Requirements
 The installer should:
 - Request administrator rights if needed
 - Install required files into Program Files
-- Install all required local dependencies
+- Install all required local dependencies (bundled by PyInstaller)
 - Create required folders
 - Ask whether the user wants a desktop shortcut
 - Ask whether the user wants a Start Menu shortcut
@@ -23,27 +25,28 @@ The installer should:
 - Auto close when complete if practical
 
 ## Install Location
-Recommended install location:
+Install location:
 
 ```text
-C:\Program Files\Documentation to Markdown Converter Tool\
+C:\Program Files\Doc to Markdown\
 ```
 
+(InnoSetup `{autopf}\Doc to Markdown`)
+
 ## Installed Folder Structure
-Recommended installed structure:
+Installed structure:
 
 ```text
-Documentation to Markdown Converter Tool\
+Doc to Markdown\
   app\
   config\
-  logs\
-  output\
   assets\
-  uninstaller\
 ```
 
 ## Uninstaller Goal
 The uninstaller should remove the tool cleanly from the user's system.
+
+Uninstallation is handled natively by InnoSetup. There is no separate uninstaller script or folder. The uninstaller is registered in Windows Add/Remove Programs during installation.
 
 ## Uninstaller Requirements
 The uninstaller should:
@@ -79,7 +82,7 @@ The installer must bundle the following key dependencies (managed via PyInstalle
 
 ### System Detection
 - **psutil** — CPU and RAM detection for performance auto-configuration.
-- **pynvml** (optional) — NVIDIA GPU detection. Graceful fallback if not installed or no NVIDIA GPU present.
+- **nvidia-ml-py** (optional) — NVIDIA GPU detection (imported as `pynvml`). Graceful fallback if not installed or no NVIDIA GPU present.
 
 ### Previously Bundled (Removed)
 - **PaddlePaddle** — replaced by RapidOCR (ONNX Runtime). No longer required.

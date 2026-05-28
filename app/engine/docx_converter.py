@@ -15,7 +15,7 @@ import re
 from typing import Optional, Callable
 
 from .confidence import ConfidenceResult
-from .markdown_writer import ConversionOutput, rows_to_markdown_table
+from .markdown_writer import ConversionOutput, rows_to_markdown_table, _pad
 from .logger import ConversionLogger
 
 
@@ -467,7 +467,3 @@ def _docx_table_to_md(tbl) -> str:
     headers = _pad(headers, col_count)
     rows = [_pad(r, col_count) for r in rows]
     return rows_to_markdown_table(headers, rows)
-
-
-def _pad(lst: list, length: int) -> list:
-    return list(lst) + [""] * max(0, length - len(lst))

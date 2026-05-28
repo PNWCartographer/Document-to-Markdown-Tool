@@ -14,7 +14,7 @@ docling already extracted a satisfactory table.
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .markdown_writer import rows_to_markdown_table
+from .markdown_writer import rows_to_markdown_table, _pad
 
 
 @dataclass
@@ -241,6 +241,3 @@ def _extract_camelot(pdf_path: str, pages: Optional[list[int]]) -> list[TableRes
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _pad(lst: list, length: int) -> list:
-    return list(lst) + [""] * max(0, length - len(lst))

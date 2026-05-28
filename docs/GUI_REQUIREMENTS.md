@@ -355,12 +355,12 @@ The Settings screen is organized into collapsible sections. Each section has a c
    - Force OCR toggle (off)
    - Optimize Level dropdown: 0, 1, 2, 3 (default: 1)
    - PDF/A Compliance toggle (off)
-   - Sidecar Text toggle (on)
+   - Sidecar Text toggle (off)
    - RAG from Sidecar toggle (off, visible only when Sidecar Text is on)
    - Background Removal toggle (off, with warning tooltip)
 
 6. **PERFORMANCE** — (default: expanded)
-   - Parallel Workers dropdown: 1, 2, 4, Auto
+   - Parallel Workers dropdown: 1, 2, 4, 8, 12, 16, Auto
    - Low Confidence Action dropdown
 
 7. **POST-PROCESSING** — (default: collapsed)

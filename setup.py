@@ -145,6 +145,14 @@ def verify() -> None:
         ("rapidocr",       "import rapidocr_onnxruntime"),
         ("pytesseract",    "import pytesseract"),
         ("psutil",         "import psutil"),
+        ("ebooklib",       "import ebooklib"),
+        ("beautifulsoup4", "import bs4"),
+        ("markdownify",    "import markdownify"),
+        ("striprtf",       "import striprtf"),
+        ("ezdxf",          "import ezdxf"),
+        ("watchdog",       "import watchdog"),
+        ("ocrmypdf",       "import ocrmypdf"),
+        ("python-pptx",    "import pptx"),
     ]
 
     all_ok = True

@@ -1,6 +1,6 @@
 # Doc to Markdown
 
-**by Darksquare**
+**v1.2.0** | **by Darksquare**
 
 A professional desktop tool that converts documents into clean, structured Markdown or Searchable PDF for human review, AI upload, memory systems, knowledgebase repositories, and scanned document archival.
 
@@ -128,6 +128,8 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 ### Prerequisites
 - Python 3.10 or later
 - Windows 10/11, Linux, or macOS
+- **Tesseract OCR** (optional) — required for OCR fallback support. The setup script installs it automatically on Windows; on Linux/macOS install via your package manager (`apt install tesseract-ocr` / `brew install tesseract`)
+- **Ghostscript** (optional) — required for Searchable PDF output (used by ocrmypdf). Install from [ghostscript.com](https://ghostscript.com/releases/gsdnld.html) or via your package manager
 
 ### Installation
 
@@ -201,15 +203,15 @@ See the `LICENSE` file for full terms.
 | Force OCR | Off | Re-OCR pages that already have text |
 | Optimize | 1 | Output compression level (0 = none, 3 = maximum) |
 | PDF/A Compliance | Off | Produce PDF/A-compliant archival output |
-| Sidecar Text | On | Save extracted OCR text as a separate text file |
+| Sidecar Text | Off | Save extracted OCR text as a separate text file |
 | RAG from Sidecar | Off | Generate RAG chunks from sidecar text |
 | Background Removal | Off | Remove colored backgrounds before OCR |
 | **Performance** | | |
 | Parallel Workers | Auto | Number of files to convert simultaneously (1, 2, 4, 8, 12, 16, Auto). Auto uses system-detected recommendation |
 | Low Confidence Action | Ask me | Behavior when conversion confidence is low |
-| **Other** | | |
+| **Interface** | | |
 | Rules Profile | None | Post-processing rules profile to apply |
-| Theme | Dark | Interface theme (Dark, Light) |
+| Theme | System | Interface theme (System, Dark, Light) |
 | Page Range | All pages | Select specific PDF pages to convert (right-click a PDF file) |
 
 ## Output Structure
@@ -265,6 +267,7 @@ app/
     dxf_converter.py          # DXF engineering drawings + SVG preview
     image_converter.py        # Image OCR with preprocessing pipeline
     ocr_engine.py             # OCR orchestration (RapidOCR + Tesseract + Ensemble)
+    ocr_ensemble.py           # OCR ensemble — word-level RapidOCR + Tesseract merge
     ocr_platform.py           # Platform-aware OCR engine routing (Win/Linux/macOS)
     searchable_pdf.py         # ocrmypdf wrapper, auto-chunking, sidecar output
     ocrmypdf_rapidocr.py      # Custom ocrmypdf plugin for RapidOCR backend

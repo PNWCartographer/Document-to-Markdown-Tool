@@ -381,8 +381,7 @@ class App:
             import traceback as _tb
             msg = "".join(_tb.format_exception(exc_type, exc_value, exc_tb))
             # Log to stderr (visible when console isn't hidden)
-            import sys as _sys
-            _sys.stderr.write(f"Unhandled error:\n{msg}\n")
+            sys.stderr.write(f"Unhandled error:\n{msg}\n")
             # Also log to the app log file
             try:
                 from engine.logger import AppLogger
@@ -1887,26 +1886,23 @@ class App:
         self._conv_elapsed_lbl.config(text="0:00")
         self._tick_elapsed()
 
+    @staticmethod
+    def _format_elapsed(delta: int) -> str:
+        if delta >= 3600:
+            return f"{delta // 3600}:{(delta % 3600) // 60:02d}:{delta % 60:02d}"
+        return f"{delta // 60}:{delta % 60:02d}"
+
     def _tick_elapsed(self) -> None:
         delta = int(time.monotonic() - self._elapsed_start)
-        if delta >= 3600:
-            txt = f"{delta // 3600}:{(delta % 3600) // 60:02d}:{delta % 60:02d}"
-        else:
-            txt = f"{delta // 60}:{delta % 60:02d}"
-        self._conv_elapsed_lbl.config(text=txt)
+        self._conv_elapsed_lbl.config(text=self._format_elapsed(delta))
         self._elapsed_after_id = self.root.after(1000, self._tick_elapsed)
 
     def _stop_elapsed_timer(self) -> None:
         if self._elapsed_after_id is not None:
             self.root.after_cancel(self._elapsed_after_id)
             self._elapsed_after_id = None
-        # Final update
         delta = int(time.monotonic() - self._elapsed_start)
-        if delta >= 3600:
-            txt = f"{delta // 3600}:{(delta % 3600) // 60:02d}:{delta % 60:02d}"
-        else:
-            txt = f"{delta // 60}:{delta % 60:02d}"
-        self._conv_elapsed_lbl.config(text=txt)
+        self._conv_elapsed_lbl.config(text=self._format_elapsed(delta))
 
     def _pick_watch_input(self):
         path = filedialog.askdirectory(title="Select folder to watch")
@@ -3963,10 +3959,10 @@ class App:
                 "Complete a conversion to open the output folder.",
             )
             return
-        import subprocess, sys as _sys
-        if _sys.platform == "win32":
+        import subprocess
+        if sys.platform == "win32":
             os.startfile(path)
-        elif _sys.platform == "darwin":
+        elif sys.platform == "darwin":
             subprocess.Popen(["open", path], close_fds=True,
                              start_new_session=True)
         else:
@@ -5321,8 +5317,7 @@ class App:
     @staticmethod
     def _detect_system_dark_mode() -> bool:
         """Detect OS dark mode preference. Returns True for dark, False for light."""
-        import sys as _sys
-        if _sys.platform == "win32":
+        if sys.platform == "win32":
             try:
                 import winreg
                 key = winreg.OpenKey(
@@ -5333,7 +5328,7 @@ class App:
                 return value == 0  # 0 = dark, 1 = light
             except Exception:
                 return True  # default to dark
-        elif _sys.platform == "darwin":
+        elif sys.platform == "darwin":
             try:
                 import subprocess
                 result = subprocess.run(
@@ -5361,9 +5356,8 @@ class App:
     @staticmethod
     def _scroll_units(event) -> int:
         """Normalize mousewheel delta to scroll units across platforms."""
-        import sys as _sys
         if event.delta:
-            if _sys.platform == "darwin":
+            if sys.platform == "darwin":
                 return -event.delta
             return -1 * (event.delta // 120)
         return 0
@@ -5404,7 +5398,10 @@ class App:
         if not home:
             return
         banner = tk.Frame(home, bg=t["accent"], pady=4)
-        banner.pack(fill="x", before=list(home.winfo_children())[0] if home.winfo_children() else None)
+        # Home uses grid layout — place banner at top spanning full width.
+        # Row 0 holds the title; use a negative-pad row by reconfiguring.
+        banner.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        banner.lift()  # ensure banner renders on top of the title row
         msg = tk.Label(
             banner,
             text=f"  Update available: v{latest}  —  Visit darksquare.dev to download",
@@ -5424,8 +5421,7 @@ class App:
         """Check for optional dependencies and show a one-time notice if any are missing."""
         # When running from a PyInstaller bundle all dependencies are already
         # packaged inside the frozen executable — skip the check entirely.
-        import sys as _sys
-        if getattr(_sys, "frozen", False):
+        if getattr(sys, "frozen", False):
             return
 
         # Only check once per source install

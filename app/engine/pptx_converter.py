@@ -19,7 +19,7 @@ import os
 from typing import Optional, Callable
 
 from .confidence import ConfidenceResult
-from .markdown_writer import ConversionOutput, DocumentSection, rows_to_markdown_table
+from .markdown_writer import ConversionOutput, rows_to_markdown_table, _pad
 from .logger import ConversionLogger
 
 
@@ -333,7 +333,3 @@ def _extract_group_text(group_shape, **kwargs) -> tuple[str, int]:
             if text:
                 parts.append(text)
     return "\n".join(p for p in parts if p), img_counter_ref[0]
-
-
-def _pad(lst: list, length: int) -> list:
-    return list(lst) + [""] * max(0, length - len(lst))

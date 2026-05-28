@@ -17,7 +17,6 @@ Cross-platform: ezdxf is pure Python (optional Cython). No system
 libraries or platform-specific dependencies required.
 """
 
-import math
 import os
 import re
 from typing import Optional, Callable
@@ -25,7 +24,6 @@ from typing import Optional, Callable
 from .confidence import ConfidenceResult
 from .markdown_writer import (
     ConversionOutput,
-    DocumentSection,
     assets_dir_for,
     assets_rel_prefix_for,
     rows_to_markdown_table,

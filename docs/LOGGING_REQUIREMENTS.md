@@ -5,24 +5,20 @@ The tool should create detailed logs that help users and developers understand w
 
 Logs should be useful for troubleshooting without exposing unnecessary document content.
 
-## Log Folder
-The installed application should include a logs folder.
-
-Recommended location:
+## Log Location
+The application log is stored in the user's application data directory:
 
 ```text
-C:\Program Files\Documentation to Markdown Converter Tool\logs\
+%APPDATA%\DocToMarkdown\app.log
 ```
 
-If permission issues occur with Program Files, the tool may need to write user specific logs to a safe local application data folder.
+This avoids permission issues with Program Files and ensures logs are accessible without administrator rights.
 
 ## Log Types
-The tool should support:
-- General application log
-- Conversion log per file
-- Error log
-- Installer log
-- Uninstaller log
+The tool uses two logger classes:
+
+- **AppLogger** — Application-level logger. Writes to `app.log` in the app data directory. Captures startup, shutdown, settings changes, system detection, errors, and general application events.
+- **ConversionLogger** — Per-file conversion logger. Writes to the GUI log panel during conversion and optionally writes a per-file log file in the output directory alongside the converted file. Captures conversion stages, engine selection, OCR activity, confidence results, warnings, and errors for each file.
 
 ## Information to Log
 Logs should include:

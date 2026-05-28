@@ -13,7 +13,6 @@ startup times and allows the tool to run without OCR dependencies installed
 """
 
 import os
-import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -116,14 +115,6 @@ def rapidocr_available() -> bool:
     except Exception:
         _rapidocr_available = False
     return _rapidocr_available
-
-
-# Backward-compatibility alias — other modules may still reference this
-# after the PaddleOCR → RapidOCR swap.  Returns False because PaddleOCR
-# is no longer installed; callers should migrate to rapidocr_available().
-def paddle_available() -> bool:
-    """Deprecated. Returns False. Use rapidocr_available() instead."""
-    return False
 
 
 def tesseract_available() -> bool:

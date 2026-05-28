@@ -103,3 +103,10 @@ opencv-python>=4.10.0           # deskew, contrast, edge cleanup before OCR
 # ---------------------------------------------------------------------------
 psutil>=5.9.0                   # CPU core count and RAM detection
 nvidia-ml-py>=12.0.0            # NVIDIA GPU name and VRAM detection (optional, graceful fallback)
+
+# ---------------------------------------------------------------------------
+# Optional UI enhancements (graceful fallback if missing)
+# ---------------------------------------------------------------------------
+pyspellchecker>=0.7.0           # spell check in preview window
+tkinterdnd2>=0.4.0              # drag-and-drop file support (optional — fallback to file dialog)
+markdown>=3.5                   # HTML preview rendering (optional — preview uses plain text fallback)

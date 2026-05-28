@@ -10,6 +10,9 @@ The tool should eventually support:
 - Dataset files
 - PowerPoint presentations (.pptx) — slides, tables, images, speaker notes
 - EPUB e-books (.epub) — chapters, images, TOC, metadata
+- RTF files (.rtf)
+- HTML files (.html, .htm)
+- DXF files (.dxf) — CAD drawing layer/text/dimension extraction
 - Images with text
 - Electrical drawings with text
 - Tables
@@ -103,7 +106,7 @@ Engine selection is automatic by default. The tool detects available engines and
 The tool automatically detects system hardware at startup:
 - CPU model and core count
 - Available RAM
-- GPU model and VRAM (NVIDIA via pynvml, others via ONNX Runtime provider detection)
+- GPU model and VRAM (NVIDIA via nvidia-ml-py, others via ONNX Runtime provider detection)
 - Available ONNX Runtime execution providers (CUDA, DirectML, CoreML, CPU)
 
 System information is used to:

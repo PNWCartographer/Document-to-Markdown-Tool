@@ -95,8 +95,9 @@ Routing model:
 - Excel and CSV files: openpyxl/xlrd → pandas table builder
 - PowerPoint: python-pptx (slides, tables, images, speaker notes)
 - EPUB: ebooklib + BeautifulSoup (chapters, images, TOC)
-- HTML: markdownify → BeautifulSoup fallback
-- DXF: ezdxf (layers, text, dimensions, SVG preview)
+- RTF: striprtf → regex fallback → rtf_converter.py
+- HTML (.html, .htm): markdownify → BeautifulSoup fallback → html_converter.py
+- DXF: ezdxf (layers, text, dimensions, SVG preview) → dxf_converter.py
 - Images: RapidOCR with Tesseract fallback (OpenCV preprocessing pipeline)
 - Searchable PDF output: ocrmypdf with custom RapidOCR plugin
 

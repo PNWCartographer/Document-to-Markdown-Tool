@@ -29,7 +29,7 @@ The tool may:
 - Use local ONNX Runtime with GPU acceleration (CUDA, DirectML, CoreML)
 - Detect system hardware (CPU, RAM, GPU) for performance auto-configuration
 - Query ONNX Runtime for available execution providers
-- Query NVIDIA GPU info via pynvml for VRAM detection
+- Query NVIDIA GPU info via nvidia-ml-py for VRAM detection
 
 ## Settings Storage
 Settings should be stored locally. Settings should not include source file contents unless necessary and approved.

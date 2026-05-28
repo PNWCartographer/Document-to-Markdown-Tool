@@ -211,13 +211,6 @@ def _find_sequential_runs(
 # 4. Code Block Detection
 # ---------------------------------------------------------------------------
 
-# Common monospace font families used in documents
-_MONOSPACE_FONTS = {
-    "courier", "courier new", "consolas", "monaco", "menlo",
-    "lucida console", "liberation mono", "dejavu sans mono",
-    "source code pro", "fira code", "roboto mono", "andale mono",
-}
-
 # Patterns suggesting lines are source code
 _CODE_PATTERNS = re.compile(
     r"(?:"
@@ -451,12 +444,6 @@ def detect_footnotes_in_markdown(text: str) -> str:
 # 6. Equation Detection
 # ---------------------------------------------------------------------------
 
-# Greek letters (both names and Unicode)
-_GREEK_LETTERS = {
-    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta",
-    "iota", "kappa", "lambda", "mu", "nu", "xi", "omicron", "pi", "rho",
-    "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega",
-}
 _GREEK_UNICODE = set(
     "αβγδεζηθικλμνξοπρστυφχψω"
     "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"
@@ -464,31 +451,6 @@ _GREEK_UNICODE = set(
 
 # Math operator / symbol characters
 _MATH_SYMBOLS = set("±×÷≠≈≤≥∞∑∏∫∂∇√∈∉⊂⊃⊆⊇∪∩∧∨¬∀∃⟨⟩→←↔⇒⇐⇔")
-
-# Patterns suggesting mathematical expressions
-_MATH_INLINE_RE = re.compile(
-    r'(?<!\$)'           # not already inside a $ delimiter
-    r'(?:'
-    r'[a-zA-Z]\s*[=<>≠≈≤≥]\s*[a-zA-Z0-9(]'       # a = b, x > 0
-    r'|[a-zA-Z]\^[a-zA-Z0-9{]'                     # x^2, x^{n}
-    r'|[a-zA-Z]_[a-zA-Z0-9{]'                      # x_i, a_{n}
-    r'|\b(?:sin|cos|tan|log|ln|exp|lim|max|min|sup|inf|det|dim)\s*[(\[]'  # trig/log functions
-    r'|\b(?:sqrt|frac|sum|prod|int)\b'              # LaTeX-like keywords
-    r'|\\(?:alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|sigma|phi|omega|infty|partial)\b'  # LaTeX Greek
-    r')'
-    r'(?!\$)',
-)
-
-_DISPLAY_MATH_RE = re.compile(
-    r'(?m)^[ \t]*'       # optional leading whitespace
-    r'(?:'
-    r'[A-Za-z]\s*=\s*.+[+\-*/^].+'          # x = a + b * c ...
-    r'|\\(?:begin|end)\{(?:equation|align|gather|eqnarray)'  # LaTeX environments
-    r'|\$\$.+\$\$'                           # already delimited
-    r')'
-    r'[ \t]*$',
-)
-
 
 def detect_equations(text: str) -> str:
     """

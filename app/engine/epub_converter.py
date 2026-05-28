@@ -24,7 +24,7 @@ import re
 from typing import Optional, Callable
 
 from .confidence import ConfidenceResult
-from .markdown_writer import ConversionOutput, rows_to_markdown_table
+from .markdown_writer import ConversionOutput, rows_to_markdown_table, _pad
 from .logger import ConversionLogger
 
 
@@ -483,7 +483,3 @@ def _guess_ext(filename: str, media_type: str) -> str:
         "image/webp": "webp",
     }
     return mime_map.get(media_type, "png")
-
-
-def _pad(lst: list, length: int) -> list:
-    return list(lst) + [""] * max(0, length - len(lst))

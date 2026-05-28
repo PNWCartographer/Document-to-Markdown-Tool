@@ -16,3 +16,10 @@ installer/Output/
 # Testing folders
 test_files/
 test_output/
+
+# Logs
+*.log
+
+# Virtual environments
+venv/
+.venv/

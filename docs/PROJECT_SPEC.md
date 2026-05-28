@@ -6,7 +6,7 @@ Documentation to Markdown Converter Tool
 ## Project Summary
 The Documentation to Markdown Converter Tool is a local desktop utility intended to convert complex documents into clean Markdown or Searchable PDF. The output should be suitable for human reading, AI upload, memory systems, documentation repositories, knowledgebase use, and archival.
 
-The tool began as a rudimentary PDF to Markdown converter. It has grown into a broader document conversion tool that handles PDFs, Word documents, DOCX files, Excel files, CSV files, datasets, tables, matrices, images with text, electrical drawings with text, and embedded content inside source documents. It also produces Searchable PDFs with invisible OCR text layers for scanned document archival and full-text search.
+The tool began as a rudimentary PDF to Markdown converter. It has grown into a broader document conversion tool that handles PDFs, Word documents, DOCX files, Excel files, CSV files, datasets, tables, matrices, images with text, electrical drawings with text, embedded content inside source documents, RTF files, HTML files, and DXF files. It also produces Searchable PDFs with invisible OCR text layers for scanned document archival and full-text search.
 
 ## Main Goal
 The main goal is not just text extraction. The main goal is structured conversion.
