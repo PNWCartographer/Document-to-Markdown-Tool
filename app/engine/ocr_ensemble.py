@@ -5,8 +5,7 @@ Used by both ocr_engine.py (regular pipeline) and ocrmypdf_rapidocr.py
 (Searchable PDF plugin) to combine results from RapidOCR and Tesseract.
 """
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass

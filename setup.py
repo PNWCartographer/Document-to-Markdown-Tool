@@ -141,7 +141,7 @@ def verify() -> None:
         ("xlrd",           "import xlrd"),
         ("pandas",         "import pandas"),
         ("Pillow",         "import PIL"),
-        ("opencv",         "import cv2"),
+        ("opencv-python",  "import cv2"),
         ("rapidocr",       "import rapidocr_onnxruntime"),
         ("pytesseract",    "import pytesseract"),
         ("psutil",         "import psutil"),
@@ -153,6 +153,12 @@ def verify() -> None:
         ("watchdog",       "import watchdog"),
         ("ocrmypdf",       "import ocrmypdf"),
         ("python-pptx",    "import pptx"),
+        ("fast-langdetect", "import fast_langdetect"),
+        ("argostranslate", "import argostranslate"),
+        ("nvidia-ml-py",   "import pynvml"),
+        ("pyspellchecker", "import spellchecker"),
+        ("tkinterdnd2",    "import tkinterdnd2"),
+        ("markdown",       "import markdown"),
     ]
 
     all_ok = True

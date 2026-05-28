@@ -73,6 +73,7 @@ def convert(
     # ------------------------------------------------------------------
     # 1. Load image
     # ------------------------------------------------------------------
+    pil_image = None
     try:
         from PIL import Image
         pil_image = Image.open(source_file)
@@ -80,6 +81,8 @@ def convert(
         log_info(f"Loaded image | size={pil_image.size} mode={pil_image.mode}")
     except Exception as e:
         log_warn(f"Pillow failed to open image: {e}")
+        if pil_image is not None:
+            pil_image.close()
         confidence.text_extraction = "Failed"
         confidence.overall = "Failed"
         return output
@@ -113,6 +116,7 @@ def convert(
         log_warn("No OCR engine available. Image saved without text extraction.")
         if processed_pil is not pil_image:
             processed_pil.close()
+        pil_image.close()
         confidence.text_extraction = "N/A"
         confidence.ocr_confidence = "N/A"
         _build_image_only_section(output, stem, asset_rel_path)

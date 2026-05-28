@@ -427,8 +427,6 @@ def _convert_chunked(
         # Process chunks in parallel
         completed = 0
         chunk_results = [None] * num_chunks
-        sidecar_parts = [] if sidecar_path else None
-
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
             for i in range(num_chunks):

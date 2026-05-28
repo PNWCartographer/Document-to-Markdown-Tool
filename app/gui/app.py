@@ -356,6 +356,12 @@ class App:
         self._elapsed_after_id = None
         # Results nav flash state (Item 5)
         self._results_notify_id = None
+        # Watch folder flash state
+        self._watch_notify_id = None
+        # Batch result for re-populating results screen
+        self._last_batch_result = None
+        # Guard flag for resetting defaults
+        self._resetting_defaults = False
 
         # Custom widget tracking (filled by _build_* methods, themed in _apply_theme)
         self._primary_pills:    list = []   # filled accent PillButtons
@@ -493,7 +499,7 @@ class App:
         self._about_btn.pack(fill="x")
         self._about_btn.bind("<Button-1>", lambda _: self._show_about_window())
         self._about_btn.bind("<Enter>", lambda _: self._about_btn.config(
-            bg=self._t.get("hover", self._t["sidebar_bg"])))
+            bg=self._t["nav_hover_bg"]))
         self._about_btn.bind("<Leave>", lambda _: self._about_btn.config(
             bg=self._t["sidebar_bg"]))
 
@@ -1140,7 +1146,7 @@ class App:
         return row + 1
 
     def _on_setting_changed(self, *_):
-        if getattr(self, '_resetting_defaults', False):
+        if self._resetting_defaults:
             return
         for key, var in self._setting_vars.items():
             val = var.get()
@@ -2034,7 +2040,7 @@ class App:
         btn = self._nav_btns.get("Watch")
         if btn and self._current != "Watch":
             # Cancel any pending restore before scheduling a new one
-            pending = getattr(self, "_watch_notify_id", None)
+            pending = self._watch_notify_id
             if pending is not None:
                 try:
                     self.root.after_cancel(pending)
@@ -2071,7 +2077,7 @@ class App:
 
     def _show_debug_window(self):
         """Open a Toplevel window with diagnostic info about the last conversion."""
-        result = getattr(self, "_last_batch_result", None)
+        result = self._last_batch_result
         if result is None:
             messagebox.showinfo("Debug Info", "No conversion results available yet.")
             return
@@ -2519,7 +2525,7 @@ class App:
 
     def _show_preview_window(self):
         """Open a side-by-side preview: source info on the left, converted markdown on the right."""
-        result = getattr(self, "_last_batch_result", None)
+        result = self._last_batch_result
         if result is None or not result.output_root:
             messagebox.showinfo("Preview", "No conversion results available yet.")
             return
@@ -3163,6 +3169,7 @@ class App:
         search_current_idx = [0]  # mutable index
         search_visible = [False]
         search_debounce_id = [None]  # pending after() id for debounce
+        deferred_after_ids = []     # fire-and-forget after() IDs to cancel on close
 
         preview_frame = tk.Frame(right_frame, bg=t["bg"])
         preview_frame.pack(fill="both", expand=True)
@@ -3407,7 +3414,8 @@ class App:
 
             # Render source pages in background (deferred to avoid blocking)
             if matched_source:
-                win.after(100, lambda p=matched_source: _render_source_pages(p))
+                _id = win.after(100, lambda p=matched_source: _render_source_pages(p))
+                deferred_after_ids.append(_id)
 
             # ── Right panel: converted markdown ──────────────
             try:
@@ -3584,9 +3592,9 @@ class App:
 
             # Re-run overlays if active
             if spell_active[0]:
-                win.after(100, _run_spell_check)
+                deferred_after_ids.append(win.after(100, _run_spell_check))
             if heatmap_active[0]:
-                win.after(100, _apply_heatmap)
+                deferred_after_ids.append(win.after(100, _apply_heatmap))
 
         # ── Search & Replace functions ───────────────────────
         def _toggle_search(_event=None):
@@ -3768,6 +3776,10 @@ class App:
             if image_load_id[0] is not None:
                 try: win.after_cancel(image_load_id[0])
                 except Exception: pass
+            for _aid in deferred_after_ids:
+                try: win.after_cancel(_aid)
+                except Exception: pass
+            deferred_after_ids.clear()
             try: search_var.trace_remove("write", _search_trace)
             except Exception: pass
             try: file_var.trace_remove("write", _file_trace)
@@ -4137,7 +4149,7 @@ class App:
         # Status banner
         self._results_status_lbl.config(text=result.status_text)
         if result.failed > 0:
-            self._results_status_frame.config(highlightbackground=t.get("warn", t["border"]))
+            self._results_status_frame.config(highlightbackground="#ef4444")
         else:
             self._results_status_frame.config(highlightbackground=t["border"])
 
@@ -5461,8 +5473,12 @@ class App:
                 missing.append(("Tesseract binary",
                                 "pytesseract installed but tesseract not found in PATH"))
 
-        self._cfg["_dep_check_done"] = True
-        _cfg_mod.save(self._cfg)
+        # Schedule the config write on the main thread to avoid a data race
+        # with _on_setting_changed() which also reads/writes self._cfg.
+        try:
+            self.root.after(0, lambda: self._mark_dep_check_done())
+        except Exception:
+            pass
 
         if not missing:
             return
@@ -5472,6 +5488,11 @@ class App:
             self.root.after(500, lambda m=missing: self._show_dependency_dialog(m))
         except Exception:
             pass  # root may have been destroyed during shutdown
+
+    def _mark_dep_check_done(self):
+        """Write the dep-check-done flag on the main thread (avoids data race)."""
+        self._cfg["_dep_check_done"] = True
+        _cfg_mod.save(self._cfg)
 
     def _show_dependency_dialog(self, missing: list):
         """Show a themed dialog listing missing optional components.

@@ -21,7 +21,7 @@ from typing import Optional, Callable
 from urllib.parse import urlparse, unquote
 
 from .confidence import ConfidenceResult
-from .markdown_writer import ConversionOutput, rows_to_markdown_table
+from .markdown_writer import ConversionOutput, rows_to_markdown_table, _pad
 from .logger import ConversionLogger
 
 try:
@@ -430,6 +430,6 @@ def _table_md(table_el) -> str:
     if not rows_data:
         return ""
     col_count = max(len(r) for r in rows_data)
-    headers = rows_data[0] + [""] * max(0, col_count - len(rows_data[0]))
-    body_rows = [r + [""] * max(0, col_count - len(r)) for r in rows_data[1:]]
+    headers = _pad(rows_data[0], col_count)
+    body_rows = [_pad(r, col_count) for r in rows_data[1:]]
     return rows_to_markdown_table(headers, body_rows)

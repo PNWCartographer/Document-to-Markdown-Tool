@@ -26,7 +26,7 @@ def convert(
     language: str = "en",
     preserve_images: bool = True,
     rebuild_toc: bool = True,
-    preserve_page_numbers: bool = False,
+    preserve_page_numbers: bool = True,
     use_subfolder: bool = True,
     remove_headers_footers: bool = True,
     skip_blank_pages: bool = True,
@@ -198,10 +198,13 @@ def _save_docling_images(doc, source_file, alias, output_root, output, log_info,
                 if pil_img is None and hasattr(picture, 'image') and picture.image:
                     pil_img = picture.image.pil_image
                 if pil_img:
-                    pil_img.save(img_path)
-                    output.asset_paths.append(f"{rel_prefix}{img_filename}")
-                    log_info(f"Saved image asset: {img_filename}")
-                    saved += 1
+                    try:
+                        pil_img.save(img_path)
+                        output.asset_paths.append(f"{rel_prefix}{img_filename}")
+                        log_info(f"Saved image asset: {img_filename}")
+                        saved += 1
+                    finally:
+                        pil_img.close()
             except Exception:
                 pass
     except Exception:

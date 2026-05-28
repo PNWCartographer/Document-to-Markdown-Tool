@@ -691,7 +691,8 @@ class GlassDropdown(tk.Canvas):
         self.after_idle(self._draw)
 
     def destroy(self):
-        """Remove the variable trace before destroying the widget."""
+        """Close popup, remove bindings, and clean up before destroying."""
+        self._close_popup()
         if self._var and self._trace_name is not None:
             try:
                 self._var.trace_remove("write", self._trace_name)
@@ -951,6 +952,17 @@ class PillProgressBar(tk.Canvas):
         self._pulse_after_id = None
 
         self.bind("<Configure>", lambda _e: self._draw())
+
+    def destroy(self):
+        """Cancel pulse animation before destroying the canvas."""
+        if self._pulse_after_id is not None:
+            try:
+                self.after_cancel(self._pulse_after_id)
+            except Exception:
+                pass
+            self._pulse_after_id = None
+        self._indeterminate = False
+        super().destroy()
 
     def set_colors(self, *, track="", fill="", border="", parent_bg=None):
         if track:  self._track_color = track

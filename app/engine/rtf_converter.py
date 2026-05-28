@@ -57,6 +57,7 @@ def convert(
     def log_warn(msg: str):
         if logger:
             logger.warning(msg)
+        confidence.add_warning(msg)
 
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)

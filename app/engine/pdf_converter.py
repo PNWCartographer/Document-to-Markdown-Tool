@@ -88,8 +88,8 @@ def convert(
         with _fitz_check.open(source_file) as _doc_check:
             if _doc_check.is_encrypted:
                 log_warn("PDF is password-protected or encrypted. Cannot extract content.")
-                confidence.overall = "Low"
-                confidence.text_extraction = "Low"
+                confidence.overall = "Failed"
+                confidence.text_extraction = "Failed"
                 confidence.manual_review_recommended = True
                 output.add_section(
                     body="*This PDF is password-protected or encrypted. "
@@ -465,7 +465,10 @@ def _embed_images_in_markdown(
                 # Render at 3× for crisp output
                 mat = fitz.Matrix(3.0, 3.0)
                 pix = page.get_pixmap(matrix=mat, clip=fitz_rect, colorspace=fitz.csRGB)
-                img_bytes = pix.tobytes("png")
+                try:
+                    img_bytes = pix.tobytes("png")
+                finally:
+                    pix = None  # release Pixmap memory immediately
 
                 b64_data = base64.b64encode(img_bytes).decode("ascii")
                 alt = f"Image {idx + 1} — page {page_no}"
@@ -1016,7 +1019,10 @@ def _ocr_page(page, language: str, log_info, log_warn,
 
         mat = fitz.Matrix(ocr_dpi_scale, ocr_dpi_scale)
         pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-        img_bytes = pix.tobytes("png")
+        try:
+            img_bytes = pix.tobytes("png")
+        finally:
+            pix = None  # release Pixmap memory immediately
         pil_image = Image.open(io.BytesIO(img_bytes))
 
         try:

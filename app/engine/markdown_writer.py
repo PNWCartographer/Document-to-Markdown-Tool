@@ -24,16 +24,6 @@ from typing import Optional
 
 from .confidence import ConfidenceResult
 
-# Markdown flavor definitions
-FLAVORS = {
-    "GFM":      "GitHub Flavored Markdown",
-    "Obsidian": "Obsidian-compatible Markdown",
-    "Pandoc":   "Pandoc extended Markdown",
-}
-
-FLAVOR_NAMES = list(FLAVORS.keys())
-
-
 @dataclass
 class DocumentSection:
     """

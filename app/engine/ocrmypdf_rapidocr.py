@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Set
 
 import ocrmypdf
 
@@ -26,6 +25,10 @@ log = logging.getLogger(__name__)
 # Module-level flags — set by searchable_pdf.py before calling ocrmypdf.ocr()
 ENSEMBLE_MODE = False
 BACKGROUND_REMOVAL = False
+
+# Cached RapidOCR engine — avoid reloading ONNX models on every page.
+# Within a single worker process this persists across generate_hocr calls.
+_cached_engine = None
 
 
 @ocrmypdf.hookimpl
@@ -54,7 +57,7 @@ class RapidOcrEngine(ocrmypdf.OcrEngine):
         return f"RapidOCR {self.version()}"
 
     @staticmethod
-    def languages(options) -> Set[str]:
+    def languages(options) -> set[str]:
         return {
             "eng", "fra", "deu", "spa", "ita", "por", "nld",
             "chi_sim", "chi_tra", "jpn", "kor", "ara", "rus",
@@ -85,8 +88,10 @@ class RapidOcrEngine(ocrmypdf.OcrEngine):
             if BACKGROUND_REMOVAL:
                 img_array = _remove_background(img_array)
 
-            engine = RapidOCR()
-            raw, _ = engine(img_array)
+            global _cached_engine
+            if _cached_engine is None:
+                _cached_engine = RapidOCR()
+            raw, _ = _cached_engine(img_array)
 
             if ENSEMBLE_MODE:
                 word_elements, lines_text = _generate_ensemble_hocr(
