@@ -590,12 +590,17 @@ def _extract_fitz_images(
     log_info,
     log_warn,
     use_subfolder: bool = True,
+    page_range: list[int] | None = None,
 ) -> dict[int, list[str]]:
     """
-    Extract all embedded images from a PDF using fitz and save them to assets/.
+    Extract embedded images from a PDF using fitz and save them to assets/.
     Used by the pymupdf4llm conversion path.
     Deduplicates images by xref so the same image reused on multiple pages
     is only saved once.
+
+    When *page_range* is given (1-based page numbers), only those pages are
+    scanned for images.  This avoids processing the entire document when only
+    a subset of pages was requested for text extraction.
 
     Returns a dict mapping page_num (1-based) to a list of Markdown image
     reference strings, including captions when detected.
@@ -612,7 +617,13 @@ def _extract_fitz_images(
             saved_xrefs: set[int] = set()
             img_counter = 0
 
-            for page_idx in range(len(doc)):
+            # Only scan requested pages (or all pages when no range given)
+            if page_range:
+                page_indices = [p - 1 for p in page_range if 0 < p <= len(doc)]
+            else:
+                page_indices = list(range(len(doc)))
+
+            for page_idx in page_indices:
                 page = doc[page_idx]
                 page_num = page_idx + 1
                 for img_info in page.get_images(full=True):
@@ -698,14 +709,30 @@ def _convert_pymupdf4llm(
     # Extract and save images via fitz — inject refs into the markdown text
     if preserve_images and output_root:
         page_image_refs = _extract_fitz_images(
-            source_file, alias, output_root, output, log_info, log_warn, use_subfolder,
+            source_file, alias, output_root, output, log_info, log_warn,
+            use_subfolder, page_range=page_range,
         )
         if page_image_refs:
             # pymupdf4llm uses --- separators between pages; split, inject, rejoin
             _page_sep = re.compile(r'(?m)^-{3,}\s*$')
             segments = _page_sep.split(md_text)
+
+            # Build page-number → segment-index mapping.  When a page_range is
+            # active the segments correspond to the *requested* pages in order,
+            # not to absolute page numbers in the PDF.
+            if page_range:
+                _pg_to_seg = {pg: i for i, pg in enumerate(sorted(page_range))}
+            else:
+                _pg_to_seg = None  # fall back to pg_num-1
+
             for pg_num, refs in page_image_refs.items():
-                idx = pg_num - 1  # 0-based segment index
+                if _pg_to_seg is not None:
+                    idx = _pg_to_seg.get(pg_num, -1)
+                    if idx < 0:
+                        continue  # image page not in requested range
+                else:
+                    idx = pg_num - 1
+
                 if idx < len(segments):
                     segments[idx] += "\n" + "\n".join(refs)
                 else:

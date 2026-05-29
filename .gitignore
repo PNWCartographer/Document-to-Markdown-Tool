@@ -18,6 +18,7 @@ test_files/
 test_output/
 _test_output/
 _stress_output/
+_stress_output_rerun/
 _test_output_log.txt
 _test_output_err.txt
 _test_final_log.txt
