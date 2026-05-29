@@ -637,10 +637,82 @@ def test_overwrite_protection():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# STRESS TESTS — activated via --stress <path>
+# STRESS TESTS — activated via --stress <path|dir>
 # ═══════════════════════════════════════════════════════════════════
 
 _STRESS_TIMEOUT = 7200  # 2 hours per conversion (large books)
+
+# Minimum file size (MB) to qualify as a "stress" file
+_STRESS_MIN_SIZE_MB = 1.0
+
+
+def _get_pdf_pages(path):
+    """Return page count for a PDF, or None on failure."""
+    try:
+        import fitz
+        with fitz.open(path) as doc:
+            return len(doc)
+    except Exception:
+        return None
+
+
+def _get_csv_rows(path):
+    """Return approximate row count for a CSV, or None on failure."""
+    try:
+        count = 0
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for _ in f:
+                count += 1
+        return count
+    except Exception:
+        return None
+
+
+def _discover_stress_files(stress_path):
+    """Discover and categorize stress-worthy files from a path.
+
+    Returns dict with keys: 'primary_pdf', 'secondary_pdfs', 'csv_files',
+    'all_heavy' — each containing file paths sorted largest first.
+    """
+    files = []
+    if os.path.isfile(stress_path):
+        files = [stress_path]
+    elif os.path.isdir(stress_path):
+        for fname in os.listdir(stress_path):
+            fpath = os.path.join(stress_path, fname)
+            if os.path.isfile(fpath):
+                files.append(fpath)
+
+    result = {
+        "primary_pdf": None,       # Largest PDF (gets full S1-S6 treatment)
+        "secondary_pdfs": [],      # Other PDFs over threshold
+        "csv_files": [],           # Large CSV/XLSX files
+        "all_heavy": [],           # Everything stress-worthy
+    }
+
+    pdf_candidates = []
+    for fpath in files:
+        ext = os.path.splitext(fpath)[1].lower()
+        size_mb = os.path.getsize(fpath) / (1024 * 1024)
+
+        if size_mb < _STRESS_MIN_SIZE_MB:
+            continue
+
+        result["all_heavy"].append(fpath)
+
+        if ext == ".pdf":
+            pages = _get_pdf_pages(fpath) or 0
+            pdf_candidates.append((pages, size_mb, fpath))
+        elif ext in (".csv", ".xlsx", ".xls"):
+            result["csv_files"].append(fpath)
+
+    # Sort PDFs by page count descending — largest is primary
+    pdf_candidates.sort(key=lambda x: x[0], reverse=True)
+    if pdf_candidates:
+        result["primary_pdf"] = pdf_candidates[0][2]
+        result["secondary_pdfs"] = [p[2] for p in pdf_candidates[1:]]
+
+    return result
 
 
 def _run_stress(files, cfg_overrides=None, page_ranges=None):
@@ -742,6 +814,8 @@ def _run_stress(files, cfg_overrides=None, page_ranges=None):
     return result_holder[0], output_dir, log_lines
 
 
+# ── S1–S6: Primary PDF (largest book) ─────────────────────────────
+
 def stress_full_markdown_fast(stress_file):
     """Stress S1: Full book — Markdown, Fast preset."""
     log("\n═══ STRESS S1: Full book — Markdown (Fast) ═══")
@@ -813,10 +887,13 @@ def stress_full_searchable_pdf(stress_file):
 
 
 def stress_page_range_samples(stress_file):
-    """Stress S4: Spot-check specific page ranges from the book."""
+    """Stress S4: Spot-check specific page ranges (adaptive to book length)."""
     log("\n═══ STRESS S4: Page range spot-checks ═══")
 
-    # First 20 pages (title, TOC, intro)
+    total_pages = _get_pdf_pages(stress_file) or 100
+    log(f"    Total pages: {total_pages:,}")
+
+    # a) First 20 pages (title, TOC, intro)
     result, out_dir, _ = _run_stress(
         [stress_file],
         {"quality_preset": "Fast"},
@@ -825,25 +902,29 @@ def stress_page_range_samples(stress_file):
     md = read_output(out_dir)
     check("S4a — pages 1-20 converts", md is not None and len(md.strip()) > 100)
 
-    # Mid-book pages (likely content-heavy)
+    # b) Mid-book pages (content-heavy)
+    mid = max(21, total_pages // 2)
+    mid_end = min(mid + 20, total_pages + 1)
     result, out_dir, _ = _run_stress(
         [stress_file],
         {"quality_preset": "Fast"},
-        page_ranges={stress_file: list(range(500, 521))},
+        page_ranges={stress_file: list(range(mid, mid_end))},
     )
     md = read_output(out_dir)
-    check("S4b — pages 500-520 converts", md is not None and len(md.strip()) > 100)
+    check(f"S4b — pages {mid}-{mid_end - 1} converts",
+          md is not None and len(md.strip()) > 100)
 
-    # Near-end pages
+    # c) Near-end pages (adaptive — last 20 pages of the book)
+    near_end_start = max(1, total_pages - 20)
     result, out_dir, _ = _run_stress(
         [stress_file],
         {"quality_preset": "Fast"},
-        page_ranges={stress_file: list(range(1380, 1401))},
+        page_ranges={stress_file: list(range(near_end_start, total_pages + 1))},
     )
     md = read_output(out_dir)
-    check("S4c — near-end pages convert",
+    check(f"S4c — pages {near_end_start}-{total_pages} converts",
           md is not None and len(md.strip()) > 50,
-          "output too short or missing — page range may exceed book length (OK)")
+          "output too short or missing")
 
 
 def stress_cancel_large(stress_file):
@@ -913,9 +994,14 @@ def stress_cancel_large(stress_file):
 
 
 def stress_memory_check(stress_file):
-    """Stress S6: Monitor peak memory during full conversion."""
+    """Stress S6: Memory usage during full conversion."""
     log("\n═══ STRESS S6: Memory usage during conversion ═══")
-    import psutil
+    try:
+        import psutil
+    except ImportError:
+        warn("S6 — psutil not installed, skipping memory check")
+        return
+
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
     log(f"    Memory before: {mem_before:.0f} MB")
@@ -936,6 +1022,177 @@ def stress_memory_check(stress_file):
         check("S6 — memory within bounds", True)
 
 
+# ── S7–S8: Secondary PDFs (engineering, manuals) ──────────────────
+
+def stress_secondary_pdf(pdf_path, label):
+    """Stress S7/S8: Secondary PDF — Fast conversion + quality checks."""
+    fname = os.path.basename(pdf_path)
+    pages = _get_pdf_pages(pdf_path) or 0
+    size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
+    log(f"\n═══ STRESS {label}: {fname} ({pages:,} pages, {size_mb:.1f} MB) ═══")
+
+    # a) Full conversion — Fast
+    t0 = time.time()
+    result, out_dir, logs = _run_stress([pdf_path], {"quality_preset": "Fast"})
+    elapsed = time.time() - t0
+    log(f"    Elapsed: {elapsed:.1f}s")
+
+    check(f"{label}a — conversion completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}")
+
+    md = read_output(out_dir)
+    check(f"{label}a — output exists", md is not None)
+    if md:
+        size_kb = len(md.encode("utf-8")) / 1024
+        log(f"    Output size: {size_kb:.0f} KB")
+        check(f"{label}a — output > 5 KB", size_kb > 5, f"only {size_kb:.0f} KB")
+
+        # Check for tables (technical docs should have them)
+        table_count = md.count("| --- |") + md.count("|---|") + md.count("| --")
+        if table_count > 0:
+            log(f"    Tables found: {table_count}")
+            check(f"{label}a — has tables", True)
+        else:
+            warn(f"{label}a — no markdown tables found (may be expected)")
+
+        # Check for image references (schematics, diagrams)
+        img_refs = md.count("![") + md.count("](assets/") + md.count("data:image")
+        if img_refs > 0:
+            log(f"    Image references: {img_refs}")
+            check(f"{label}a — has image references", True)
+
+    if result and result.all_confidence:
+        c = result.all_confidence[0]
+        log(f"    Confidence: overall={c.overall}, text={c.text_extraction}, "
+            f"tables={c.table_structure}, images={c.image_extraction}, "
+            f"ocr={c.ocr_confidence}")
+
+    # b) Balanced quality — for technical docs, docling may handle
+    #    schematics and table structure better
+    log(f"    --- {label}b: Balanced quality ---")
+    t0 = time.time()
+    result_b, out_dir_b, _ = _run_stress([pdf_path], {"quality_preset": "Balanced"})
+    elapsed_b = time.time() - t0
+    log(f"    Elapsed: {elapsed_b:.1f}s")
+
+    check(f"{label}b — Balanced completes",
+          result_b is not None and result_b.completed >= 1,
+          f"completed={getattr(result_b, 'completed', '?')}")
+
+    md_b = read_output(out_dir_b)
+    if md_b and md:
+        size_kb_b = len(md_b.encode("utf-8")) / 1024
+        log(f"    Balanced output: {size_kb_b:.0f} KB (Fast was {size_kb:.0f} KB)")
+
+
+# ── S9: Large CSV / tabular data ─────────────────────────────────
+
+def stress_large_csv(csv_path):
+    """Stress S9: Large CSV — tabular conversion stress test."""
+    fname = os.path.basename(csv_path)
+    size_mb = os.path.getsize(csv_path) / (1024 * 1024)
+    rows = _get_csv_rows(csv_path) or 0
+    log(f"\n═══ STRESS S9: Large CSV — {fname} ({rows:,} rows, {size_mb:.1f} MB) ═══")
+
+    # a) Full conversion
+    t0 = time.time()
+    result, out_dir, logs = _run_stress([csv_path], {"quality_preset": "Fast"})
+    elapsed = time.time() - t0
+    log(f"    Elapsed: {elapsed:.1f}s")
+
+    check("S9a — conversion completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}")
+
+    md = read_output(out_dir)
+    check("S9a — output exists", md is not None)
+    if md:
+        size_kb = len(md.encode("utf-8")) / 1024
+        log(f"    Output size: {size_kb:.0f} KB")
+        check("S9a — output > 1 KB", size_kb > 1, f"only {size_kb:.0f} KB")
+
+        # CSV → markdown should produce pipe tables
+        pipe_count = md.count("|")
+        check("S9a — has pipe-table formatting",
+              pipe_count > 10,
+              f"only {pipe_count} pipe chars")
+
+        # Check header row was preserved
+        has_header = "ID" in md or "Name" in md or "Category" in md
+        check("S9a — header columns preserved", has_header,
+              "no recognizable header columns in output")
+
+    if result and result.all_confidence:
+        c = result.all_confidence[0]
+        log(f"    Confidence: overall={c.overall}, tables={c.table_structure}")
+
+    # b) Memory check — large CSV can spike memory
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        mem_after = process.memory_info().rss / (1024 * 1024)
+        log(f"    Memory after CSV conversion: {mem_after:.0f} MB")
+        if mem_after > 4096:
+            warn("S9b — memory over 4 GB after CSV conversion",
+                 f"{mem_after:.0f} MB")
+        else:
+            check("S9b — memory reasonable after CSV", True)
+    except ImportError:
+        warn("S9b — psutil not installed, skipping memory check")
+
+
+# ── S10: Multi-file stress batch ──────────────────────────────────
+
+def stress_multi_batch(all_heavy_files):
+    """Stress S10: All heavy files in a single batch conversion."""
+    count = len(all_heavy_files)
+    total_mb = sum(os.path.getsize(f) / (1024 * 1024) for f in all_heavy_files)
+    log(f"\n═══ STRESS S10: Multi-file batch ({count} files, {total_mb:.0f} MB total) ═══")
+
+    for f in all_heavy_files:
+        name = os.path.basename(f)
+        sz = os.path.getsize(f) / (1024 * 1024)
+        log(f"    • {name} ({sz:.1f} MB)")
+
+    t0 = time.time()
+    result, out_dir, logs = _run_stress(all_heavy_files, {"quality_preset": "Fast"})
+    elapsed = time.time() - t0
+    log(f"    Elapsed: {elapsed:.1f}s")
+
+    check(f"S10 — batch completes",
+          result is not None and result.completed >= 1,
+          f"completed={getattr(result, 'completed', '?')}, "
+          f"failed={getattr(result, 'failed', '?')}")
+
+    if result:
+        log(f"    Completed: {result.completed}/{count}")
+        log(f"    Failed:    {result.failed}/{count}")
+
+        check(f"S10 — all {count} files converted",
+              result.completed == count,
+              f"completed={result.completed}, failed={result.failed}")
+
+        # Each file should have a confidence result
+        check("S10 — per-file confidence for all",
+              len(result.all_confidence) == count,
+              f"got {len(result.all_confidence)} confidence results for {count} files")
+
+        # Log per-file results
+        for conf in result.all_confidence:
+            name = os.path.basename(conf.source_file)
+            log(f"    → {name}: overall={conf.overall}, "
+                f"text={conf.text_extraction}, tables={conf.table_structure}")
+
+    # Check output files
+    out_files = list_output_files(out_dir)
+    md_files = [f for f in out_files if f.endswith(".md")]
+    log(f"    Output markdown files: {len(md_files)}")
+    check("S10 — at least one .md per input file",
+          len(md_files) >= count,
+          f"only {len(md_files)} .md files for {count} inputs")
+
+
 # ═══════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════
@@ -943,8 +1200,9 @@ def stress_memory_check(stress_file):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Document-to-Markdown Engine Tests")
-    parser.add_argument("--stress", metavar="FILE",
-                        help="Path to a large PDF for stress testing")
+    parser.add_argument("--stress", metavar="PATH", nargs="?", const=TEST_FILES_DIR,
+                        help="Path to a file or directory for stress testing. "
+                             "Defaults to test_files/ if no path given.")
     parser.add_argument("--stress-only", action="store_true",
                         help="Skip normal tests, run only stress tests")
     args = parser.parse_args()
@@ -987,41 +1245,93 @@ def main():
                 global FAIL
                 FAIL += 1
 
-    # ── Stress tests (if file provided) ───────────────────
-    if args.stress:
-        stress_file = os.path.abspath(args.stress)
-        if not os.path.isfile(stress_file):
-            log(f"\n  ✗ Stress file not found: {stress_file}")
+    # ── Stress tests ──────────────────────────────────────
+    if args.stress is not None or args.stress_only:
+        stress_path = os.path.abspath(args.stress or TEST_FILES_DIR)
+
+        if not os.path.exists(stress_path):
+            log(f"\n  ✗ Stress path not found: {stress_path}")
             FAIL += 1
         else:
-            # Get page count for the log
-            try:
-                import fitz
-                with fitz.open(stress_file) as doc:
-                    pages = len(doc)
+            catalog = _discover_stress_files(stress_path)
+
+            if not catalog["all_heavy"]:
+                log(f"\n  ⚠ No stress-worthy files found (>{_STRESS_MIN_SIZE_MB} MB) "
+                    f"in: {stress_path}")
+            else:
+                # ── Print catalog ──
                 log(f"\n{'='*60}")
-                log(f"STRESS FILE: {os.path.basename(stress_file)}")
-                log(f"Pages: {pages:,}  |  Size: {os.path.getsize(stress_file)/(1024*1024):.1f} MB")
+                log(f"STRESS TEST CATALOG")
                 log(f"{'='*60}")
-            except Exception:
-                log(f"\n  Stress file: {stress_file}")
 
-            stress_tests = [
-                lambda: stress_full_markdown_fast(stress_file),
-                lambda: stress_full_markdown_balanced(stress_file),
-                lambda: stress_full_searchable_pdf(stress_file),
-                lambda: stress_page_range_samples(stress_file),
-                lambda: stress_cancel_large(stress_file),
-                lambda: stress_memory_check(stress_file),
-            ]
+                if catalog["primary_pdf"]:
+                    pf = catalog["primary_pdf"]
+                    pages = _get_pdf_pages(pf) or 0
+                    sz = os.path.getsize(pf) / (1024 * 1024)
+                    log(f"  Primary PDF:    {os.path.basename(pf)}")
+                    log(f"                  {pages:,} pages  |  {sz:.1f} MB")
 
-            for test_fn in stress_tests:
-                try:
-                    test_fn()
-                except Exception as e:
-                    log(f"\n  ✗ STRESS CRASHED: {e}")
-                    traceback.print_exc()
-                    FAIL += 1
+                for sp in catalog["secondary_pdfs"]:
+                    pages = _get_pdf_pages(sp) or 0
+                    sz = os.path.getsize(sp) / (1024 * 1024)
+                    log(f"  Secondary PDF:  {os.path.basename(sp)}")
+                    log(f"                  {pages:,} pages  |  {sz:.1f} MB")
+
+                for cf in catalog["csv_files"]:
+                    rows = _get_csv_rows(cf) or 0
+                    sz = os.path.getsize(cf) / (1024 * 1024)
+                    log(f"  CSV dataset:    {os.path.basename(cf)}")
+                    log(f"                  {rows:,} rows  |  {sz:.1f} MB")
+
+                log(f"  Total files:    {len(catalog['all_heavy'])}")
+                log(f"{'='*60}")
+
+                # ── S1–S6: Primary PDF full treatment ──
+                if catalog["primary_pdf"]:
+                    pf = catalog["primary_pdf"]
+                    stress_tests = [
+                        lambda: stress_full_markdown_fast(pf),
+                        lambda: stress_full_markdown_balanced(pf),
+                        lambda: stress_full_searchable_pdf(pf),
+                        lambda: stress_page_range_samples(pf),
+                        lambda: stress_cancel_large(pf),
+                        lambda: stress_memory_check(pf),
+                    ]
+                    for test_fn in stress_tests:
+                        try:
+                            test_fn()
+                        except Exception as e:
+                            log(f"\n  ✗ STRESS CRASHED: {e}")
+                            traceback.print_exc()
+                            FAIL += 1
+
+                # ── S7/S8: Secondary PDFs ──
+                for idx, sp in enumerate(catalog["secondary_pdfs"]):
+                    label = f"S{7 + idx}"
+                    try:
+                        stress_secondary_pdf(sp, label)
+                    except Exception as e:
+                        log(f"\n  ✗ STRESS {label} CRASHED: {e}")
+                        traceback.print_exc()
+                        FAIL += 1
+
+                # ── S9: CSV / tabular files ──
+                for cf in catalog["csv_files"]:
+                    try:
+                        stress_large_csv(cf)
+                    except Exception as e:
+                        log(f"\n  ✗ STRESS S9 CRASHED: {e}")
+                        traceback.print_exc()
+                        FAIL += 1
+
+                # ── S10: Multi-file batch (all heavy files at once) ──
+                if len(catalog["all_heavy"]) >= 2:
+                    try:
+                        stress_multi_batch(catalog["all_heavy"])
+                    except Exception as e:
+                        log(f"\n  ✗ STRESS S10 CRASHED: {e}")
+                        traceback.print_exc()
+                        FAIL += 1
 
     elapsed = time.time() - start
     log(f"\n{'='*60}")
