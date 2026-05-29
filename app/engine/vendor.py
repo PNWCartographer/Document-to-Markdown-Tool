@@ -23,9 +23,15 @@ from typing import Optional
 
 
 def app_root() -> str:
-    """Return the directory the application is running from."""
+    """Return the directory bundled resources are rooted at."""
     if getattr(sys, "frozen", False):
-        # PyInstaller one-folder: bundled files sit next to the executable.
+        # PyInstaller stores bundled data under sys._MEIPASS. In one-folder
+        # 6.x this is the _internal/ directory beside the executable; in
+        # one-file builds it is the temporary extraction directory. Fall
+        # back to the executable's own directory if _MEIPASS is unset.
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return meipass
         return os.path.dirname(sys.executable)
     # Development: project root (app/engine/vendor.py -> ../.. -> project).
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))

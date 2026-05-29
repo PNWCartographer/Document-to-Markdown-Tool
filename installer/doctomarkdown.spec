@@ -180,16 +180,17 @@ for pkg in _bin_packages:
 # Trim packages that are not needed at runtime to reduce bundle size.
 excludes = [
     "matplotlib",
-    "scipy",
     "notebook",
     "jupyter",
     "IPython",
     "pytest",
-    "setuptools",
-    "pip",
-    "wheel",
     "sphinx",
     "pyinstaller",
+    # NOTE: do NOT exclude setuptools / pip / wheel — PyInstaller's setuptools
+    # hook aliases a vendored 'wheel' module, and excluding it aborts the build
+    # with: ValueError: Target module "wheel" already imported as ExcludedModule.
+    # scipy is intentionally left bundled because docling/torch may import it
+    # at runtime; excluding it risks an ImportError in the frozen app.
 ]
 
 # ── Analysis ────────────────────────────────────────────────────
