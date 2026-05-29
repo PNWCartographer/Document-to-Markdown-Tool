@@ -42,3 +42,30 @@ for local document processing on the end user's machine. No network
 services are provided, and no source code from these libraries has been
 modified. The AGPL-3.0 full license text is available at:
 https://www.gnu.org/licenses/agpl-3.0.html
+
+
+Bundled Binaries (Windows installer)
+------------------------------------
+The Windows installer bundles the following native binary so the tool's
+OCR features work fully offline without a separate install:
+
+Tesseract OCR           Apache-2.0      Fallback and Ensemble OCR engine
+  Bundled with the installer under vendor/tesseract. The Tesseract engine
+  itself is licensed under Apache-2.0. Its supporting runtime libraries
+  are shipped as separate, unmodified shared libraries (DLLs) under their
+  respective permissive licenses, including:
+    - Leptonica                 Leptonica (BSD-2-Clause-style) license
+    - ICU                       Unicode License
+    - libpng / zlib             zlib/libpng license
+    - libtiff, libjpeg, libwebp Independent JPEG / libtiff / WebP licenses
+    - freetype, harfbuzz, cairo FreeType / MIT / LGPL terms
+    - glib and supporting libs  LGPL (shipped unmodified as shared DLLs)
+  The Apache-2.0 license text ships alongside the binary as
+  vendor/tesseract/TESSERACT_LICENSE.txt.
+
+Ghostscript             AGPL-3.0        NOT bundled / NOT distributed
+  Ghostscript is required only for the optional Searchable PDF feature and
+  is NOT distributed with this product. The application invokes a
+  user-installed Ghostscript as a separate process (arm's-length use) and
+  guides the user to download and install it themselves from the official
+  site: https://ghostscript.com/releases/gsdnld.html

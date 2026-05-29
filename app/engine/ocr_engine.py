@@ -34,8 +34,25 @@ _TESSERACT_SEARCH_PATHS = [
 ]
 
 def _configure_tesseract() -> None:
-    """Set pytesseract.tesseract_cmd to the first found binary."""
+    """Set pytesseract.tesseract_cmd to the bundled or first found binary."""
     import shutil
+    # Prefer a bundled Tesseract shipped with the installer.
+    try:
+        from .vendor import bundled_tesseract, bundled_tessdata
+        bundled = bundled_tesseract()
+        if bundled:
+            try:
+                import pytesseract
+                pytesseract.pytesseract.tesseract_cmd = bundled
+            except ImportError:
+                pass
+            tessdata = bundled_tessdata()
+            if tessdata:
+                # Point Tesseract at the bundled language data explicitly.
+                os.environ["TESSDATA_PREFIX"] = tessdata
+            return
+    except Exception:
+        pass  # vendor helper unavailable — fall back to system discovery
     # Already on PATH — nothing to do
     if shutil.which("tesseract"):
         return

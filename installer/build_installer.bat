@@ -27,7 +27,7 @@ echo ============================================================
 echo.
 
 :: ── Step 1: Verify Python ──────────────────────────────────
-echo [1/4] Checking Python...
+echo [1/5] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
     echo   ERROR: Python not found in PATH.
@@ -39,7 +39,7 @@ echo   Python %PYVER% found.
 
 :: ── Step 2: Verify PyInstaller ─────────────────────────────
 echo.
-echo [2/4] Checking PyInstaller...
+echo [2/5] Checking PyInstaller...
 python -m PyInstaller --version >nul 2>&1
 if errorlevel 1 (
     echo   PyInstaller not found. Installing...
@@ -52,9 +52,19 @@ if errorlevel 1 (
 for /f %%v in ('python -m PyInstaller --version 2^>^&1') do set "PIVER=%%v"
 echo   PyInstaller %PIVER% found.
 
-:: ── Step 3: Run PyInstaller ────────────────────────────────
+:: ── Step 3: Stage vendored binaries (Tesseract) ────────────
 echo.
-echo [3/4] Building application with PyInstaller...
+echo [3/5] Staging bundled engines (Tesseract)...
+python installer\stage_vendor.py
+if errorlevel 1 (
+    echo   ERROR: Failed to stage vendored binaries.
+    echo   Ensure Tesseract is installed first: python setup.py
+    exit /b 1
+)
+
+:: ── Step 4: Run PyInstaller ────────────────────────────────
+echo.
+echo [4/5] Building application with PyInstaller...
 echo   This may take several minutes on first run.
 echo.
 
@@ -78,9 +88,9 @@ if not exist "dist\DocToMarkdown\DocToMarkdown.exe" (
 )
 echo   Build complete: dist\DocToMarkdown\DocToMarkdown.exe
 
-:: ── Step 4: Run Inno Setup Compiler ───────────────────────
+:: ── Step 5: Run Inno Setup Compiler ───────────────────────
 echo.
-echo [4/4] Building installer with Inno Setup...
+echo [5/5] Building installer with Inno Setup...
 
 :: Try common ISCC locations
 set "ISCC="

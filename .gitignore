@@ -12,6 +12,7 @@ dist/
 build/
 *.manifest
 installer/Output/
+installer/vendor/
 
 # Testing folders
 test_files/

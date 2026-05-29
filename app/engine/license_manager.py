@@ -2,7 +2,7 @@
 License management and usage tracking.
 
 Implements the freemium model:
-  - Free tier: 5 document conversions
+  - Free tier: 10 document conversions
   - Licensed: unlimited conversions with a valid license key
 
 Usage data is stored locally in the app data directory.

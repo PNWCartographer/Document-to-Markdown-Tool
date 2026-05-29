@@ -41,6 +41,8 @@ Doc to Markdown\
   app\
   config\
   assets\
+  vendor\
+    tesseract\        # Bundled Tesseract OCR engine (Apache 2.0)
 ```
 
 ## Uninstaller Goal
@@ -78,7 +80,15 @@ The installer must bundle the following key dependencies (managed via PyInstalle
 - **RapidOCR** (Apache 2.0) — ONNX-based OCR using PaddleOCR models. Replaces PaddlePaddle for smaller install size and cross-platform GPU support.
 - **ONNX Runtime** — inference engine for RapidOCR models. Includes GPU execution providers (CUDA, DirectML) when available.
 - **ocrmypdf** (MPL-2.0) — Searchable PDF creation engine. Adds invisible OCR text layer to PDFs.
-- **Tesseract OCR** — traditional OCR fallback. Installed as an external binary (Windows installer downloaded by setup.py).
+- **Tesseract OCR** (Apache 2.0) — traditional OCR fallback and Ensemble second engine. **Bundled with the installer** under `vendor\tesseract\` (staged from an installed copy by `installer/stage_vendor.py`, then packaged by the PyInstaller spec). No separate download is needed by the end user. At runtime, `app/engine/vendor.py` resolves the bundled binary first, falling back to a system install.
+
+### Ghostscript (Not Bundled — AGPL)
+Ghostscript is required only for the optional Searchable PDF feature and is **not bundled or distributed** with the installer, because it is AGPL-licensed and the product is commercial. The application invokes a user-installed Ghostscript as a separate process (arm's-length use) and never redistributes the binary.
+
+Two complementary prompts guide the user, both of which only open the official download page (`https://ghostscript.com/releases/gsdnld.html`) — neither auto-downloads:
+
+- **Install-time courtesy page** (InnoSetup): a non-blocking wizard page after installation explains that Searchable PDF needs Ghostscript, with "Open Download Page" and "Check again" buttons. The page is skipped automatically if Ghostscript is already installed, and never blocks the install.
+- **Runtime gate** (app): when the user selects or starts a Searchable PDF conversion without Ghostscript installed, a dialog offers "Open Download Page", "Re-check", and "Use a Different Format". This is the authoritative check at the point of use.
 
 ### System Detection
 - **psutil** — CPU and RAM detection for performance auto-configuration.

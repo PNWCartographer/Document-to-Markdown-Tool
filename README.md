@@ -132,8 +132,8 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 ### Prerequisites
 - Python 3.10 or later
 - Windows 10/11, Linux, or macOS
-- **Tesseract OCR** (optional) — required for OCR fallback support. The setup script installs it automatically on Windows; on Linux/macOS install via your package manager (`apt install tesseract-ocr` / `brew install tesseract`)
-- **Ghostscript** (optional) — required for Searchable PDF output (used by ocrmypdf). Install from [ghostscript.com](https://ghostscript.com/releases/gsdnld.html) or via your package manager
+- **Tesseract OCR** — used for fallback and Ensemble OCR. **Bundled with the Windows installer** — no separate install needed. When running from source, the setup script installs it automatically on Windows; on Linux/macOS install via your package manager (`apt install tesseract-ocr` / `brew install tesseract`)
+- **Ghostscript** — required only for the optional Searchable PDF feature. Not bundled (AGPL-licensed); the app guides you to install it from [ghostscript.com](https://ghostscript.com/releases/gsdnld.html) the first time you use Searchable PDF
 
 ### Installation
 
@@ -165,7 +165,7 @@ The first run may download AI models for docling and RapidOCR (approximately 1-2
 
 Doc to Markdown is commercial software by Darksquare.
 
-- **Free tier**: 5 document conversions at no cost to evaluate the tool
+- **Free tier**: 10 document conversions at no cost to evaluate the tool
 - **Licensed**: Unlimited conversions with a purchased license key
 
 License keys are validated offline — no internet connection required. Visit [darksquare.dev](https://darksquare.dev) to purchase a license.
@@ -350,6 +350,6 @@ Detailed specifications are available in the `docs/` folder:
 
 Copyright (c) 2025 Darksquare. All rights reserved.
 
-This software is proprietary. Free tier allows 5 conversions for evaluation. A license key is required for unlimited use. See the `LICENSE` file for full terms.
+This software is proprietary. Free tier allows 10 conversions for evaluation. A license key is required for unlimited use. See the `LICENSE` file for full terms.
 
 Third-party component licenses are listed in `THIRD_PARTY_LICENSES`.

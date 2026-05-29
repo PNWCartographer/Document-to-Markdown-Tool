@@ -127,6 +127,26 @@ datas += [
     (os.path.join(PROJECT_ROOT, "assets", "app_icon.ico"), "assets"),
 ]
 
+# Bundled vendor binaries — Tesseract OCR (Apache 2.0), staged into
+# installer/vendor/ by installer/stage_vendor.py. Lands in the dist as
+# vendor/tesseract/ so app/engine/vendor.py resolves it at runtime.
+# Ghostscript is intentionally NOT bundled (AGPL) — users install it themselves.
+_vendor_tess = os.path.join(PROJECT_ROOT, "installer", "vendor", "tesseract")
+if os.path.isdir(_vendor_tess):
+    for _root, _dirs, _files in os.walk(_vendor_tess):
+        for _fn in _files:
+            _full = os.path.join(_root, _fn)
+            _rel = os.path.relpath(os.path.dirname(_full), _vendor_tess)
+            if _rel == ".":
+                _dest = os.path.join("vendor", "tesseract")
+            else:
+                _dest = os.path.join("vendor", "tesseract", _rel)
+            datas.append((_full, _dest))
+    print(f"[spec] Bundling vendored Tesseract from {_vendor_tess}")
+else:
+    print("[spec] WARNING: installer/vendor/tesseract not found — "
+          "run 'python installer/stage_vendor.py' first to bundle Tesseract.")
+
 # Collect data files from libraries that embed runtime assets
 _data_packages = [
     "rapidocr_onnxruntime",

@@ -133,6 +133,132 @@ Type: dirifempty;     Name: "{app}"
 Type: filesandordirs; Name: "{localappdata}\DocToMarkdown"
 
 [Code]
+// ============================================================
+// Optional Ghostscript guidance page (Searchable PDF feature)
+//
+// Ghostscript is NOT bundled (AGPL). This courtesy page points the
+// user at the official download page. It is skipped entirely if
+// Ghostscript is already installed, and never blocks installation.
+// ============================================================
+var
+  GsPage: TWizardPage;
+  GsStatusLabel: TNewStaticText;
+
+function GsInDir(BaseDir: String): Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := False;
+  if FindFirst(BaseDir + '\*', FindRec) then
+  begin
+    try
+      repeat
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+            if FileExists(BaseDir + '\' + FindRec.Name + '\bin\gswin64c.exe') or
+               FileExists(BaseDir + '\' + FindRec.Name + '\bin\gswin32c.exe') then
+            begin
+              Result := True;
+              Exit;
+            end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
+function GhostscriptInstalled(): Boolean;
+begin
+  Result := GsInDir(ExpandConstant('{commonpf}\gs')) or
+            GsInDir(ExpandConstant('{commonpf32}\gs'));
+end;
+
+procedure UpdateGsStatus();
+begin
+  if GhostscriptInstalled() then
+  begin
+    GsStatusLabel.Caption := 'Status: Ghostscript detected. Searchable PDF is ready.';
+    GsStatusLabel.Font.Color := clGreen;
+  end
+  else
+  begin
+    GsStatusLabel.Caption := 'Status: not detected. The app will guide you when you first use Searchable PDF.';
+    GsStatusLabel.Font.Color := clMaroon;
+  end;
+end;
+
+procedure OpenGsPageClick(Sender: TObject);
+var
+  ErrorCode: Integer;
+begin
+  ShellExec('open', 'https://ghostscript.com/releases/gsdnld.html',
+            '', '', SW_SHOW, ewNoWait, ErrorCode);
+end;
+
+procedure CheckGsClick(Sender: TObject);
+begin
+  UpdateGsStatus();
+end;
+
+procedure InitializeWizard();
+var
+  Desc: TNewStaticText;
+  OpenBtn, CheckBtn: TNewButton;
+begin
+  GsPage := CreateCustomPage(wpInstalling, 'Optional: Searchable PDF',
+    'Ghostscript enables the optional Searchable PDF feature');
+
+  Desc := TNewStaticText.Create(GsPage);
+  Desc.Parent := GsPage.Surface;
+  Desc.Left := 0;
+  Desc.Top := 0;
+  Desc.Width := GsPage.SurfaceWidth;
+  Desc.AutoSize := False;
+  Desc.Height := ScaleY(72);
+  Desc.WordWrap := True;
+  Desc.Caption :=
+    'Doc to Markdown is ready to use. The optional Searchable PDF feature ' +
+    'also needs Ghostscript, a free tool that is not bundled with this app. ' +
+    'You can install it now or later — the app will guide you the first time ' +
+    'you use Searchable PDF.';
+
+  OpenBtn := TNewButton.Create(GsPage);
+  OpenBtn.Parent := GsPage.Surface;
+  OpenBtn.Top := Desc.Top + Desc.Height + ScaleY(8);
+  OpenBtn.Left := 0;
+  OpenBtn.Width := ScaleX(200);
+  OpenBtn.Height := ScaleY(28);
+  OpenBtn.Caption := 'Open Ghostscript Download Page';
+  OpenBtn.OnClick := @OpenGsPageClick;
+
+  CheckBtn := TNewButton.Create(GsPage);
+  CheckBtn.Parent := GsPage.Surface;
+  CheckBtn.Top := OpenBtn.Top;
+  CheckBtn.Left := OpenBtn.Left + OpenBtn.Width + ScaleX(8);
+  CheckBtn.Width := ScaleX(110);
+  CheckBtn.Height := ScaleY(28);
+  CheckBtn.Caption := 'Check again';
+  CheckBtn.OnClick := @CheckGsClick;
+
+  GsStatusLabel := TNewStaticText.Create(GsPage);
+  GsStatusLabel.Parent := GsPage.Surface;
+  GsStatusLabel.Left := 0;
+  GsStatusLabel.Top := OpenBtn.Top + OpenBtn.Height + ScaleY(14);
+  GsStatusLabel.Width := GsPage.SurfaceWidth;
+  GsStatusLabel.AutoSize := False;
+  GsStatusLabel.Height := ScaleY(20);
+  UpdateGsStatus();
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  // Skip the Ghostscript guidance page if it's already installed.
+  if (GsPage <> nil) and (PageID = GsPage.ID) then
+    Result := GhostscriptInstalled();
+end;
+
 // ── Confirm AppData deletion during uninstall ──
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var

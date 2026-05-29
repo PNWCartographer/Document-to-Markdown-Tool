@@ -48,6 +48,15 @@ _GHOSTSCRIPT_SEARCH_PATHS = [
 
 def _find_ghostscript_binary() -> Optional[str]:
     """Find the Ghostscript binary on this system."""
+    # Bundled copy (normally absent — Ghostscript is not shipped, AGPL).
+    try:
+        from .vendor import bundled_ghostscript
+        bundled = bundled_ghostscript()
+        if bundled:
+            return bundled
+    except Exception:
+        pass
+
     # Check PATH first
     for name in ("gswin64c", "gswin32c", "gs"):
         found = shutil.which(name)

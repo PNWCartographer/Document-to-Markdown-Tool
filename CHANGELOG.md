@@ -2,6 +2,18 @@
 
 All notable changes to the Documentation to Markdown Converter Tool are documented in this file.
 
+## [Unreleased]
+
+### Added
+- Bundled Tesseract OCR engine (Apache 2.0) in the Windows installer — fallback and Ensemble OCR now work fully offline with no separate install
+- Runtime binary resolver (`app/engine/vendor.py`) — prefers bundled engines, falls back to system installs
+- Ghostscript guidance for the optional Searchable PDF feature: an install-time courtesy page and an in-app runtime gate, both linking to the official download page (Ghostscript is not bundled, per its AGPL license)
+- `installer/stage_vendor.py` — stages and trims Tesseract into the build for bundling
+
+### Changed
+- Free tier limit set to 10 conversions
+- `THIRD_PARTY_LICENSES` documents the bundled Tesseract runtime libraries and the not-bundled Ghostscript arrangement
+
 ## [1.2.0] - 2026-05-27 (Searchable PDF & OCR Overhaul)
 
 ### Added

@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import time
+import webbrowser
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, simpledialog
@@ -23,6 +24,10 @@ try:
     _HAS_DND = True
 except ImportError:
     _HAS_DND = False
+
+# Official Ghostscript download page. Searchable PDF requires Ghostscript,
+# which is NOT bundled (AGPL). Users install it themselves from this page.
+_GHOSTSCRIPT_URL = "https://ghostscript.com/releases/gsdnld.html"
 
 SCREENS = ["Home", "Settings", "Conversion", "Results", "Watch"]
 
@@ -1049,9 +1054,21 @@ class App:
         self._update_format_visibility()
 
         # ── Trace output_format for conditional visibility ────
+        self._last_output_format = self._setting_vars["output_format"].get()
+
         def _on_format_change(*_):
             self._update_format_visibility()
             self._update_watch_format()
+            new_fmt = self._setting_vars["output_format"].get()
+            prev = self._last_output_format
+            self._last_output_format = new_fmt
+            # Immediate guidance when the user newly selects Searchable PDF on
+            # the Settings screen and Ghostscript isn't installed. Deferred so
+            # the modal doesn't open inside the variable-trace callback.
+            if (new_fmt == "Searchable PDF" and prev != "Searchable PDF"
+                    and self._current == "Settings"
+                    and not self._ghostscript_available()):
+                self.root.after(50, self._show_ghostscript_dialog)
         self._setting_vars["output_format"].trace_add("write", _on_format_change)
 
         # ── Trace spdf_sidecar for RAG-from-sidecar visibility ──
@@ -4158,6 +4175,10 @@ class App:
                 "Please select a valid output folder before starting.",
             )
             return
+        # ── Searchable PDF requires Ghostscript (not bundled) ──
+        if self._cfg.get("output_format") == "Searchable PDF" and not self._ghostscript_available():
+            if not self._show_ghostscript_dialog():
+                return
         # ── License / free-tier gate ──────────────────────────
         if _license_mod.is_trial_expired():
             self._show_license_prompt()
@@ -4780,6 +4801,128 @@ class App:
             self._license_status_lbl.config(
                 text=f"ℹ  About  •  {remaining} free left",
                 fg=t["text_secondary"], bg=t["sidebar_bg"])
+
+    def _ghostscript_available(self) -> bool:
+        """Check whether Ghostscript is installed (fresh, uncached)."""
+        try:
+            import engine.searchable_pdf as _spdf
+            return _spdf.ghostscript_available()
+        except Exception:
+            return False
+
+    def _show_ghostscript_dialog(self) -> bool:
+        """
+        Show the Ghostscript guidance dialog. Searchable PDF needs Ghostscript,
+        which is not bundled (AGPL). Opens the official download page on request
+        and lets the user re-check after installing.
+
+        Returns True if Ghostscript is detected when the dialog closes.
+        """
+        t = self._t
+        win = tk.Toplevel(self.root)
+        win.title("Ghostscript Required")
+        _w = int(500 * self._dpi)
+        _h = int(330 * self._dpi)
+        _x = self.root.winfo_x() + (self.root.winfo_width() - _w) // 2
+        _y = self.root.winfo_y() + (self.root.winfo_height() - _h) // 2
+        win.geometry(f"{_w}x{_h}+{_x}+{_y}")
+        win.config(bg=t["bg"])
+        win.transient(self.root)
+        win.grab_set()
+        win.resizable(False, False)
+
+        tk.Label(
+            win, text="Ghostscript Required",
+            font=(_FONT_FAMILY, 16, "bold"), fg=t["accent"], bg=t["bg"],
+        ).pack(pady=(24, 8))
+
+        tk.Label(
+            win,
+            text="Searchable PDF output uses Ghostscript, a free tool that\n"
+                 "is not bundled with this app. It only needs to be installed\n"
+                 "once. Every other feature works without it.",
+            font=(_FONT_FAMILY, 11), fg=t["text"], bg=t["bg"],
+            justify="center",
+        ).pack(pady=(0, 12))
+
+        status_lbl = tk.Label(
+            win, text="", font=(_FONT_FAMILY, 11, "bold"), bg=t["bg"],
+        )
+        status_lbl.pack(pady=(0, 4))
+
+        hint_lbl = tk.Label(
+            win, text="", font=_FONT_SMALL, fg=t["text_secondary"], bg=t["bg"],
+            justify="center",
+        )
+        hint_lbl.pack(pady=(0, 8))
+
+        def _refresh_status() -> bool:
+            if self._ghostscript_available():
+                status_lbl.config(text="Ghostscript detected ✓", fg="#22c55e")
+                hint_lbl.config(text="You're all set — Searchable PDF is ready.")
+                return True
+            status_lbl.config(text="Ghostscript not detected", fg="#ef4444")
+            return False
+
+        def _safe_close():
+            try:
+                win.grab_release()
+                win.destroy()
+            except Exception:
+                pass
+
+        def _open_page():
+            try:
+                webbrowser.open(_GHOSTSCRIPT_URL)
+            except Exception:
+                pass
+            hint_lbl.config(
+                text="After installing Ghostscript, click Re-check below.")
+
+        def _recheck():
+            if _refresh_status():
+                win.after(1200, _safe_close)
+
+        _refresh_status()
+
+        btn_frame = tk.Frame(win, bg=t["bg"])
+        btn_frame.pack(fill="x", padx=28, pady=(8, 18))
+
+        btn_open = PillButton(
+            btn_frame, text="Open Download Page", font=_FONT_BTN,
+            style="primary", padx=18, pady=8, command=_open_page,
+        )
+        btn_open.pack(side="right")
+        btn_open.set_colors(
+            fill=t["accent"], fg=t["text_on_accent"],
+            hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+            parent_bg=t["bg"],
+        )
+
+        btn_recheck = PillButton(
+            btn_frame, text="Re-check", font=_FONT_BTN,
+            style="secondary", padx=16, pady=8, command=_recheck,
+        )
+        btn_recheck.pack(side="right", padx=(0, 8))
+        btn_recheck.set_colors(
+            fill=t["bg"], fg=t["text"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"],
+        )
+
+        btn_close = PillButton(
+            btn_frame, text="Use a Different Format", font=_FONT_SMALL,
+            style="secondary", padx=14, pady=6, command=_safe_close,
+        )
+        btn_close.pack(side="left")
+        btn_close.set_colors(
+            fill=t["bg"], fg=t["text_secondary"], outline=t["border"],
+            hover_fill=t["bg"], hover_fg=t["accent"], hover_outline=t["accent"],
+            parent_bg=t["bg"],
+        )
+
+        self.root.wait_window(win)
+        return self._ghostscript_available()
 
     def _show_license_prompt(self):
         """Show the license activation dialog when trial is expired."""
