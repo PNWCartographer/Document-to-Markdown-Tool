@@ -706,39 +706,15 @@ def _convert_pymupdf4llm(
     if rebuild_toc:
         _extract_fitz_toc(source_file, output, log_info)
 
-    # Extract and save images via fitz — inject refs into the markdown text
+    # Extract images via fitz (save files + collect refs).
+    # Injection into md_text happens AFTER post-processing so that the
+    # footnote detector cannot accidentally discard trailing image refs.
+    page_image_refs: dict[int, list[str]] = {}
     if preserve_images and output_root:
         page_image_refs = _extract_fitz_images(
             source_file, alias, output_root, output, log_info, log_warn,
             use_subfolder, page_range=page_range,
         )
-        if page_image_refs:
-            # pymupdf4llm uses --- separators between pages; split, inject, rejoin
-            _page_sep = re.compile(r'(?m)^-{3,}\s*$')
-            segments = _page_sep.split(md_text)
-
-            # Build page-number → segment-index mapping.  When a page_range is
-            # active the segments correspond to the *requested* pages in order,
-            # not to absolute page numbers in the PDF.
-            if page_range:
-                _pg_to_seg = {pg: i for i, pg in enumerate(sorted(page_range))}
-            else:
-                _pg_to_seg = None  # fall back to pg_num-1
-
-            for pg_num, refs in page_image_refs.items():
-                if _pg_to_seg is not None:
-                    idx = _pg_to_seg.get(pg_num, -1)
-                    if idx < 0:
-                        continue  # image page not in requested range
-                else:
-                    idx = pg_num - 1
-
-                if idx < len(segments):
-                    segments[idx] += "\n" + "\n".join(refs)
-                else:
-                    # Page beyond segment count — append to last segment
-                    segments[-1] += "\n" + "\n".join(refs)
-            md_text = "\n---\n".join(segments)
 
     # Run post-processor pipeline
     pp = pp_settings or {}
@@ -770,6 +746,34 @@ def _convert_pymupdf4llm(
                 md_text = post_processors.detect_footnotes_in_markdown(md_text)
             if pp.get("detect_equations", True):
                 md_text = post_processors.detect_equations(md_text)
+
+    # Inject image refs into the post-processed markdown
+    if page_image_refs:
+        _page_sep = re.compile(r'(?m)^-{3,}\s*$')
+        segments = _page_sep.split(md_text)
+
+        # Build page-number → segment-index mapping.  When a page_range is
+        # active the segments correspond to the *requested* pages in order,
+        # not to absolute page numbers in the PDF.
+        if page_range:
+            _pg_to_seg = {pg: i for i, pg in enumerate(sorted(page_range))}
+        else:
+            _pg_to_seg = None  # fall back to pg_num-1
+
+        for pg_num, refs in page_image_refs.items():
+            if _pg_to_seg is not None:
+                idx = _pg_to_seg.get(pg_num, -1)
+                if idx < 0:
+                    continue  # image page not in requested range
+            else:
+                idx = pg_num - 1
+
+            if idx < len(segments):
+                segments[idx] += "\n" + "\n".join(refs)
+            else:
+                # Page beyond segment count — append to last segment
+                segments[-1] += "\n" + "\n".join(refs)
+        md_text = "\n---\n".join(segments)
 
     if preserve_page_numbers:
         md_text = _inject_page_anchors_from_text(md_text)
