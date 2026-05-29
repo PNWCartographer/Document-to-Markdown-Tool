@@ -16,6 +16,12 @@ from .markdown_writer import ConversionOutput, rows_to_markdown_table
 from .logger import ConversionLogger
 
 
+# Maximum rows to include in Markdown output.  Very large CSVs produce
+# markdown tables that are hundreds of MB and unusable for human reading.
+# Rows beyond this limit are summarised instead of rendered.
+_MAX_TABLE_ROWS = 10_000
+
+
 def convert(
     source_file: str,
     alias: str = "",
@@ -119,19 +125,35 @@ def convert(
     progress(0.5)
 
     headers = list(df.columns)
+    total_rows = len(df)
     rows = [list(row) for row in df.itertuples(index=False, name=None)]
 
     if not rows:
         log_warn("CSV file has headers but no data rows.")
         confidence.add_note("File contained no data rows.")
 
+    # Guard against memory explosion on very large CSVs — truncate to a
+    # readable limit and include a summary of what was omitted.
+    truncated = False
+    if len(rows) > _MAX_TABLE_ROWS:
+        log_warn(f"CSV has {total_rows:,} rows — truncating table to "
+                 f"{_MAX_TABLE_ROWS:,} rows in Markdown output.")
+        rows = rows[:_MAX_TABLE_ROWS]
+        truncated = True
+
     stem = alias if alias else os.path.splitext(os.path.basename(source_file))[0]
     table_md = rows_to_markdown_table(headers, rows)
     heading = f"## {stem}"
     meta = (
         f"*Source: `{os.path.basename(source_file)}`  "
-        f"Rows: {len(rows)}  Columns: {len(headers)}*"
+        f"Rows: {total_rows:,}  Columns: {len(headers)}*"
     )
+    if truncated:
+        meta += (
+            f"\n\n> **Note:** This file contains {total_rows:,} rows. "
+            f"Only the first {_MAX_TABLE_ROWS:,} rows are shown below. "
+            f"({total_rows - _MAX_TABLE_ROWS:,} rows omitted.)"
+        )
     body = f"{meta}\n\n{table_md}"
     output.add_section(body=body, heading=heading)
 
@@ -174,9 +196,25 @@ def _fallback_stdlib(
 
     headers = all_rows[0]
     rows = all_rows[1:]
+    total_rows = len(rows)
+
+    # Apply same row cap as the pandas path
+    truncated = False
+    if len(rows) > _MAX_TABLE_ROWS:
+        if logger:
+            logger.warning(f"CSV has {total_rows:,} rows — truncating to {_MAX_TABLE_ROWS:,}.")
+        rows = rows[:_MAX_TABLE_ROWS]
+        truncated = True
+
     stem = alias if alias else os.path.splitext(os.path.basename(source_file))[0]
     table_md = rows_to_markdown_table(headers, rows)
-    output.add_section(body=table_md, heading=f"## {stem}")
+    body = table_md
+    if truncated:
+        body = (
+            f"*Rows: {total_rows:,}  Columns: {len(headers)} — "
+            f"showing first {_MAX_TABLE_ROWS:,} rows*\n\n{table_md}"
+        )
+    output.add_section(body=body, heading=f"## {stem}")
     _set_confidence(confidence, rows, headers)
     confidence.derive_overall()
 

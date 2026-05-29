@@ -499,8 +499,14 @@ class ConversionJob:
                     fh.write(f"{'=' * 60}\n\n")
                     for entry in entries:
                         fh.write(entry + "\n")
-        except OSError:
-            pass
+        except OSError as exc:
+            # Log disk-full or permission errors instead of silently ignoring
+            try:
+                AppLogger().warning(
+                    f"Could not write per-file artifacts to {out_dir}: {exc}"
+                )
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # File type routing
@@ -717,8 +723,15 @@ class ConversionJob:
         """Schedule a callback on the main thread via root.after()."""
         try:
             self._root.after(0, fn, *args)
-        except Exception:
+        except RuntimeError:
+            # Root window destroyed — expected during shutdown
             pass
+        except Exception as exc:
+            # Log unexpected errors so callback-wiring bugs are visible
+            try:
+                AppLogger().warning(f"GUI callback failed: {exc}")
+            except Exception:
+                pass
 
 
 class BatchResult:

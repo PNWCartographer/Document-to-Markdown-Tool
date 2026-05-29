@@ -34,6 +34,8 @@ from .converter import ConversionJob
 _BASE_TIMEOUT = 300
 # Extra seconds per page for PDF files (covers OCR + searchable PDF).
 _SECONDS_PER_PAGE = 30
+# Maximum pending files in the watch queue before new files are dropped.
+_MAX_QUEUE_SIZE = 500
 
 
 def _estimate_timeout(path: str) -> int:
@@ -61,6 +63,10 @@ _SUPPORTED_EXTS = {
     ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp",
     ".webp", ".gif",
 }
+
+# Extensions that the tool itself can output — used to guard against
+# infinite conversion loops when the output folder overlaps the watch folder.
+_OUTPUT_EXTS = {".pdf", ".html", ".htm", ".md", ".json", ".txt"}
 
 _SETTLE_SECONDS = 1.5
 
@@ -170,6 +176,22 @@ class FolderWatcher:
             self._gui(self._on_error, f"Watch folder does not exist: {self._watch_path}")
             return
 
+        # Guard against infinite conversion loops: if the output folder is
+        # the same as (or inside) the watch folder, converted output files
+        # could trigger new conversions endlessly.
+        watch_real = os.path.realpath(self._watch_path)
+        output_real = os.path.realpath(self._output_path)
+        use_subfolder = self._cfg.get("output_subfolder", True)
+        if not use_subfolder and os.path.commonpath([watch_real, output_real]) == watch_real:
+            self._gui(
+                self._on_error,
+                "Output folder cannot be inside the watch folder when "
+                "subfolders are disabled — this would cause an infinite "
+                "conversion loop. Enable output subfolders or choose a "
+                "different output location.",
+            )
+            return
+
         os.makedirs(self._output_path, exist_ok=True)
 
         self._stop_event.clear()
@@ -190,6 +212,10 @@ class FolderWatcher:
             self._observer.stop()
             self._observer.join(timeout=5)
             self._observer = None
+        # Join the worker thread so it doesn't keep running after stop()
+        if self._worker_thread is not None:
+            self._worker_thread.join(timeout=10)
+            self._worker_thread = None
         with self._lock:
             self._queue.clear()
             self._queue_set.clear()
@@ -199,10 +225,26 @@ class FolderWatcher:
         if ext not in _SUPPORTED_EXTS:
             return
 
+        # Skip files that appear inside the output directory tree —
+        # prevents re-converting our own output (infinite loop guard).
+        try:
+            file_real = os.path.realpath(path)
+            output_real = os.path.realpath(self._output_path)
+            if file_real.startswith(output_real + os.sep) or file_real == output_real:
+                return
+        except (OSError, ValueError):
+            pass
+
         with self._lock:
-            if path not in self._queue_set:
-                self._queue.append(path)
-                self._queue_set.add(path)
+            if path in self._queue_set:
+                return
+            if len(self._queue) >= _MAX_QUEUE_SIZE:
+                self._gui(self._on_error,
+                          f"Watch queue full ({_MAX_QUEUE_SIZE} files). "
+                          f"Skipping: {os.path.basename(path)}")
+                return
+            self._queue.append(path)
+            self._queue_set.add(path)
         self._gui(self._on_file_queued, path)
 
     def _process_loop(self) -> None:
@@ -280,17 +322,25 @@ class FolderWatcher:
             timeout = _estimate_timeout(path)
             done_event.wait(timeout=timeout)
 
-            if result_holder:
-                br = result_holder[0]
-                if br.failed == 0:
-                    self._completed += 1
-                    self._gui(self._on_file_done, path, True, f"Converted: {filename}")
-                else:
-                    self._failed += 1
-                    self._gui(self._on_file_done, path, False, f"Failed: {filename}")
-            else:
+            if not done_event.is_set():
+                # Timed out — cancel the job to prevent zombie threads
+                job.cancel()
                 self._failed += 1
                 self._gui(self._on_file_done, path, False, f"Timeout: {filename}")
+            elif result_holder:
+                br = result_holder[0]
+                if br.completed >= 1:
+                    self._completed += 1
+                    self._gui(self._on_file_done, path, True, f"Converted: {filename}")
+                elif br.failed >= 1:
+                    self._failed += 1
+                    self._gui(self._on_file_done, path, False, f"Failed: {filename}")
+                else:
+                    # Skipped (e.g. file exists with overwrite=False)
+                    self._gui(self._on_file_done, path, False, f"Skipped: {filename}")
+            else:
+                self._failed += 1
+                self._gui(self._on_file_done, path, False, f"Error: {filename}")
 
         except Exception as e:
             self._failed += 1
@@ -300,5 +350,7 @@ class FolderWatcher:
         """Marshal a callback onto the tkinter main thread."""
         try:
             self._root.after(0, callback, *args)
+        except RuntimeError:
+            pass  # Root destroyed — expected during shutdown
         except Exception:
-            pass
+            pass  # Swallow other errors to avoid crashing the worker

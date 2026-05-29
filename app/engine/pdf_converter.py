@@ -558,8 +558,8 @@ def _extract_docling_toc(doc, output: ConversionOutput, log_info) -> None:
                     level = _docling_label_to_level(label)
                     page_ref = getattr(getattr(item, "prov", [None])[0], "page_no", None) if getattr(item, "prov", None) else None
                     output.add_toc_entry(level, text, page_ref)
-    except Exception:
-        pass
+    except Exception as e:
+        log_info(f"Docling TOC extraction failed: {e}")
 
     # Fallback: extract headings from the Markdown text in sections
     for section in output.sections:
@@ -1100,10 +1100,10 @@ def _extract_page_images(
                 refs.append(f"\n![Image from page {page_num}]({rel_path})\n")
                 saved_xrefs.add(xref)
                 log_info(f"Saved image: {filename}")
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                log_info(f"Could not extract image xref={xref} on page {page_num}: {e}")
+    except Exception as e:
+        log_info(f"Image extraction failed for page {page_num}: {e}")
     return refs
 
 
@@ -1178,8 +1178,8 @@ def _extract_fitz_toc(pdf_path: str, output: ConversionOutput, log_info) -> None
         import fitz
         with fitz.open(pdf_path) as doc:
             _extract_fitz_toc_from_doc(doc, output, log_info)
-    except Exception:
-        pass
+    except Exception as e:
+        log_info(f"Could not extract PDF outline: {e}")
 
 
 def _extract_fitz_toc_from_doc(doc, output: ConversionOutput, log_info) -> None:
@@ -1189,8 +1189,8 @@ def _extract_fitz_toc_from_doc(doc, output: ConversionOutput, log_info) -> None:
             log_info(f"Extracted PDF outline | entries={len(toc)}")
             for level, title, page in toc:
                 output.add_toc_entry(level, title, page)
-    except Exception:
-        pass
+    except Exception as e:
+        log_info(f"PDF outline extraction failed: {e}")
 
 
 # ---------------------------------------------------------------------------

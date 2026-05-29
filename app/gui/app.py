@@ -377,6 +377,7 @@ class App:
         self._watcher: "Optional[_watch_mod.FolderWatcher]" = None
         self._watch_input_path: str = ""
         self._watch_output_path: str = ""
+        self._watch_frozen_format = None  # set when watcher starts
 
         # Centralized scroll target to avoid bind_all/unbind_all conflicts.
         # Each scrollable area sets this on <Enter>; the single global
@@ -1878,7 +1879,13 @@ class App:
         if not self._setting_vars:
             return
         fmt = self._setting_vars["output_format"].get()
-        self._watch_format_lbl.config(text=f"Output: {fmt}")
+        # If the watcher is running, settings are frozen at start time —
+        # show what the watcher is actually using, not the current setting.
+        if self._watcher and self._watcher.is_running:
+            frozen_fmt = getattr(self, "_watch_frozen_format", fmt)
+            self._watch_format_lbl.config(text=f"Output: {frozen_fmt}  (locked while watching)")
+        else:
+            self._watch_format_lbl.config(text=f"Output: {fmt}")
         if fmt == "Searchable PDF":
             self._watch_format_note_lbl.config(text="OCR will be applied to incoming files")
         else:
@@ -1968,19 +1975,26 @@ class App:
             )
             return
 
+        # Capture the frozen format for the settings-drift indicator
+        self._watch_frozen_format = self._setting_vars["output_format"].get()
+
         self._btn_watch_start.set_text("Stop Watching")
         self._watch_status_lbl.config(text="Watching...", fg=self._t.get("accent", "#7c3aed"))
+        self._update_watch_format()
         self._watch_log_append(f"Started watching: {self._watch_input_path}")
         self._watch_log_append(f"Output folder: {self._watch_output_path}")
+        self._watch_log_append(f"Settings locked — using: {self._watch_frozen_format}")
 
     def _stop_watch(self):
         if self._watcher:
             self._watcher.stop()
+        self._watch_frozen_format = None
         self._btn_watch_start.set_text("Start Watching")
         self._watch_status_lbl.config(text="Stopped", fg=self._t["text_secondary"])
         self._watch_file_lbl.config(text="")
         self._watch_stage_lbl.config(text="")
         self._watch_progress_bar.set_progress(0.0)
+        self._update_watch_format()
         self._watch_log_append("Stopped watching.")
 
     def _watch_on_queued(self, path: str):
