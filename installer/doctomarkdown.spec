@@ -58,6 +58,18 @@ hidden_imports = [
     "PIL.Image",
     "cv2",
 
+    # ── Searchable PDF ──
+    "ocrmypdf",
+    "pikepdf",
+    "img2pdf",
+    "pdfminer",
+    "pdfminer.high_level",
+    "pluggy",
+    "reportlab",
+
+    # ── Table extraction ──
+    "camelot",
+
     # ── Format-specific ──
     "pptx",
     "ebooklib",
@@ -79,7 +91,7 @@ hidden_imports = [
 
     # ── System detection ──
     "psutil",
-    "nvidia_ml_py",
+    "pynvml",
 
     # ── File watching ──
     "watchdog",
@@ -126,6 +138,8 @@ _data_packages = [
     "markdownify",
     "docling",
     "docling_core",
+    "ocrmypdf",
+    "spellchecker",
 ]
 for pkg in _data_packages:
     try:
@@ -135,7 +149,7 @@ for pkg in _data_packages:
 
 # ── Dynamic libraries ──────────────────────────────────────────
 binaries = []
-_bin_packages = ["onnxruntime", "cv2", "ezdxf"]
+_bin_packages = ["onnxruntime", "cv2", "ezdxf", "pikepdf"]
 for pkg in _bin_packages:
     try:
         binaries += collect_dynamic_libs(pkg)
