@@ -1239,6 +1239,71 @@ def _ocr_page(page, language: str, log_info, log_warn,
 # Image extraction
 # ---------------------------------------------------------------------------
 
+def _find_caption_for_image(page, img_rect, log_info) -> str:
+    """Find a caption for an image by checking text blocks near its edges.
+
+    Looks for text blocks immediately below (or above) the image whose
+    content matches common caption patterns such as "Figure 1", "Fig. 2",
+    "Image 3", "Diagram 4", "Table 5", "Exhibit 6", etc.
+
+    Returns the caption text if found, or an empty string.
+    """
+    if img_rect is None or img_rect.is_empty:
+        return ""
+
+    _CAPTION_RE = re.compile(
+        r"^(figure|fig\.?|image|diagram|illustration|photo|plate|"
+        r"table|chart|graph|exhibit|drawing|sketch|map|plan)\s*"
+        r"[\d.:\-—–]+",
+        re.IGNORECASE,
+    )
+
+    # Maximum vertical gap (points) between image edge and caption block
+    _GAP = 45
+
+    try:
+        blocks = page.get_text("blocks")
+    except Exception:
+        return ""
+
+    text_blocks = [(b[0], b[1], b[2], b[3], b[4].strip()) for b in blocks
+                   if b[6] == 0 and b[4].strip()]
+    if not text_blocks:
+        return ""
+
+    best_caption = ""
+    best_dist = _GAP + 1
+
+    for bx0, by0, bx1, by1, btxt in text_blocks:
+        # Horizontal overlap check — caption must overlap the image x-range
+        overlap = min(bx1, img_rect.x1) - max(bx0, img_rect.x0)
+        if overlap < (img_rect.width * 0.25):
+            continue
+
+        # Check below the image
+        dist_below = by0 - img_rect.y1
+        if 0 <= dist_below < best_dist:
+            if _CAPTION_RE.match(btxt):
+                best_caption = btxt
+                best_dist = dist_below
+
+        # Check above the image (some documents place captions above)
+        dist_above = img_rect.y0 - by1
+        if 0 <= dist_above < best_dist:
+            if _CAPTION_RE.match(btxt):
+                best_caption = btxt
+                best_dist = dist_above
+
+    # Trim overly long captions (keep first line only if multi-line)
+    if best_caption:
+        first_line = best_caption.split("\n")[0].strip()
+        if len(first_line) > 200:
+            first_line = first_line[:200] + "…"
+        return first_line
+
+    return ""
+
+
 def _extract_page_images(
     doc, page, page_num: int, assets_dir: str,
     output: ConversionOutput, log_info,
@@ -1250,6 +1315,10 @@ def _extract_page_images(
     ``saved_xrefs`` is an optional set shared across pages so that
     duplicate images (watermarks, logos reused on every page) are only
     saved once.  The caller passes the same set for each page call.
+
+    For each image, attempts to detect a nearby caption (e.g. "Figure 1:
+    …") and includes it as the Markdown alt text and an italic line
+    beneath the image reference.
     """
     import fitz
 
@@ -1275,7 +1344,23 @@ def _extract_page_images(
 
                 rel_path = f"{rel_prefix}{filename}"
                 output.asset_paths.append(rel_path)
-                refs.append(f"\n![Image from page {page_num}]({rel_path})\n")
+
+                # Try to find a caption near the image
+                alt_text = f"Image from page {page_num}"
+                caption_line = ""
+                try:
+                    rects = page.get_image_rects(xref)
+                    img_rect = rects[0] if rects else None
+                except Exception:
+                    img_rect = None
+
+                caption = _find_caption_for_image(page, img_rect, log_info)
+                if caption:
+                    alt_text = caption
+                    caption_line = f"\n*{caption}*"
+                    log_info(f"Caption detected for {filename}: {caption}")
+
+                refs.append(f"\n![{alt_text}]({rel_path}){caption_line}\n")
                 saved_xrefs.add(xref)
                 log_info(f"Saved image: {filename}")
             except Exception as e:

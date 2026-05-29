@@ -69,6 +69,9 @@ def load() -> dict:
             # Migrate parallel_workers from old int default 1 → "Auto"
             if out["parallel_workers"] == 1:
                 out["parallel_workers"] = "Auto"
+            # Migrate renamed output format: "RAG Chunks" → "AI-Ready Chunks"
+            if out.get("output_format") == "RAG Chunks":
+                out["output_format"] = "AI-Ready Chunks"
             return out
         except Exception:
             pass

@@ -893,7 +893,7 @@ class App:
             self._settings_content, "Output", row, section_id="output")
         row = self._settings_add_dropdown(
             self._settings_content, "output_format", "Output Format",
-            ["Markdown", "JSON", "HTML", "Plain Text", "RAG Chunks", "Searchable PDF"],
+            ["Markdown", "JSON", "HTML", "Plain Text", "AI-Ready Chunks", "Searchable PDF"],
             _TIPS["output_format"], row, default_hint="default: Markdown",
         )
         row = self._settings_add_dropdown(
@@ -5061,7 +5061,7 @@ class App:
 
         _section("Output Formats", (
             "Markdown (.md), JSON (.json), HTML (.html), "
-            "Plain Text (.txt), RAG Chunks (.jsonl), "
+            "Plain Text (.txt), AI-Ready Chunks (.jsonl), "
             "Searchable PDF (.pdf)"
         ))
 

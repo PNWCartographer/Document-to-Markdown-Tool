@@ -29,7 +29,7 @@ FORMATS = {
     "JSON":           {"ext": ".json",  "label": "JSON (.json)"},
     "HTML":           {"ext": ".html",  "label": "HTML (.html)"},
     "Plain Text":     {"ext": ".txt",   "label": "Plain Text (.txt)"},
-    "RAG Chunks":     {"ext": ".jsonl", "label": "RAG Chunks (.jsonl)"},
+    "AI-Ready Chunks": {"ext": ".jsonl", "label": "AI-Ready Chunks (.jsonl)"},
     "Searchable PDF": {"ext": ".pdf",   "label": "Searchable PDF (.pdf)"},
 }
 
@@ -289,7 +289,7 @@ def build_plaintext(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# RAG Chunks (JSONL)
+# AI-Ready Chunks (JSONL)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_rag_chunks(
@@ -471,7 +471,7 @@ def write_output(
         "JSON":       build_json,
         "HTML":       build_html,
         "Plain Text": build_plaintext,
-        "RAG Chunks": build_rag_chunks,
+        "AI-Ready Chunks": build_rag_chunks,
     }
     builder = builders.get(fmt)
     if builder is None:
