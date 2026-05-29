@@ -590,13 +590,17 @@ def _extract_fitz_images(
     log_info,
     log_warn,
     use_subfolder: bool = True,
-) -> None:
+) -> dict[int, list[str]]:
     """
     Extract all embedded images from a PDF using fitz and save them to assets/.
-    Used by all three PDF conversion paths (docling, pymupdf4llm, pymupdf page-by-page).
+    Used by the pymupdf4llm conversion path.
     Deduplicates images by xref so the same image reused on multiple pages
     is only saved once.
+
+    Returns a dict mapping page_num (1-based) to a list of Markdown image
+    reference strings, including captions when detected.
     """
+    page_refs: dict[int, list[str]] = {}
     try:
         import fitz
         from .markdown_writer import assets_dir_for, assets_rel_prefix_for
@@ -610,6 +614,7 @@ def _extract_fitz_images(
 
             for page_idx in range(len(doc)):
                 page = doc[page_idx]
+                page_num = page_idx + 1
                 for img_info in page.get_images(full=True):
                     xref = img_info[0]
                     if xref in saved_xrefs:
@@ -621,12 +626,31 @@ def _extract_fitz_images(
                             continue  # skip tiny images (icons, borders)
                         ext = base_image.get("ext", "png")
                         img_counter += 1
-                        filename = f"image_{img_counter:03d}_p{page_idx + 1}.{ext}"
+                        filename = f"image_{img_counter:03d}_p{page_num}.{ext}"
                         img_path = os.path.join(assets_dir, filename)
                         with open(img_path, "wb") as fh:
                             fh.write(img_bytes)
-                        output.asset_paths.append(f"{rel_prefix}{filename}")
+                        rel_path = f"{rel_prefix}{filename}"
+                        output.asset_paths.append(rel_path)
                         saved_xrefs.add(xref)
+
+                        # Caption detection
+                        alt_text = f"Image from page {page_num}"
+                        caption_line = ""
+                        try:
+                            rects = page.get_image_rects(xref)
+                            img_rect = rects[0] if rects else None
+                        except Exception:
+                            img_rect = None
+                        caption = _find_caption_for_image(page, img_rect, log_info)
+                        if caption:
+                            alt_text = caption
+                            caption_line = f"\n*{caption}*"
+                            log_info(f"Caption detected for {filename}: {caption}")
+
+                        ref = f"\n![{alt_text}]({rel_path}){caption_line}\n"
+                        page_refs.setdefault(page_num, []).append(ref)
+
                         log_info(f"Saved image: {filename} ({len(img_bytes)} bytes)")
                     except Exception as e:
                         log_warn(f"Could not extract image xref={xref}: {e}")
@@ -635,6 +659,8 @@ def _extract_fitz_images(
 
     except Exception as e:
         log_warn(f"fitz image extraction failed: {e}")
+
+    return page_refs
 
 
 # ---------------------------------------------------------------------------
@@ -669,9 +695,23 @@ def _convert_pymupdf4llm(
     if rebuild_toc:
         _extract_fitz_toc(source_file, output, log_info)
 
-    # Extract and save images via fitz
+    # Extract and save images via fitz — inject refs into the markdown text
     if preserve_images and output_root:
-        _extract_fitz_images(source_file, alias, output_root, output, log_info, log_warn, use_subfolder)
+        page_image_refs = _extract_fitz_images(
+            source_file, alias, output_root, output, log_info, log_warn, use_subfolder,
+        )
+        if page_image_refs:
+            # pymupdf4llm uses --- separators between pages; split, inject, rejoin
+            _page_sep = re.compile(r'(?m)^-{3,}\s*$')
+            segments = _page_sep.split(md_text)
+            for pg_num, refs in page_image_refs.items():
+                idx = pg_num - 1  # 0-based segment index
+                if idx < len(segments):
+                    segments[idx] += "\n" + "\n".join(refs)
+                else:
+                    # Page beyond segment count — append to last segment
+                    segments[-1] += "\n" + "\n".join(refs)
+            md_text = "\n---\n".join(segments)
 
     # Run post-processor pipeline
     pp = pp_settings or {}
