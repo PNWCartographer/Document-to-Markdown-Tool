@@ -19,7 +19,7 @@ The home screen lets the user select files or folders and choose the output loca
 The settings screen allows the user to configure conversion behavior. Settings are organized into collapsible sections with chevron toggles. Format-specific settings are shown or hidden based on the selected output format.
 
 ### Conversion Screen
-The conversion screen shows progress, current file, current stage, errors, warnings, and completion status.
+The conversion screen shows progress, current file, current stage, errors, warnings, and completion status. An elapsed timer displays live conversion duration in M:SS or H:MM:SS format, starting when conversion begins and stopping at completion.
 
 ### Results Screen
 The results screen shows final output location, confidence report summary, warnings, mixed content badges per file, and buttons to preview output, view debug info, and open the output folder.
@@ -261,9 +261,9 @@ extracted from the document. Useful for indexing, search systems, or review
 of OCR results without opening the PDF.
 ```
 
-**Searchable PDF — RAG from Sidecar**
+**Searchable PDF — AI-Ready from Sidecar**
 ```
-RAG from Sidecar:
+AI-Ready from Sidecar:
 Generates chunked JSONL output from the sidecar text for use with AI retrieval
 systems and vector databases. Only available when Sidecar Text is enabled.
 Each chunk includes source metadata and confidence data.
@@ -343,7 +343,7 @@ The Settings screen is organized into collapsible sections. Each section has a c
    - OCR Language dropdown
 
 4. **OUTPUT** — (default: expanded)
-   - Output Format dropdown: Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF
+   - Output Format dropdown: Markdown, JSON, HTML, Plain Text, AI-Ready Chunks, Searchable PDF
    - Markdown Flavor dropdown (visible only when Output Format is Markdown)
    - YAML Front Matter toggle (visible only when Output Format is Markdown)
    - Overwrite Existing toggle
@@ -356,7 +356,7 @@ The Settings screen is organized into collapsible sections. Each section has a c
    - Optimize Level dropdown: 0, 1, 2, 3 (default: 1)
    - PDF/A Compliance toggle (off)
    - Sidecar Text toggle (off)
-   - RAG from Sidecar toggle (off, visible only when Sidecar Text is on)
+   - AI-Ready from Sidecar toggle (off, visible only when Sidecar Text is on)
    - Background Removal toggle (off, with warning tooltip)
 
 6. **PERFORMANCE** — (default: expanded)
@@ -372,7 +372,7 @@ The Settings screen is organized into collapsible sections. Each section has a c
 ### Conditional Visibility
 - Markdown Flavor and YAML Front Matter are only visible when Output Format is "Markdown"
 - The entire SEARCHABLE PDF section is only visible when Output Format is "Searchable PDF"
-- RAG from Sidecar is only visible when Sidecar Text is enabled
+- AI-Ready from Sidecar is only visible when Sidecar Text is enabled
 - Apple Vision appears in the OCR Engine dropdown only on macOS
 
 ### Performance Info Card
@@ -400,11 +400,18 @@ The Results screen includes three action buttons:
 - **Debug Info** — Opens a diagnostic window with engine info, confidence scores, warnings, and settings snapshot. Includes an Export Log button to save diagnostics to a text file.
 - **Open Folder** — Opens the output folder in the system file manager
 
+### Per-File Results List
+The Results screen displays a scrollable per-file list showing each converted file with its content type badges. Each row contains the filename and its detected content badges.
+
 ### Mixed Content Badges
 Each file in the Results list displays small badge indicators for detected content types:
 - `[Text]` `[Tables]` `[Images]` `[OCR]` `[Scanned]`
 - Color-coded by confidence: green (high), yellow (medium), red (low)
+- Colorblind-accessible shapes accompany each badge: ▲ (high), ● (medium), ▼ (low)
 - Derived from the conversion confidence report data
+
+### Completion Notification
+When a conversion finishes while the user is viewing a screen other than Conversion, the Results nav button flashes with the accent color for 2 seconds to draw attention without force-navigating away from the current screen. If the user is still on the Conversion screen, navigation switches to Results automatically.
 
 ## Preview Window Features
 The preview window provides rich output review:
@@ -440,9 +447,20 @@ The Output Format dropdown includes:
 - JSON (.json)
 - HTML (.html)
 - Plain Text (.txt)
-- RAG Chunks (.jsonl)
+- AI-Ready Chunks (.jsonl)
 - Searchable PDF (.pdf)
 
-RAG Chunks produces JSONL output designed for AI retrieval systems and vector databases. Each line is a self-contained text chunk with metadata about its source, section, and position.
+AI-Ready Chunks produces JSONL output designed for AI retrieval systems and vector databases. Each line is a self-contained text chunk with metadata about its source, section, and position.
 
 Searchable PDF adds an invisible OCR text layer to scanned or image-based PDFs, enabling full-text search while preserving the original visual appearance.
+
+## Keyboard Shortcuts
+
+The GUI provides keyboard shortcuts for common actions:
+
+| Shortcut | Context | Action |
+|----------|---------|--------|
+| Ctrl+Enter | Home screen | Start conversion (when files and output are selected) |
+| Escape | Conversion screen | Cancel active conversion |
+
+Shortcuts only fire when the focus widget is in the main application window (not inside dialog windows or Toplevel windows like Preview).

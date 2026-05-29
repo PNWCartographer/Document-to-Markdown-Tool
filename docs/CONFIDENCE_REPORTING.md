@@ -165,4 +165,9 @@ The Results screen displays per-file content type badges:
 - `[OCR]` — OCR was applied to some or all pages
 - `[Scanned]` — document was detected as fully scanned (no existing text layer)
 
-Badge colors reflect confidence: green (high), yellow (medium), red (low). Badges are derived from the existing confidence report data.
+Badge colors reflect confidence: green (high), yellow (medium), red (low). Badges also include colorblind-accessible shapes alongside color coding:
+- ▲ (triangle up) — High confidence
+- ● (circle) — Medium confidence
+- ▼ (triangle down) — Low confidence
+
+Badges are derived from the existing confidence report data.

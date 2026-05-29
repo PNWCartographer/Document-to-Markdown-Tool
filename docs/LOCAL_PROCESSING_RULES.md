@@ -19,9 +19,9 @@ Source files may contain sensitive personal, academic, business, technical, or o
 ## Allowed Local Behavior
 The tool may:
 - Read files selected by the user
-- Write output files (Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF) to the selected output folder
+- Write output files (Markdown, JSON, HTML, Plain Text, AI-Ready Chunks, Searchable PDF) to the selected output folder
 - Create extracted asset folders
-- Create sidecar text and RAG files alongside Searchable PDF output
+- Create sidecar text and AI-Ready chunk files alongside Searchable PDF output
 - Create logs
 - Store local settings
 - Use locally installed dependencies

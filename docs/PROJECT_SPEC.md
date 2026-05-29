@@ -38,7 +38,7 @@ The tool must run locally. Source files should remain on the user's machine. The
 5. Tool detects file types.
 6. Tool selects the best local conversion method and OCR engine for the platform.
 7. Tool extracts text, tables, images, drawings, and other structured content.
-8. Tool builds organized output (Markdown, Searchable PDF, JSON, HTML, Plain Text, or RAG Chunks).
+8. Tool builds organized output (Markdown, Searchable PDF, JSON, HTML, Plain Text, or AI-Ready Chunks).
 9. Tool creates a confidence report.
 10. Tool saves output, extracted assets, logs, and reports to the selected output location.
 11. User reviews final results with syntax-highlighted preview, confidence heatmap, and spell check.

@@ -30,6 +30,22 @@ Example:
 ![Extracted diagram](assets/page_03_diagram_01.png)
 ```
 
+### Image Caption Detection
+When extracting images from PDF documents, the tool scans nearby text blocks for figure captions. Detection matches patterns such as "Figure N", "Fig. N", "Table N", "Diagram N", and similar labels adjacent to the image bounding box. When a caption is detected, it is used as the image alt text in the Markdown reference:
+
+```markdown
+![Figure 12 Horizontal asymptote](assets/image_005_p493.jpeg)
+```
+
+When no caption is detected, a generic fallback is used:
+
+```markdown
+![Image from page 493](assets/image_004_p493.jpeg)
+```
+
+### Page Range Image Filtering
+When a page range is specified for PDF conversion, image extraction respects the page range. Only images from the selected pages are extracted to the assets folder and referenced in the Markdown output. Images from pages outside the range are excluded entirely. This applies to both the pymupdf4llm and pymupdf extraction paths.
+
 ## Tables and Matrices
 Tables should be converted into Markdown tables when reliable.
 
@@ -273,9 +289,9 @@ Processors run in this fixed sequence to avoid conflicts:
 - **DOCX:** All processors run on the assembled monolithic text (DOCX has no natural page boundaries for header/footer detection in most cases)
 - **PPTX and EPUB:** Post-processors are not applied (content structure differs from paginated documents)
 
-## RAG Chunks Output Format
+## AI-Ready Chunks Output Format
 
-The RAG Chunks format produces JSONL (JSON Lines) output designed for ingestion into vector databases and AI retrieval pipelines.
+The AI-Ready Chunks format produces JSONL (JSON Lines) output designed for ingestion into vector databases and AI retrieval pipelines.
 
 ### Chunking Strategy
 1. Split the document by sections first (natural document boundaries from headings)
@@ -304,7 +320,7 @@ Each line in the JSONL output is a self-contained JSON object:
 }
 ```
 
-### RAG Chunks Behavior
+### AI-Ready Chunks Behavior
 - Page numbers are included in chunk metadata when page number preservation is enabled
 - TOC entries are included as a special first chunk when TOC reconstruction is enabled
 - Confidence data is included per-chunk when confidence reporting is enabled
@@ -341,13 +357,13 @@ Documents exceeding 30 pages are automatically split into chunks for parallel pr
 - Chunks are reassembled into a single output PDF after processing
 - Progress callback reports per-chunk status to the conversion progress bar
 
-### Sidecar and RAG Output
+### Sidecar and AI-Ready Output
 When sidecar text is enabled:
 - Primary output: `document.pdf` (searchable)
 - Sidecar: `document_sidecar.txt` (extracted OCR text, plain UTF-8)
-- Optional: `document_rag.jsonl` (RAG chunks generated from sidecar text)
+- Optional: `document_rag.jsonl` (AI-Ready chunks generated from sidecar text)
 
-The sidecar text preserves page boundaries with markers. RAG chunks follow the same schema as the standard RAG Chunks output format.
+The sidecar text preserves page boundaries with markers. AI-Ready chunks follow the same schema as the standard AI-Ready Chunks output format.
 
 ### Background Removal
 When enabled, a preprocessing pipeline runs before OCR:
@@ -365,7 +381,7 @@ output/
   document_name/
     document_name.pdf              # Searchable PDF with OCR text layer
     document_name_sidecar.txt      # Plain text OCR output (optional)
-    document_name_rag.jsonl         # RAG chunks from sidecar (optional)
+    document_name_rag.jsonl         # AI-Ready chunks from sidecar (optional)
     confidence_report.txt           # Per-file confidence scores
     conversion_log.txt              # Detailed conversion log
 ```

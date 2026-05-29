@@ -31,7 +31,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 | JSON | `.json` | Sections, TOC, confidence data as structured JSON |
 | HTML | `.html` | Standalone HTML document with styling |
 | Plain Text | `.txt` | Clean text without formatting |
-| RAG Chunks | `.jsonl` | Chunked JSONL for vector databases and AI retrieval pipelines |
+| AI-Ready Chunks | `.jsonl` | Chunked JSONL for vector databases and AI retrieval pipelines |
 | Searchable PDF | `.pdf` | Invisible OCR text layer for full-text search and copy-paste |
 
 ## Features
@@ -54,6 +54,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 
 ### Content Handling
 - Image preservation with asset extraction and Markdown links
+- Image caption detection — auto-identifies figure captions adjacent to extracted images
 - Image embedding as base64 data URIs
 - Page number preservation with HTML anchors
 - Table of contents reconstruction from document headings
@@ -67,9 +68,9 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Spell checking with offline dictionary for post-conversion proofreading
 
 ### Output
-- Six output formats: Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF
+- Six output formats: Markdown, JSON, HTML, Plain Text, AI-Ready Chunks, Searchable PDF
 - Searchable PDF with deskew, page cleaning, force OCR, optimization levels, and PDF/A compliance
-- Sidecar text output alongside Searchable PDF with optional RAG chunk generation
+- Sidecar text output alongside Searchable PDF with optional AI-Ready chunk generation
 - Markdown flavor selection (GFM, Obsidian, Pandoc)
 - Optional YAML front matter with conversion metadata
 - Per-file confidence report (`confidence_report.txt`) in output folder
@@ -104,7 +105,7 @@ Built with Python and tkinter. All processing happens on your machine — no clo
 - Collapsible settings sections with persistent expand/collapse state
 - Conditional settings visibility (format-specific options appear only when relevant)
 - System performance card in Settings showing detected CPU, RAM, GPU, and accelerator
-- Mixed content badges in Results (Text, Tables, Images, OCR, Scanned) with confidence coloring
+- Per-file results list with mixed content badges (Text, Tables, Images, OCR, Scanned) color-coded by confidence with colorblind-accessible shapes (▲ high, ● medium, ▼ low)
 - Preview window with rich Markdown rendering and review tools
   - Syntax highlighting for headings, code blocks, inline code, blockquotes, links, tables, lists, horizontal rules, image references, and YAML front matter
   - Inline image thumbnails with click-to-zoom full-size viewer
@@ -114,9 +115,12 @@ Built with Python and tkinter. All processing happens on your machine — no clo
   - Copy Markdown (raw) or Copy Rich (formatted HTML for Word/Docs/email)
   - Spell check toggle with offline dictionary (misspelled words underlined in red)
   - Confidence heatmap overlay — color-codes text, tables, and images by extraction confidence
+- Elapsed timer on the Conversion screen showing live M:SS or H:MM:SS duration
 - Debug Info window with Export Log (saves full conversion diagnostics to a text file)
 - PDF page range selector — visual thumbnail grid with click and Shift+click range selection
-- Watch Folder mode for automated batch conversion
+- Watch Folder mode for automated batch conversion with format indicator and OCR status
+- Completion notification — Results nav button flashes when conversion finishes while viewing another screen
+- Keyboard shortcuts: Ctrl+Enter to start conversion from Home, Escape to cancel active conversion
 - Post-processing Rules Editor with named profiles
 - Tooltip system for every setting with detailed descriptions
 - Settings persistence across sessions
@@ -192,7 +196,7 @@ See the `LICENSE` file for full terms.
 | OCR Engine | Auto | Preferred OCR engine (Auto, RapidOCR, Tesseract, Ensemble, Apple Vision) |
 | OCR Language | English | Language for OCR text recognition |
 | **Output** | | |
-| Output Format | Markdown | Output file format (Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF) |
+| Output Format | Markdown | Output file format (Markdown, JSON, HTML, Plain Text, AI-Ready Chunks, Searchable PDF) |
 | Markdown Flavor | GFM | Markdown output style — visible when format is Markdown |
 | YAML Front Matter | On | Prepend metadata block — visible when format is Markdown |
 | Overwrite Existing | Off | Replace existing output files |
@@ -204,7 +208,7 @@ See the `LICENSE` file for full terms.
 | Optimize | 1 | Output compression level (0 = none, 3 = maximum) |
 | PDF/A Compliance | Off | Produce PDF/A-compliant archival output |
 | Sidecar Text | Off | Save extracted OCR text as a separate text file |
-| RAG from Sidecar | Off | Generate RAG chunks from sidecar text |
+| AI-Ready from Sidecar | Off | Generate AI-Ready chunks from sidecar text |
 | Background Removal | Off | Remove colored backgrounds before OCR |
 | **Performance** | | |
 | Parallel Workers | Auto | Number of files to convert simultaneously (1, 2, 4, 8, 12, 16, Auto). Auto uses system-detected recommendation |
@@ -236,7 +240,7 @@ output/
   document_name/
     document_name.pdf              # Searchable PDF with OCR text layer
     document_name_sidecar.txt      # Extracted OCR text (optional)
-    document_name_rag.jsonl        # RAG chunks from sidecar (optional)
+    document_name_rag.jsonl        # AI-Ready chunks from sidecar (optional)
     confidence_report.txt          # Per-file confidence scores
     conversion_log.txt             # Detailed conversion log
 ```
@@ -276,7 +280,7 @@ app/
     table_extractor.py        # Advanced PDF table structure extraction
     post_processors.py        # Text cleaning (headers, code blocks, footnotes, etc.)
     rules_engine.py           # Named post-processing rule profiles
-    output_formats.py         # Output builders (Markdown, JSON, HTML, Text, RAG, Searchable PDF)
+    output_formats.py         # Output builders (Markdown, JSON, HTML, Text, AI-Ready Chunks, Searchable PDF)
     markdown_writer.py        # Markdown assembly and asset management
     confidence.py             # Confidence scoring and reporting
     validation.py             # Output quality validation
@@ -291,7 +295,7 @@ installer/
 
 **Pipeline flow**: GUI -> ConversionJob -> Engine Converters -> Post-Processors -> Output Writers
 
-For Searchable PDF: GUI -> ConversionJob -> ocrmypdf (with RapidOCR plugin) -> Sidecar/RAG Writers
+For Searchable PDF: GUI -> ConversionJob -> ocrmypdf (with RapidOCR plugin) -> Sidecar/AI-Ready Writers
 
 Post-processors run in a fixed order: headers/footers, blank pages, line numbers, code blocks, footnotes, equations.
 

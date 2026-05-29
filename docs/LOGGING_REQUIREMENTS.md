@@ -27,14 +27,14 @@ Logs should include:
 - Source file name
 - Source file type
 - Output path
-- Output format (Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF)
+- Output format (Markdown, JSON, HTML, Plain Text, AI-Ready Chunks, Searchable PDF)
 - Conversion engine used
 - OCR engine used and execution provider (e.g., "RapidOCR via CUDA", "Tesseract", "Ensemble")
 - Settings used
 - Processing stages
 - Auto-chunking activity (chunk count, pages per chunk, workers used)
 - Pages OCR'd vs pages skipped (for Searchable PDF)
-- Sidecar and RAG output paths when generated
+- Sidecar and AI-Ready chunk output paths when generated
 - System hardware detected (CPU, RAM, GPU, accelerator)
 - Warnings
 - Errors

@@ -26,10 +26,10 @@ The tool should produce:
 - JSON structured output
 - HTML standalone documents
 - Plain Text output
-- RAG Chunks (.jsonl) — chunked JSONL for vector databases and AI retrieval
+- AI-Ready Chunks (.jsonl) — chunked JSONL for vector databases and AI retrieval
 - Searchable PDF (.pdf) — adds invisible OCR text layer to scanned/image-based PDFs for full-text search
 - Sidecar text files (optional, alongside Searchable PDF output)
-- Sidecar RAG chunks (optional, generated from sidecar text when Searchable PDF is the output format)
+- Sidecar AI-Ready chunks (optional, generated from sidecar text when Searchable PDF is the output format)
 - Extracted image assets when needed
 - Linked image references inside Markdown
 - Confidence reports
@@ -55,7 +55,7 @@ The user should be able to:
 - Toggle equation detection
 - Select parallel worker count for batch processing
 - Select quality preset (Fast, Balanced, Quality)
-- Select output format (Markdown, JSON, HTML, Plain Text, RAG Chunks, Searchable PDF)
+- Select output format (Markdown, JSON, HTML, Plain Text, AI-Ready Chunks, Searchable PDF)
 - Configure Searchable PDF options (deskew, clean, force OCR, optimize, PDF/A, sidecar, background removal)
 - Select OCR engine (Auto, RapidOCR, Tesseract, Ensemble, Apple Vision on macOS)
 - View system hardware detection (CPU, RAM, GPU, accelerator) in Settings
@@ -79,6 +79,12 @@ The tool should attempt to preserve:
 - Diagram placement
 - Page level context
 - File names and source traceability
+
+### Image Caption Detection
+When extracting images from PDF documents, the tool should detect figure captions adjacent to each image. Caption detection scans nearby text blocks for patterns such as "Figure N", "Fig. N", "Table N", "Diagram N", and similar labels. Detected captions are used as the alt text in Markdown image references instead of generic "Image from page N" placeholders.
+
+### Page Range Image Extraction
+When a page range is specified for PDF conversion, image extraction must respect the page range and only extract images from the selected pages. Images from pages outside the requested range are excluded from both the assets folder and the Markdown output.
 
 ## Edge Case Handling
 When the tool is uncertain, it should present a clear user choice instead of silently making a poor conversion decision.
@@ -142,7 +148,7 @@ The Searchable PDF format uses ocrmypdf to add an invisible OCR text layer to sc
 - Optimization levels (0-3) for output file size
 - PDF/A compliance for archival standards (optional)
 - Sidecar text file with extracted OCR text
-- RAG chunks generated from sidecar text (optional)
+- AI-Ready chunks generated from sidecar text (optional)
 - Background removal for scanned documents with colored paper (optional, with warning)
 - Auto-chunking for documents over 30 pages
 - Watch Folder support for automated batch OCR
