@@ -77,7 +77,7 @@ selectable text may reduce quality.
 ```
 Preserve Images:
 Extracts images, diagrams, and drawings from the source document and saves
-them in an assets folder next to your Markdown file. The Markdown output will
+them in an assets folder next to your output file. The output will
 include links to these images. Turn this off if you only need the text content.
 ```
 
@@ -111,7 +111,7 @@ files that require OCR processing.
 **Overwrite Existing Files**
 ```
 Overwrite Existing Files:
-If a Markdown file with the same name already exists in the output folder, this
+If an output file with the same name already exists in the output folder, this
 option replaces it. If turned off, the tool will skip files that already exist
 and leave the originals unchanged. Turn this on carefully if you want to
 re-convert files you have already edited.
@@ -121,7 +121,7 @@ re-convert files you have already edited.
 ```
 Output Subfolder Structure:
 Creates a separate folder for each converted document inside your output
-location. Each folder contains the Markdown file, extracted assets, a
+location. Each folder contains the converted file, extracted assets, a
 confidence report, and a conversion log. Turning this off places all output
 files directly in the output folder, which can become difficult to manage with
 multiple documents.

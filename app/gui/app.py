@@ -84,7 +84,7 @@ _TIPS = {
     ),
     "preserve_images": (
         "Extracts images, diagrams, and drawings from the source document and saves them in an "
-        "assets folder next to your Markdown file. The Markdown output will include links to these "
+        "assets folder next to your output file. The output will include links to these "
         "images. Turn this off if you only need the text content."
     ),
     "preserve_page_numbers": (
@@ -103,14 +103,14 @@ _TIPS = {
         "garbled or incorrect text. This setting only affects files that require OCR processing."
     ),
     "overwrite_existing": (
-        "If a Markdown file with the same name already exists in the output folder, this option "
+        "If an output file with the same name already exists in the output folder, this option "
         "replaces it. If turned off, the tool will skip files that already exist and leave the "
         "originals unchanged. Turn this on carefully if you want to re-convert files you have "
         "already edited."
     ),
     "output_subfolder": (
         "Creates a separate folder for each converted document inside your output location. Each "
-        "folder contains the Markdown file, extracted assets, a confidence report, and a conversion "
+        "folder contains the converted file, extracted assets, a confidence report, and a conversion "
         "log. Turning this off places all output files directly in the output folder, which can "
         "become difficult to manage with multiple documents."
     ),
@@ -125,7 +125,8 @@ _TIPS = {
         "best for human reading and AI upload. JSON produces structured data that can be "
         "processed by scripts, APIs, and AI pipelines. HTML creates a self-contained web page "
         "viewable in any browser. Plain Text strips all formatting for simple reading or "
-        "search indexing. Searchable PDF adds an invisible OCR text layer to scanned PDFs "
+        "search indexing. AI-Ready Chunks produces chunked JSONL for vector databases and AI "
+        "retrieval pipelines. Searchable PDF adds an invisible OCR text layer to scanned PDFs "
         "so they become full-text searchable (PDF input only)."
     ),
     "markdown_flavor": (
@@ -215,7 +216,9 @@ _TIPS = {
         "system. RapidOCR uses AI models with GPU acceleration when "
         "available. Tesseract is a traditional engine that works "
         "everywhere. Ensemble runs both engines and keeps the most "
-        "confident result for each word — slower but more accurate."
+        "confident result for each word — slower but more accurate. "
+        "Apple Vision is available on macOS only and uses the built-in "
+        "Neural Engine."
     ),
     "spdf_deskew": (
         "Straightens pages that were scanned at a slight angle. Improves OCR accuracy "
@@ -5084,7 +5087,7 @@ class App:
 
         _section("Support", (
             "Website: darksquare.dev\n"
-            "Email: support@darksquare.dev"
+            "Email: darksquare.ai@gmail.com"
         ))
 
         # Bottom padding
