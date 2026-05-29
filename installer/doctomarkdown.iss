@@ -79,7 +79,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; ============================================================
 [Tasks]
 Name: "desktopicon";  Description: "Create a &desktop shortcut";       GroupDescription: "Additional shortcuts:"; Flags: unchecked
-Name: "startmenu";    Description: "Create a &Start Menu shortcut";    GroupDescription: "Additional shortcuts:"; Flags: checked
+Name: "startmenu";    Description: "Create a &Start Menu shortcut";    GroupDescription: "Additional shortcuts:";
 Name: "viewreadme";   Description: "View &README after installation";  GroupDescription: "After installation:";   Flags: unchecked
 
 ; ============================================================
