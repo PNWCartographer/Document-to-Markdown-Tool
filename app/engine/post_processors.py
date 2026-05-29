@@ -141,9 +141,22 @@ def strip_line_numbers(text: str, min_sequential: int = 5) -> str:
     if len(lines) < min_sequential:
         return text
 
-    # First pass: extract candidate line numbers
+    # Build a set of line indices that are inside fenced code blocks —
+    # we must not strip intentional line numbers from code examples.
+    fenced: set[int] = set()
+    in_fence = False
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            fenced.add(idx)
+        elif in_fence:
+            fenced.add(idx)
+
+    # First pass: extract candidate line numbers (skip fenced lines)
     candidates: list[tuple[int, int, str]] = []  # (line_idx, number, rest_of_line)
     for idx, line in enumerate(lines):
+        if idx in fenced:
+            continue
         m = _LINE_NUM_RE.match(line)
         if m:
             candidates.append((idx, int(m.group(2)), m.group(4)))
@@ -597,11 +610,13 @@ def run_pipeline(
     if do_skip_blank_pages:
         result = filter_blank_pages(result)
 
-    if do_strip_line_numbers:
-        result = [strip_line_numbers(p) for p in result]
-
+    # Detect code blocks BEFORE stripping line numbers so that intentional
+    # line numbers inside code examples are preserved.
     if do_detect_code_blocks:
         result = [detect_code_blocks_in_markdown(p) for p in result]
+
+    if do_strip_line_numbers:
+        result = [strip_line_numbers(p) for p in result]
 
     if do_detect_footnotes:
         result = [detect_footnotes_in_markdown(p) for p in result]

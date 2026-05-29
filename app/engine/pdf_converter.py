@@ -18,6 +18,7 @@ Outputs:
 
 import os
 import re
+import statistics
 import threading
 from typing import Optional, Callable
 
@@ -808,6 +809,9 @@ def _convert_pymupdf(
                 text = _extract_page_text_columns(page, page_num, log_info)
                 text = text.strip()
                 if text:
+                    # Detect visual headings for PDFs lacking a proper outline
+                    if not output.toc_entries:
+                        text = _detect_headings_in_text(page, text)
                     page_parts.append(text)
                 text_quality_flags.append(bool(text))
 
@@ -872,6 +876,10 @@ def _convert_pymupdf(
                 )
                 page_sections = list(zip(page_nums, processed[:len(page_texts)]))
 
+        # Merge sentence fragments split across page boundaries
+        if len(page_sections) > 1:
+            page_sections = _merge_cross_page_paragraphs(page_sections)
+
         # Assemble sections
         for page_num, body in page_sections:
             output.add_section(body=body, page_number=page_num)
@@ -909,6 +917,176 @@ def _convert_pymupdf(
         return output
     finally:
         doc.close()
+
+
+# ---------------------------------------------------------------------------
+# Heading detection from font metrics
+# ---------------------------------------------------------------------------
+
+def _detect_headings_in_text(page, text: str) -> str:
+    """Detect visual headings by analysing font size / bold spans.
+
+    Uses ``page.get_text("dict")`` to collect font metrics, determines the
+    median body font size, and prefixes lines whose font size significantly
+    exceeds the median with Markdown heading markup.
+
+    Only short lines (< 120 chars, single logical line) are promoted so
+    that large-font body paragraphs are not incorrectly treated as headings.
+    """
+    try:
+        page_dict = page.get_text("dict")
+    except Exception:
+        return text
+
+    # 1. Collect per-line font info ----------------------------------------
+    line_info: list[tuple[str, float, bool]] = []   # (text, size, bold)
+    all_sizes: list[float] = []
+
+    for block in page_dict.get("blocks", []):
+        if block.get("type") != 0:              # text blocks only
+            continue
+        for line in block.get("lines", []):
+            spans = line.get("spans", [])
+            if not spans:
+                continue
+            line_text_parts = []
+            weighted_size = 0.0
+            total_chars = 0
+            is_bold = False
+            for span in spans:
+                stxt = span.get("text", "")
+                sz = span.get("size", 0)
+                flags = span.get("flags", 0)
+                line_text_parts.append(stxt)
+                char_count = len(stxt)
+                weighted_size += sz * char_count
+                total_chars += char_count
+                # fitz flag bit 4 (16) = bold
+                if flags & 16:
+                    is_bold = True
+                all_sizes.append(sz)
+
+            line_text = "".join(line_text_parts).strip()
+            avg_size = weighted_size / max(total_chars, 1)
+            if line_text:
+                line_info.append((line_text, avg_size, is_bold))
+
+    if not all_sizes or not line_info:
+        return text
+
+    # 2. Compute median body font size ------------------------------------
+    median_size = statistics.median(all_sizes)
+    if median_size <= 0:
+        return text
+
+    # 3. Decide heading candidates ----------------------------------------
+    heading_map: dict[str, str] = {}    # normalised line text -> prefix
+    for lt, sz, bold in line_info:
+        if len(lt) >= 120:
+            continue
+        ratio = sz / median_size
+        prefix = ""
+        if ratio >= 2.0:
+            prefix = "## "
+        elif ratio >= 1.5:
+            prefix = "### "
+        elif ratio >= 1.3:
+            prefix = "#### "
+        elif bold and ratio >= 1.15:
+            prefix = "#### "
+        if prefix:
+            # Use the stripped line as key for matching into the raw text
+            heading_map[lt] = prefix
+
+    if not heading_map:
+        return text
+
+    # 4. Apply heading prefixes to the extracted text ----------------------
+    out_lines: list[str] = []
+    for raw_line in text.split("\n"):
+        stripped = raw_line.strip()
+        if stripped in heading_map:
+            # Avoid double-prefixing if the line already starts with #
+            if not stripped.startswith("#"):
+                out_lines.append(heading_map[stripped] + stripped)
+            else:
+                out_lines.append(raw_line)
+        else:
+            out_lines.append(raw_line)
+    return "\n".join(out_lines)
+
+
+# ---------------------------------------------------------------------------
+# Cross-page paragraph merging
+# ---------------------------------------------------------------------------
+
+def _merge_cross_page_paragraphs(page_sections: list) -> list:
+    """Merge sentence fragments that were split across page boundaries.
+
+    When the previous page ends with a line that lacks sentence-ending
+    punctuation and the next page begins with a lowercase letter, the
+    trailing line is removed from the previous page and prepended to the
+    next page (joined with a space).  This repairs mid-sentence page
+    breaks that are common in multi-page PDFs.
+    """
+    if len(page_sections) < 2:
+        return page_sections
+
+    _SENTENCE_END = frozenset(".!?:")
+
+    result = list(page_sections)  # shallow copy of tuples
+
+    for i in range(len(result) - 1):
+        prev_num, prev_body = result[i]
+        next_num, next_body = result[i + 1]
+
+        prev_lines = prev_body.split("\n")
+        # Find the last non-empty line in the previous page
+        trailing_idx = None
+        for idx in range(len(prev_lines) - 1, -1, -1):
+            if prev_lines[idx].strip():
+                trailing_idx = idx
+                break
+        if trailing_idx is None:
+            continue
+
+        trailing = prev_lines[trailing_idx].strip()
+
+        # Skip headings, list items, and empty lines
+        if trailing.startswith("#") or trailing.startswith("- ") or trailing.startswith("* "):
+            continue
+        if re.match(r"^\d+\.\s", trailing):
+            continue
+        # Skip if the line ends with sentence-ending punctuation
+        if trailing and trailing[-1] in _SENTENCE_END:
+            continue
+
+        # Check if the next page starts with a lowercase letter
+        next_lines = next_body.split("\n")
+        first_content = ""
+        for nl in next_lines:
+            if nl.strip():
+                first_content = nl.strip()
+                break
+        if not first_content or not first_content[0].islower():
+            continue
+
+        # Merge: remove trailing line from prev, prepend to next
+        prev_lines.pop(trailing_idx)
+        result[i] = (prev_num, "\n".join(prev_lines))
+
+        # Prepend the trailing fragment to the first content line of next page
+        merged_next_lines = []
+        merged = False
+        for nl in next_lines:
+            if not merged and nl.strip():
+                merged_next_lines.append(trailing + " " + nl.lstrip())
+                merged = True
+            else:
+                merged_next_lines.append(nl)
+        result[i + 1] = (next_num, "\n".join(merged_next_lines))
+
+    return result
 
 
 # ---------------------------------------------------------------------------

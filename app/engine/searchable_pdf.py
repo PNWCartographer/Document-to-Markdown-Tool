@@ -23,6 +23,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Callable
@@ -177,6 +178,7 @@ def convert(
     language: str = "eng",
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> ConversionOutput:
     """
     Convert a PDF to a Searchable PDF with an invisible OCR text layer.
@@ -280,6 +282,12 @@ def convert(
     )
     progress(0.10)
 
+    # --- Check for cancellation before starting OCR ---
+    if cancel_event and cancel_event.is_set():
+        log_info("Cancelled before OCR processing.")
+        confidence.overall = "Cancelled"
+        return output
+
     # --- Run ocrmypdf (auto-chunk if large) ---
     if page_count is not None and page_count > _CHUNK_THRESHOLD:
         log_info(f"Auto-chunking enabled ({page_count} pages > {_CHUNK_THRESHOLD})")
@@ -288,6 +296,7 @@ def convert(
             deskew, clean, ocr_mode, optimize_level, output_type,
             sidecar_path, ensemble, bg_removal,
             page_count, confidence, log_info, log_warn, progress,
+            cancel_event,
         )
     else:
         _convert_single(
@@ -295,6 +304,12 @@ def convert(
             deskew, clean, ocr_mode, optimize_level, output_type,
             sidecar_path, confidence, log_info, log_warn, progress,
         )
+
+    # --- Check for cancellation after OCR processing ---
+    if cancel_event and cancel_event.is_set():
+        log_info("Cancelled after OCR processing.")
+        confidence.overall = "Cancelled"
+        return output
 
     # --- Sidecar RAG ---
     if rag_sidecar and sidecar_path and os.path.isfile(sidecar_path):
@@ -384,6 +399,7 @@ def _convert_chunked(
     deskew, clean, ocr_mode, optimize_level, output_type,
     sidecar_path, ensemble, bg_removal,
     page_count, confidence, log_info, log_warn, progress,
+    cancel_event=None,
 ):
     import pikepdf
     from . import system_info
@@ -426,10 +442,15 @@ def _convert_chunked(
 
         # Process chunks in parallel
         completed = 0
+        cancelled = False
         chunk_results = [None] * num_chunks
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
             for i in range(num_chunks):
+                if cancel_event and cancel_event.is_set():
+                    log_info("Cancelled before submitting all chunks.")
+                    cancelled = True
+                    break
                 chunk_sidecar = os.path.join(tmp_dir, f"chunk_{i:03d}_sidecar.txt") if sidecar_path else None
                 fut = executor.submit(
                     _process_chunk,
@@ -461,6 +482,18 @@ def _convert_chunked(
 
                 completed += 1
                 progress(0.15 + 0.65 * (completed / num_chunks))
+
+                # Check cancel between chunk completions — cancel pending
+                if cancel_event and cancel_event.is_set():
+                    log_info("Cancel requested — skipping remaining chunks.")
+                    for pending in futures:
+                        pending.cancel()
+                    cancelled = True
+                    break
+
+        if cancelled:
+            confidence.overall = "Cancelled"
+            return
 
         progress(0.80)
 

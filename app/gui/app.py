@@ -329,7 +329,8 @@ class App:
         self._selected_files: list[str] = []
         self._file_aliases:   dict[str, str] = {}   # path → custom output name
         self._file_page_ranges: dict[str, list[int]] = {}  # path → selected pages
-        self._output_path: str = self._cfg.get("last_output_folder", "")
+        self._output_path: str = self._cfg.get("last_output_folder", "") or os.path.join(
+            os.path.expanduser("~"), "Documents", "Conversions")
 
         # Settings state (config already loaded above)
         self._setting_vars:        dict = {}
@@ -828,7 +829,7 @@ class App:
             _TIPS["preserve_images"], row, default_hint="default: on",
         )
         row = self._settings_add_checkbox(
-            self._settings_content, "embed_images", "Embed Images in File (Base64)",
+            self._settings_content, "embed_images", "Embed Images Inline",
             _TIPS["embed_images"], row, default_hint="default: on",
         )
         row = self._settings_add_checkbox(
@@ -868,7 +869,7 @@ class App:
             _TIPS["auto_translate"], row, default_hint="default: on",
         )
         row = self._settings_add_checkbox(
-            self._settings_content, "dxf_svg_preview", "DXF Drawing Preview",
+            self._settings_content, "dxf_svg_preview", "CAD Drawing Preview",
             _TIPS["dxf_svg_preview"], row, default_hint="default: on",
         )
 
@@ -876,7 +877,7 @@ class App:
         row = self._settings_add_section(
             self._settings_content, "OCR", row, section_id="ocr")
         row = self._settings_add_dropdown(
-            self._settings_content, "ocr_engine", "OCR Engine",
+            self._settings_content, "ocr_engine", "Text Recognition Engine",
             ["Auto", "RapidOCR", "Tesseract", "Ensemble"],
             _TIPS["ocr_engine"], row, default_hint="default: Auto",
         )
@@ -896,13 +897,13 @@ class App:
             _TIPS["output_format"], row, default_hint="default: Markdown",
         )
         row = self._settings_add_dropdown(
-            self._settings_content, "markdown_flavor", "Markdown Flavor",
+            self._settings_content, "markdown_flavor", "Markdown Style",
             ["GFM", "Obsidian", "Pandoc"],
             _TIPS["markdown_flavor"], row, default_hint="default: GFM",
             conditional="markdown",
         )
         row = self._settings_add_checkbox(
-            self._settings_content, "yaml_front_matter", "YAML Front Matter",
+            self._settings_content, "yaml_front_matter", "File Metadata Header",
             _TIPS["yaml_front_matter"], row, default_hint="default: on",
             conditional="markdown",
         )
@@ -920,7 +921,7 @@ class App:
             self._settings_content, "Searchable PDF", row,
             section_id="searchable_pdf")
         row = self._settings_add_checkbox(
-            self._settings_content, "spdf_deskew", "Deskew",
+            self._settings_content, "spdf_deskew", "Straighten Pages",
             _TIPS["spdf_deskew"], row, default_hint="default: on",
         )
         row = self._settings_add_checkbox(
@@ -937,15 +938,15 @@ class App:
             _TIPS["spdf_optimize"], row, default_hint="default: 1",
         )
         row = self._settings_add_checkbox(
-            self._settings_content, "spdf_pdfa", "PDF/A Compliance",
+            self._settings_content, "spdf_pdfa", "Archive Format (PDF/A)",
             _TIPS["spdf_pdfa"], row, default_hint="default: off",
         )
         row = self._settings_add_checkbox(
-            self._settings_content, "spdf_sidecar", "Sidecar Text",
+            self._settings_content, "spdf_sidecar", "Companion Text File",
             _TIPS["spdf_sidecar"], row, default_hint="default: off",
         )
         row = self._settings_add_checkbox(
-            self._settings_content, "spdf_rag_sidecar", "RAG from Sidecar",
+            self._settings_content, "spdf_rag_sidecar", "AI Chunks from Companion",
             _TIPS["spdf_rag_sidecar"], row, default_hint="default: off",
             conditional="sidecar",
         )
@@ -959,7 +960,7 @@ class App:
             self._settings_content, "Performance", row,
             section_id="performance")
         row = self._settings_add_dropdown(
-            self._settings_content, "parallel_workers", "Parallel Workers",
+            self._settings_content, "parallel_workers", "Conversion Threads",
             ["1", "2", "4", "8", "12", "16", "Auto"],
             _TIPS["parallel_workers"], row, default_hint="default: Auto",
         )
@@ -1567,8 +1568,8 @@ class App:
             ("Words", "word_count",
              "Total word count of the converted Markdown output, excluding code "
              "blocks and front matter. Gives a quick sense of document size."),
-            ("Readability", "readability",
-             "Flesch-Kincaid Grade Level estimates the US school grade needed to "
+            ("Reading Level", "readability",
+             "Estimates the US school grade needed to "
              "understand the text. Grade 5 = very easy, 8 = easy, 12 = standard, "
              "16 = college level, 16+ = graduate level. Technical documents "
              "typically score 12–16."),
@@ -1679,7 +1680,7 @@ class App:
 
         self._btn_debug_info = PillButton(
             self._results_btn_row,
-            text="View Debug Info",
+            text="View Diagnostics",
             font=_FONT_SMALL,
             style="secondary",
             padx=14, pady=7,
@@ -2098,12 +2099,12 @@ class App:
         """Open a Toplevel window with diagnostic info about the last conversion."""
         result = self._last_batch_result
         if result is None:
-            messagebox.showinfo("Debug Info", "No conversion results available yet.")
+            messagebox.showinfo("Diagnostics", "No conversion results available yet.")
             return
 
         t = self._t
         win = tk.Toplevel(self.root)
-        win.title("Debug Info — Conversion Diagnostics")
+        win.title("Diagnostics — Conversion Details")
         _dw, _dh = 680, 500
         _dx = self.root.winfo_x() + (self.root.winfo_width() - _dw) // 2
         _dy = self.root.winfo_y() + (self.root.winfo_height() - _dh) // 2
@@ -2198,7 +2199,7 @@ class App:
             default_name = f"conversion_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             path = filedialog.asksaveasfilename(
                 parent=win,
-                title="Save Debug Log",
+                title="Save Diagnostic Log",
                 initialfile=default_name,
                 defaultextension=".txt",
                 filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
@@ -4136,6 +4137,17 @@ class App:
     def _on_start(self):
         if self._active_job and self._active_job.is_running():
             return
+        # Warn if the watch folder is actively converting to the same output
+        if (self._watcher and self._watcher.is_running
+                and self._watch_output_path == self._output_path):
+            if not messagebox.askyesno(
+                "Watch Folder Active",
+                "The watch folder is currently converting files to the same "
+                "output directory.\n\nRunning a manual conversion at the same "
+                "time could cause conflicts. Continue anyway?",
+                parent=self.root,
+            ):
+                return
         if not self._output_path or not os.path.isdir(self._output_path):
             messagebox.showwarning(
                 "Output Folder",
@@ -4374,8 +4386,9 @@ class App:
                 if level == "N/A":
                     continue
                 color = self._BADGE_COLORS.get(level, t["text_secondary"])
+                _indicator = "▲ " if level == "High" else "● " if level == "Medium" else "▼ "
                 badge = tk.Label(
-                    row_frame, text=f" {badge_text} ",
+                    row_frame, text=f" {_indicator}{badge_text} ",
                     font=_badge_font, fg=color, bg=t["bg"],
                     highlightthickness=1, highlightbackground=color,
                     padx=3, pady=0,
@@ -4385,8 +4398,9 @@ class App:
             # Overall confidence on the right
             overall = conf.overall or "N/A"
             overall_color = self._BADGE_COLORS.get(overall, t["text_secondary"])
+            _overall_prefix = "▲ " if overall == "High" else "● " if overall == "Medium" else "▼ " if overall in ("Low", "Failed") else ""
             overall_lbl = tk.Label(
-                row_frame, text=overall, font=(_FONT_FAMILY, 9),
+                row_frame, text=f"{_overall_prefix}{overall}", font=(_FONT_FAMILY, 9),
                 anchor="e", bg=t["bg"], fg=overall_color,
             )
             overall_lbl.pack(side="right", padx=(8, 4))
@@ -5739,7 +5753,7 @@ class App:
             self._active_job.cancel()
             thread = getattr(self._active_job, '_thread', None)
             if thread and thread.is_alive():
-                thread.join(timeout=1.0)
+                thread.join(timeout=5.0)
         if self._watcher and self._watcher.is_running:
             self._watcher.stop()
         # Cancel pending after() callbacks to prevent TclError on destroyed root

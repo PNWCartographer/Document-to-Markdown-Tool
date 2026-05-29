@@ -428,6 +428,12 @@ class ConversionJob:
         logger: ConversionLogger,
     ) -> ConversionOutput:
         """Run the Searchable PDF pipeline (ocrmypdf + RapidOCR plugin)."""
+        if self._cancel_event.is_set():
+            output = ConversionOutput(source_file=source_file, alias=alias)
+            output.confidence = ConfidenceResult(source_file=source_file)
+            output.confidence.overall = "Cancelled"
+            return output
+
         cfg = self._cfg
         lang = _LANG_MAP.get(cfg.get("ocr_language", "English"), "en")
 
@@ -462,6 +468,7 @@ class ConversionJob:
             language=lang3,
             logger=logger,
             progress_callback=progress,
+            cancel_event=self._cancel_event,
         )
 
     # ------------------------------------------------------------------
