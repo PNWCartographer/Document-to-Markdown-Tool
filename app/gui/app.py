@@ -407,7 +407,7 @@ class App:
                 pass
             # Show a non-blocking messagebox so the app can continue
             try:
-                messagebox.showerror(
+                self._msg_error(
                     "Unexpected Error",
                     f"An error occurred:\n\n{exc_value}\n\n"
                     "The error has been logged. The app will try to continue.",
@@ -1963,13 +1963,13 @@ class App:
 
     def _start_watch(self):
         if not self._watch_input_path:
-            messagebox.showwarning("Watch Folder", "Please select a folder to watch.")
+            self._msg_warn("Watch Folder", "Please select a folder to watch.")
             return
         if not os.path.isdir(self._watch_input_path):
-            messagebox.showwarning("Watch Folder", f"Watch folder does not exist:\n{self._watch_input_path}")
+            self._msg_warn("Watch Folder", f"Watch folder does not exist:\n{self._watch_input_path}")
             return
         if not self._watch_output_path:
-            messagebox.showwarning("Watch Folder", "Please select an output folder.")
+            self._msg_warn("Watch Folder", "Please select an output folder.")
             return
 
         cfg = dict(self._cfg)
@@ -1989,7 +1989,7 @@ class App:
             )
             self._watcher.start()
         except Exception as exc:
-            messagebox.showerror(
+            self._msg_error(
                 "Watch Folder",
                 f"Could not start folder watcher:\n\n{exc}\n\n"
                 "Make sure the 'watchdog' package is installed.",
@@ -2119,7 +2119,7 @@ class App:
         """Open a Toplevel window with diagnostic info about the last conversion."""
         result = self._last_batch_result
         if result is None:
-            messagebox.showinfo("Diagnostics", "No conversion results available yet.")
+            self._msg_info("Diagnostics", "No conversion results available yet.")
             return
 
         t = self._t
@@ -2233,7 +2233,7 @@ class App:
                 win.after(1500, lambda: btn_export.set_text("Export Log")
                           if win.winfo_exists() else None)
             except Exception as e:
-                messagebox.showerror("Export Failed", f"Could not save log:\n{e}", parent=win)
+                self._msg_error("Export Failed", f"Could not save log:\n{e}", parent=win)
 
         btn_export = PillButton(
             btn_frame, text="Export Log", font=_FONT_SMALL,
@@ -2281,7 +2281,7 @@ class App:
                 return
             name = name.strip()
             if any(p.name == name for p in profiles):
-                messagebox.showwarning("Duplicate", f"Profile '{name}' already exists.", parent=win)
+                self._msg_warn("Duplicate", f"Profile '{name}' already exists.", parent=win)
                 return
             profiles.append(_rules_mod.RuleProfile(name=name))
             refresh_profile_list()
@@ -2353,7 +2353,7 @@ class App:
         def add_rule():
             idx = selected_profile_idx[0]
             if idx is None:
-                messagebox.showinfo("Rules", "Select a profile first.", parent=win)
+                self._msg_info("Rules", "Select a profile first.", parent=win)
                 return
             profiles[idx].rules.append(
                 _rules_mod.Rule(name=f"Rule {len(profiles[idx].rules) + 1}"))
@@ -2521,7 +2521,7 @@ class App:
         def preview_rules():
             p_idx = selected_profile_idx[0]
             if p_idx is None:
-                messagebox.showinfo("Preview", "Select a profile first.", parent=win)
+                self._msg_info("Preview", "Select a profile first.", parent=win)
                 return
             profile = profiles[p_idx]
             sample = (
@@ -2539,7 +2539,7 @@ class App:
             if not changes:
                 msg += "  No rules in this profile."
             msg += f"\n--- Before ---\n{sample[:200]}\n\n--- After ---\n{_after[:200]}"
-            messagebox.showinfo("Rule Preview", msg, parent=win)
+            self._msg_info("Rule Preview", msg, parent=win)
 
         def _cleanup_rule_traces():
             for mode, var, tid in _rule_traces:
@@ -2584,7 +2584,7 @@ class App:
         """Open a side-by-side preview: source info on the left, converted markdown on the right."""
         result = self._last_batch_result
         if result is None or not result.output_root:
-            messagebox.showinfo("Preview", "No conversion results available yet.")
+            self._msg_info("Preview", "No conversion results available yet.")
             return
 
         t = self._t
@@ -2617,7 +2617,7 @@ class App:
         output_files.sort()
 
         if not output_files:
-            messagebox.showinfo("Preview", "No output files found in the output folder.")
+            self._msg_info("Preview", "No output files found in the output folder.")
             win.destroy()
             return
 
@@ -3888,7 +3888,7 @@ class App:
                 if os.path.splitext(entry)[1].lower() in _SUPPORTED_EXTS:
                     found.append(os.path.join(dirpath, entry))
         if not found:
-            messagebox.showinfo(
+            self._msg_info(
                 "No Supported Files",
                 f"No supported files were found in:\n{folder}\n\n"
                 "Supported types: " + ", ".join(
@@ -4072,7 +4072,7 @@ class App:
     def _on_open_output_folder(self):
         path = self._last_output_root
         if not path or not os.path.isdir(path):
-            messagebox.showinfo(
+            self._msg_info(
                 "No Output Available",
                 "No conversion output is available yet.\n\n"
                 "Complete a conversion to open the output folder.",
@@ -4117,7 +4117,7 @@ class App:
             self._active_job.cancel()
             self._log_write("Cancellation requested — stopping…")
         else:
-            messagebox.showinfo(
+            self._msg_info(
                 "No Active Conversion",
                 "No conversion is currently running.",
             )
@@ -4160,7 +4160,7 @@ class App:
         # Warn if the watch folder is actively converting to the same output
         if (self._watcher and self._watcher.is_running
                 and self._watch_output_path == self._output_path):
-            if not messagebox.askyesno(
+            if not self._msg_askyesno(
                 "Watch Folder Active",
                 "The watch folder is currently converting files to the same "
                 "output directory.\n\nRunning a manual conversion at the same "
@@ -4169,7 +4169,7 @@ class App:
             ):
                 return
         if not self._output_path or not os.path.isdir(self._output_path):
-            messagebox.showwarning(
+            self._msg_warn(
                 "Output Folder",
                 "The output folder does not exist or was not set.\n\n"
                 "Please select a valid output folder before starting.",
@@ -4186,7 +4186,7 @@ class App:
         remaining = _license_mod.get_remaining_conversions()
         file_count = len(self._selected_files)
         if remaining != -1 and file_count > remaining:
-            messagebox.showinfo(
+            self._msg_info(
                 "Free Tier Limit",
                 f"You have {remaining} free conversion{'s' if remaining != 1 else ''} "
                 f"remaining, but {file_count} file{'s' if file_count != 1 else ''} "
@@ -4502,7 +4502,7 @@ class App:
             import fitz
             doc = fitz.open(pdf_path)
         except Exception:
-            messagebox.showerror("Error", "Could not open PDF for page preview.")
+            self._msg_error("Error", "Could not open PDF for page preview.")
             return
 
         total = doc.page_count
@@ -4731,7 +4731,7 @@ class App:
         if added:
             self._update_file_list()
         if skipped_exts:
-            messagebox.showinfo(
+            self._msg_info(
                 "Unsupported Files Skipped",
                 f"Skipped files with unsupported extensions:\n{', '.join(sorted(skipped_exts))}\n\n"
                 f"Added {added} supported file(s).",
@@ -4801,6 +4801,131 @@ class App:
             self._license_status_lbl.config(
                 text=f"ℹ  About  •  {remaining} free left",
                 fg=t["text_secondary"], bg=t["sidebar_bg"])
+
+    # ── Themed message dialogs (theme-matched replacement for messagebox) ──
+
+    def _themed_message(self, title, message, *, kind="info",
+                        yes_no=False, parent=None):
+        """
+        Modal, theme-matched replacement for tkinter.messagebox.
+
+        kind: "info" | "warning" | "error" | "question".
+        Returns True/False for yes/no dialogs, otherwise None. Falls back to
+        the native messagebox if the theme isn't ready (e.g. early startup or
+        the global error handler).
+        """
+        t = getattr(self, "_t", None)
+        if not t:
+            if yes_no:
+                return messagebox.askyesno(title, message)
+            if kind == "warning":
+                messagebox.showwarning(title, message)
+            elif kind == "error":
+                messagebox.showerror(title, message)
+            else:
+                messagebox.showinfo(title, message)
+            return None
+
+        d = self._dpi
+        parent = parent or self.root
+        accent = {"warning": "#eab308", "error": "#ef4444"}.get(kind, t["accent"])
+        symbol = {"question": "?", "warning": "!", "error": "✕"}.get(kind, "i")
+
+        win = tk.Toplevel(parent)
+        win.withdraw()
+        win.title(title)
+        win.config(bg=t["bg"])
+        win.transient(parent)
+        win.resizable(False, False)
+        self._set_titlebar_dark(self._dark, window=win)
+
+        result = {"value": False if yes_no else None}
+
+        body = tk.Frame(win, bg=t["bg"])
+        body.pack(fill="both", expand=True,
+                  padx=int(26 * d), pady=(int(24 * d), int(10 * d)))
+
+        # Round accent badge — Canvas size scales with DPI so it stays crisp
+        # and proportionate on high-resolution displays, matching the rest of
+        # the UI (which scales pixel dimensions by self._dpi).
+        bsz = int(40 * d)
+        inset = max(2, int(2 * d))
+        badge = tk.Canvas(body, width=bsz, height=bsz, bg=t["bg"], highlightthickness=0)
+        badge.create_oval(inset, inset, bsz - inset, bsz - inset, fill=accent, outline="")
+        badge.create_text(bsz // 2, bsz // 2, text=symbol, fill=t["text_on_accent"],
+                          font=(_FONT_FAMILY, 16, "bold"))
+        badge.grid(row=0, column=0, rowspan=2, sticky="n", padx=(0, int(16 * d)))
+
+        tk.Label(body, text=title, font=(_FONT_FAMILY, 14, "bold"),
+                 fg=t["text"], bg=t["bg"], anchor="w").grid(row=0, column=1, sticky="w")
+        tk.Label(body, text=message, font=(_FONT_FAMILY, 11), fg=t["text"],
+                 bg=t["bg"], justify="left", anchor="w",
+                 wraplength=int(400 * d)).grid(row=1, column=1, sticky="w", pady=(int(8 * d), 0))
+
+        btn_row = tk.Frame(win, bg=t["bg"])
+        btn_row.pack(fill="x", padx=int(26 * d), pady=(0, int(20 * d)))
+
+        def _close(val):
+            result["value"] = val
+            try:
+                win.grab_release()
+                win.destroy()
+            except Exception:
+                pass
+
+        if yes_no:
+            no_btn = PillButton(btn_row, text="No", font=_FONT_BTN, style="secondary",
+                                padx=18, pady=7, command=lambda: _close(False))
+            no_btn.pack(side="right")
+            no_btn.set_colors(fill=t["bg"], fg=t["text_secondary"], outline=t["border"],
+                              hover_fill=t["bg"], hover_fg=t["accent"],
+                              hover_outline=t["accent"], parent_bg=t["bg"])
+            yes_btn = PillButton(btn_row, text="Yes", font=_FONT_BTN, style="primary",
+                                 padx=18, pady=7, command=lambda: _close(True))
+            yes_btn.pack(side="right", padx=(0, 8))
+            yes_btn.set_colors(fill=accent, fg=t["text_on_accent"],
+                               hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+                               parent_bg=t["bg"])
+        else:
+            ok_btn = PillButton(btn_row, text="OK", font=_FONT_BTN, style="primary",
+                                padx=24, pady=7, command=lambda: _close(None))
+            ok_btn.pack(side="right")
+            ok_btn.set_colors(fill=accent, fg=t["text_on_accent"],
+                              hover_fill=t["accent_hover"], hover_fg=t["text_on_accent"],
+                              parent_bg=t["bg"])
+
+        win.protocol("WM_DELETE_WINDOW", lambda: _close(False if yes_no else None))
+        win.bind("<Escape>", lambda e: _close(False if yes_no else None))
+        win.bind("<Return>", lambda e: _close(True if yes_no else None))
+
+        win.update_idletasks()
+        w = max(win.winfo_reqwidth(), int(380 * self._dpi))
+        h = win.winfo_reqheight()
+        px = parent.winfo_rootx() + (parent.winfo_width() - w) // 2
+        py = parent.winfo_rooty() + (parent.winfo_height() - h) // 3
+        win.geometry(f"{w}x{h}+{max(px, 0)}+{max(py, 0)}")
+        win.deiconify()
+        win.grab_set()
+        try:
+            win.lift()
+            win.focus_force()
+        except Exception:
+            pass
+        self.root.wait_window(win)
+        return result["value"]
+
+    def _msg_info(self, title, message, parent=None, **_):
+        return self._themed_message(title, message, kind="info", parent=parent)
+
+    def _msg_warn(self, title, message, parent=None, **_):
+        return self._themed_message(title, message, kind="warning", parent=parent)
+
+    def _msg_error(self, title, message, parent=None, **_):
+        return self._themed_message(title, message, kind="error", parent=parent)
+
+    def _msg_askyesno(self, title, message, parent=None, **_):
+        return self._themed_message(title, message, kind="question",
+                                    yes_no=True, parent=parent)
 
     def _ghostscript_available(self) -> bool:
         """Check whether Ghostscript is installed (fresh, uncached)."""
@@ -5889,7 +6014,7 @@ class App:
 
     def _on_close(self):
         if self._active_job and self._active_job.is_running():
-            if not messagebox.askyesno(
+            if not self._msg_askyesno(
                 "Conversion in Progress",
                 "A conversion is currently running.\n\n"
                 "Are you sure you want to close the application?",

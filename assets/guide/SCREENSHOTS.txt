@@ -1,0 +1,26 @@
+Quick Start Guide screenshots
+==============================
+
+The installer's Quick Start Guide (Guide.html) shows these screenshots when
+present. Until you add them, the guide displays clean styled placeholders, so
+it always looks finished.
+
+To add real screenshots:
+  1. Launch Doc to Markdown.
+  2. Use the Windows Snipping Tool (Win + Shift + S) to capture each screen.
+  3. Save the PNGs into this folder (assets/guide/) with these EXACT names:
+
+       home.png       — the Home screen (files added + output folder chosen)
+       settings.png   — the Settings screen (a section expanded; hover a tooltip if you like)
+       results.png    — the Results screen (showing the per-file confidence badges)
+       preview.png    — the Preview window (rich rendering, ideally heatmap on)
+
+  4. Rebuild the installer (installer\build_installer.bat). The guide will
+     swap the placeholders for your screenshots automatically.
+
+Tips for clean shots:
+  - Capture just the app window (not the whole desktop).
+  - A consistent theme (all dark or all light) looks most polished.
+  - Roughly 1000-1400 px wide is plenty; the guide scales them to fit.
+
+Only *.png files here are packaged into the installer. This text file is not.

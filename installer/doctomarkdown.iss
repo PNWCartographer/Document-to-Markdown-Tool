@@ -80,7 +80,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon";  Description: "Create a &desktop shortcut";       GroupDescription: "Additional shortcuts:"; Flags: unchecked
 Name: "startmenu";    Description: "Create a &Start Menu shortcut";    GroupDescription: "Additional shortcuts:";
-Name: "viewreadme";   Description: "View &README after installation";  GroupDescription: "After installation:";   Flags: unchecked
+Name: "viewreadme";   Description: "View the &Quick Start Guide after installation";  GroupDescription: "After installation:";   Flags: unchecked
 
 ; ============================================================
 ; Files to install
@@ -91,8 +91,12 @@ Source: "..\dist\DocToMarkdown\*"; DestDir: "{app}"; Flags: ignoreversion recurs
 
 ; Documentation files (also bundled inside dist, but ensure top-level copies)
 Source: "..\README.md";              DestDir: "{app}"; Flags: ignoreversion
+Source: "..\Guide.html";             DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE";                DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_LICENSES";   DestDir: "{app}"; Flags: ignoreversion
+
+; Quick Start Guide screenshots (optional — packaged if present)
+Source: "..\assets\guide\*.png";     DestDir: "{app}\assets\guide"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Icon for shortcuts
 Source: "..\assets\app_icon.ico";    DestDir: "{app}\assets"; Flags: ignoreversion
@@ -116,10 +120,11 @@ Root: HKLM; Subkey: "Software\{#MyAppPublisher}\{#MyAppName}"; ValueType: string
 Root: HKLM; Subkey: "Software\{#MyAppPublisher}\{#MyAppName}"; ValueType: string; ValueName: "Version";     ValueData: "{#MyAppVersion}"; Flags: uninsdeletekey
 
 ; ============================================================
-; Post-install action: open README
+; Post-install action: open the Quick Start Guide in the default browser
+; (renders headings/tables/screenshots properly — no Markdown viewer needed)
 ; ============================================================
 [Run]
-Filename: "notepad.exe"; Parameters: """{app}\README.md"""; Description: "View README"; Flags: nowait postinstall skipifsilent shellexec; Tasks: viewreadme
+Filename: "{app}\Guide.html"; Description: "View the Quick Start Guide"; Flags: nowait postinstall skipifsilent shellexec; Tasks: viewreadme
 
 ; ============================================================
 ; Uninstaller — clean removal of all files

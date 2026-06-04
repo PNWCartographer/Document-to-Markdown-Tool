@@ -13,6 +13,7 @@ build/
 *.manifest
 installer/Output/
 installer/vendor/
+Guide.html
 
 # Testing folders
 test_files/

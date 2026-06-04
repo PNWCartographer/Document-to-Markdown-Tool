@@ -1,8 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
 :: ============================================================
-:: Doc to Markdown — Windows Installer Build Script
-:: by Darksquare  |  https://darksquare.dev
+:: Doc to Markdown - Windows Installer Build Script
+:: by Darksquare  ^|  https://darksquare.dev
 ::
 :: Prerequisites:
 ::   1. Python 3.10+ with project dependencies installed
@@ -21,12 +21,12 @@ cd /d "%PROJECT_ROOT%"
 
 echo.
 echo ============================================================
-echo   Doc to Markdown — Installer Build
+echo   Doc to Markdown - Installer Build
 echo   Darksquare
 echo ============================================================
 echo.
 
-:: ── Step 1: Verify Python ──────────────────────────────────
+:: --- Step 1: Verify Python ---
 echo [1/5] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -37,7 +37,7 @@ if errorlevel 1 (
 for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PYVER=%%v"
 echo   Python %PYVER% found.
 
-:: ── Step 2: Verify PyInstaller ─────────────────────────────
+:: --- Step 2: Verify PyInstaller ---
 echo.
 echo [2/5] Checking PyInstaller...
 python -m PyInstaller --version >nul 2>&1
@@ -52,7 +52,7 @@ if errorlevel 1 (
 for /f %%v in ('python -m PyInstaller --version 2^>^&1') do set "PIVER=%%v"
 echo   PyInstaller %PIVER% found.
 
-:: ── Step 3: Stage vendored binaries (Tesseract) ────────────
+:: --- Step 3: Stage vendored binaries (Tesseract) ---
 echo.
 echo [3/5] Staging bundled engines (Tesseract)...
 python installer\stage_vendor.py
@@ -62,7 +62,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: ── Step 4: Run PyInstaller ────────────────────────────────
+:: --- Step 4: Run PyInstaller ---
 echo.
 echo [4/5] Building application with PyInstaller...
 echo   This may take several minutes on first run.
@@ -88,7 +88,15 @@ if not exist "dist\DocToMarkdown\DocToMarkdown.exe" (
 )
 echo   Build complete: dist\DocToMarkdown\DocToMarkdown.exe
 
-:: ── Step 5: Run Inno Setup Compiler ───────────────────────
+:: Generate the styled HTML Quick Start Guide for the installer's post-install action
+echo.
+echo   Generating Quick Start Guide (Guide.html)...
+python installer\make_guide_html.py
+if errorlevel 1 (
+    echo   WARNING: Guide.html generation failed - installer will still build.
+)
+
+:: --- Step 5: Run Inno Setup Compiler ---
 echo.
 echo [5/5] Building installer with Inno Setup...
 
@@ -99,7 +107,6 @@ if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
 ) else if exist "C:\Program Files\Inno Setup 6\ISCC.exe" (
     set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
 ) else (
-    :: Try PATH
     where iscc >nul 2>&1
     if not errorlevel 1 (
         set "ISCC=iscc"
