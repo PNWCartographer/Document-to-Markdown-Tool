@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog
 from . import theme as themes
 from .tooltip import Tooltip
 from .widgets import (PillButton, ToggleSwitch, GlassScrollbar, GlassDropdown,
-                      PillProgressBar, _draw_circle, monitor_area)
+                      PillProgressBar, _draw_circle, monitor_area, aa_circle_image)
 import config.settings as _cfg_mod
 import engine.converter as _converter_mod
 import engine.watch_folder as _watch_mod
@@ -4849,9 +4849,15 @@ class App:
         # and proportionate on high-resolution displays, matching the rest of
         # the UI (which scales pixel dimensions by self._dpi).
         bsz = int(40 * d)
-        inset = max(2, int(2 * d))
         badge = tk.Canvas(body, width=bsz, height=bsz, bg=t["bg"], highlightthickness=0)
-        badge.create_oval(inset, inset, bsz - inset, bsz - inset, fill=accent, outline="")
+        _circle = aa_circle_image(bsz, accent, t["bg"])
+        if _circle is not None:
+            badge._circle_img = _circle  # keep a reference to prevent GC
+            badge.create_image(0, 0, image=_circle, anchor="nw")
+        else:
+            inset = max(2, int(2 * d))
+            badge.create_oval(inset, inset, bsz - inset, bsz - inset,
+                              fill=accent, outline="")
         badge.create_text(bsz // 2, bsz // 2, text=symbol, fill=t["text_on_accent"],
                           font=(_FONT_FAMILY, 16, "bold"))
         badge.grid(row=0, column=0, rowspan=2, sticky="n", padx=(0, int(16 * d)))

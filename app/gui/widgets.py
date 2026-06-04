@@ -122,6 +122,80 @@ def _lerp_color(c1: str, c2: str, t: float) -> str:
     return f"#{max(0,min(255,r)):02x}{max(0,min(255,g)):02x}{max(0,min(255,bl)):02x}"
 
 
+# ── Anti-aliased shape rendering (PIL) ──────────────────────
+# tkinter's Canvas cannot anti-alias, so shapes drawn with create_oval /
+# create_arc / create_polygon have jagged edges. These helpers draw the
+# shape at 4x with PIL and downscale with LANCZOS for crisp edges, then
+# composite onto the parent background. Results are cached by parameters.
+
+_AA_IMG_CACHE = {}
+
+
+def _aa_pill_image(w, h, fill, outline, outline_w, bg):
+    """Return an anti-aliased pill (rounded-rect) PhotoImage, composited on *bg*."""
+    w = max(int(w), 1)
+    h = max(int(h), 1)
+    key = ("pill", w, h, fill, outline, round(float(outline_w), 2), bg)
+    cached = _AA_IMG_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    SS = 4
+    sw, sh = w * SS, h * SS
+    img = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    m = SS  # ~1px margin after downscale keeps the AA edge clean
+    radius = max(0, (sh - 2 * m) // 2)
+    fill_rgba = _hex_to_rgb(fill) + (255,)
+    if outline_w and outline:
+        ow = max(1, int(round(outline_w * SS)))
+        draw.rounded_rectangle([m, m, sw - m, sh - m], radius=radius,
+                               fill=fill_rgba, outline=_hex_to_rgb(outline) + (255,),
+                               width=ow)
+    else:
+        draw.rounded_rectangle([m, m, sw - m, sh - m], radius=radius, fill=fill_rgba)
+    img = img.resize((w, h), Image.LANCZOS)
+    bg_img = Image.new("RGBA", (w, h), _hex_to_rgb(bg) + (255,))
+    bg_img.paste(img, (0, 0), img)
+    photo = ImageTk.PhotoImage(bg_img.convert("RGB"))
+
+    if len(_AA_IMG_CACHE) > 400:
+        _AA_IMG_CACHE.clear()
+    _AA_IMG_CACHE[key] = photo
+    return photo
+
+
+def aa_circle_image(diameter, fill, bg):
+    """Return an anti-aliased filled-circle PhotoImage composited on *bg*.
+
+    For icon badges where create_oval would look jagged. Returns None if
+    PIL is unavailable so callers can fall back to create_oval.
+    """
+    if not _HAS_PIL:
+        return None
+    d = max(int(diameter), 1)
+    key = ("circle", d, fill, bg)
+    cached = _AA_IMG_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    SS = 4
+    sd = d * SS
+    img = Image.new("RGBA", (sd, sd), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    m = SS
+    draw.ellipse([m, m, sd - m, sd - m], fill=_hex_to_rgb(fill) + (255,))
+    img = img.resize((d, d), Image.LANCZOS)
+    bg_img = Image.new("RGBA", (d, d), _hex_to_rgb(bg) + (255,))
+    bg_img.paste(img, (0, 0), img)
+    photo = ImageTk.PhotoImage(bg_img.convert("RGB"))
+
+    if len(_AA_IMG_CACHE) > 400:
+        _AA_IMG_CACHE.clear()
+    _AA_IMG_CACHE[key] = photo
+    return photo
+
+
 # ── PillButton ──────────────────────────────────────────────
 
 class PillButton(tk.Canvas):
@@ -270,10 +344,14 @@ class PillButton(tk.Canvas):
         if self._style == "primary":
             outline = fill
 
-        # Pill shape
-        _draw_pill(self, ins, ins, w - ins, h - ins, fill=fill, outline=outline,
-                   outline_w=self._outline_w if self._style == "secondary" else 0,
-                   steps=self._STEPS)
+        # Pill shape — anti-aliased via PIL when available, else Canvas arcs
+        ow = self._outline_w if self._style == "secondary" else 0
+        if _HAS_PIL:
+            self._photo = _aa_pill_image(w, h, fill, outline, ow, self._parent_bg)
+            self.create_image(0, 0, image=self._photo, anchor="nw")
+        else:
+            _draw_pill(self, ins, ins, w - ins, h - ins, fill=fill, outline=outline,
+                       outline_w=ow, steps=self._STEPS)
 
         # Text
         self.create_text(w / 2, h / 2, text=self._text_str,
