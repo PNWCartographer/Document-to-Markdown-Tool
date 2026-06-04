@@ -97,40 +97,21 @@ if errorlevel 1 (
 )
 
 :: --- Step 5: Run Inno Setup Compiler ---
+:: NOTE: ISCC detection uses single-line ifs and goto labels (no parenthesized
+:: blocks) because the "(x86)" path and parentheses break cmd block parsing.
 echo.
 echo [5/5] Building installer with Inno Setup...
 
-:: Try common ISCC locations
 set "ISCC="
-if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
-    set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-) else if exist "C:\Program Files\Inno Setup 6\ISCC.exe" (
-    set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
-) else (
-    where iscc >nul 2>&1
-    if not errorlevel 1 (
-        set "ISCC=iscc"
-    )
-)
+if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not defined ISCC if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
+if not defined ISCC where iscc >nul 2>&1 && set "ISCC=iscc"
 
-if "!ISCC!"=="" (
-    echo.
-    echo   WARNING: Inno Setup compiler (ISCC.exe) not found.
-    echo   Install Inno Setup 6 from: https://jrsoftware.org/isinfo.php
-    echo.
-    echo   PyInstaller build succeeded. You can compile the installer
-    echo   manually by opening installer\doctomarkdown.iss in Inno Setup.
-    exit /b 0
-)
+if not defined ISCC goto no_iscc
 
 echo   Using: !ISCC!
 "!ISCC!" installer\doctomarkdown.iss
-if errorlevel 1 (
-    echo.
-    echo   ERROR: Inno Setup compilation failed.
-    echo   Open installer\doctomarkdown.iss in Inno Setup IDE to debug.
-    exit /b 1
-)
+if errorlevel 1 goto iscc_failed
 
 echo.
 echo ============================================================
@@ -139,5 +120,19 @@ echo.
 echo   Installer: installer\Output\DocToMarkdown_Setup_1.2.0.exe
 echo ============================================================
 echo.
-
 exit /b 0
+
+:no_iscc
+echo.
+echo   WARNING: Inno Setup compiler ISCC.exe was not found.
+echo   Install Inno Setup 6 from: https://jrsoftware.org/isinfo.php
+echo.
+echo   PyInstaller build succeeded. Compile the installer manually by
+echo   opening installer\doctomarkdown.iss in Inno Setup.
+exit /b 0
+
+:iscc_failed
+echo.
+echo   ERROR: Inno Setup compilation failed.
+echo   Open installer\doctomarkdown.iss in Inno Setup IDE to debug.
+exit /b 1
