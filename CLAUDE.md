@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## Project Name
-Documentation to Markdown Converter Tool
+Markwell
 
 ## Project Purpose
 This project is a local processing tool that converts documents and document based files into clean, organized Markdown for human review, AI upload, memory systems, and knowledgebase repositories.

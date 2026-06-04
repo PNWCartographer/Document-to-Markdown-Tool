@@ -41,7 +41,7 @@ if __name__ == "__main__":
             import datetime
             log_dir = os.path.join(
                 os.environ.get("APPDATA", os.path.expanduser("~")),
-                "DocToMarkdown",
+                "Markwell",
             )
             os.makedirs(log_dir, exist_ok=True)
             with open(os.path.join(log_dir, "crash.log"), "a", encoding="utf-8") as fh:

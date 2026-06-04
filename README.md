@@ -1,4 +1,4 @@
-# Doc to Markdown
+# Markwell
 
 **v1.2.0** | **by Darksquare**
 
@@ -163,7 +163,7 @@ The first run may download AI models for docling and RapidOCR (approximately 1-2
 
 ## Licensing
 
-Doc to Markdown is commercial software by Darksquare.
+Markwell is commercial software by Darksquare.
 
 - **Free tier**: 10 document conversions at no cost to evaluate the tool
 - **Licensed**: Unlimited conversions with a purchased license key
@@ -288,8 +288,8 @@ app/
     watch_folder.py           # Watch Folder automated conversion
     license_manager.py        # License validation and usage tracking
 installer/
-  doctomarkdown.spec          # PyInstaller build spec
-  doctomarkdown.iss           # InnoSetup installer wizard script
+  markwell.spec               # PyInstaller build spec
+  markwell.iss                # InnoSetup installer wizard script
   build_installer.bat         # One-click Windows installer build
 ```
 
@@ -321,7 +321,7 @@ The only network activity occurs on first run when AI models are downloaded and 
 
 ## Cross-Platform Support
 
-Doc to Markdown targets Windows 10/11, Linux, and macOS:
+Markwell targets Windows 10/11, Linux, and macOS:
 
 - **Windows**: Full support including DWM dark title bar, Per-Monitor DPI awareness, console window hiding, CUDA and DirectML GPU acceleration
 - **Linux**: Tk scaling-based DPI detection, Button-4/5 scroll bindings, XDG-compliant data directories, CUDA GPU acceleration

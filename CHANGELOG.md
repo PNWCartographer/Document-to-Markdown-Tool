@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Documentation to Markdown Converter Tool are documented in this file.
+All notable changes to Markwell are documented in this file.
 
 ## [Unreleased]
 

@@ -117,7 +117,7 @@ class ConversionJob:
         completed = 0
         failed = 0
 
-        # App-level logger — writes to %APPDATA%\DocToMarkdown\app.log
+        # App-level logger — writes to %APPDATA%\Markwell\app.log
         app_logger = AppLogger()
         app_logger.info(f"Batch started | files={total}")
 

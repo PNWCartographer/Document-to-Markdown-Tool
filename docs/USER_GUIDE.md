@@ -2,9 +2,9 @@
      Curated for end users — keep it friendly and non-technical.
      Build with: python installer/make_guide_html.py -->
 
-## Welcome to Doc to Markdown
+## Welcome to Markwell
 
-Doc to Markdown turns your documents — PDFs, Word files, spreadsheets, images, scans, and more — into clean, organized **Markdown** (and several other formats) that's easy to read, search, and feed to AI tools or a knowledgebase.
+Markwell turns your documents — PDFs, Word files, spreadsheets, images, scans, and more — into clean, organized **Markdown** (and several other formats) that's easy to read, search, and feed to AI tools or a knowledgebase.
 
 Everything happens **on your computer**. Your files are never uploaded anywhere.
 

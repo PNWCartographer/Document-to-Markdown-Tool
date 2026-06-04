@@ -1,21 +1,21 @@
 ; ============================================================
-; Doc to Markdown — InnoSetup Installer Script
+; Markwell — InnoSetup Installer Script
 ; by Darksquare  |  https://darksquare.dev
 ;
 ; Prerequisites:
-;   1. Run PyInstaller to produce dist\DocToMarkdown\
+;   1. Run PyInstaller to produce dist\Markwell\
 ;   2. Install Inno Setup 6+ from https://jrsoftware.org/isinfo.php
 ;   3. Compile this script:
-;        iscc installer\doctomarkdown.iss
+;        iscc installer\markwell.iss
 ;
-; Output: installer\Output\DocToMarkdown_Setup_1.2.0.exe
+; Output: installer\Output\Markwell_Setup_1.2.0.exe
 ; ============================================================
 
-#define MyAppName       "Doc to Markdown"
+#define MyAppName       "Markwell"
 #define MyAppVersion    "1.2.0"
 #define MyAppPublisher  "Darksquare"
 #define MyAppURL        "https://darksquare.dev"
-#define MyAppExeName    "DocToMarkdown.exe"
+#define MyAppExeName    "Markwell.exe"
 #define MyAppCopyright  "Copyright (c) 2025 Darksquare. All rights reserved."
 
 [Setup]
@@ -34,11 +34,11 @@ AppCopyright={#MyAppCopyright}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
-OutputBaseFilename=DocToMarkdown_Setup_{#MyAppVersion}
+OutputBaseFilename=Markwell_Setup_{#MyAppVersion}
 
 ; Installer appearance
 SetupIconFile=..\assets\app_icon.ico
-UninstallDisplayIcon={app}\DocToMarkdown.exe
+UninstallDisplayIcon={app}\Markwell.exe
 UninstallDisplayName={#MyAppName}
 WizardStyle=modern
 WizardSizePercent=110
@@ -87,7 +87,7 @@ Name: "viewreadme";   Description: "View the &Quick Start Guide after installati
 ; ============================================================
 [Files]
 ; Main application (PyInstaller one-folder output)
-Source: "..\dist\DocToMarkdown\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\Markwell\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Documentation files (also bundled inside dist, but ensure top-level copies)
 Source: "..\README.md";              DestDir: "{app}"; Flags: ignoreversion
@@ -135,7 +135,7 @@ Type: filesandordirs; Name: "{app}\*"
 Type: dirifempty;     Name: "{app}"
 
 ; Remove AppData folder created by the app (settings, license data)
-Type: filesandordirs; Name: "{localappdata}\DocToMarkdown"
+Type: filesandordirs; Name: "{localappdata}\Markwell"
 
 [Code]
 // ============================================================
@@ -223,7 +223,7 @@ begin
   Desc.Height := ScaleY(72);
   Desc.WordWrap := True;
   Desc.Caption :=
-    'Doc to Markdown is ready to use. The optional Searchable PDF feature ' +
+    'Markwell is ready to use. The optional Searchable PDF feature ' +
     'also needs Ghostscript, a free tool that is not bundled with this app. ' +
     'You can install it now or later — the app will guide you the first time ' +
     'you use Searchable PDF.';
@@ -271,10 +271,10 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    AppDataDir := ExpandConstant('{localappdata}\DocToMarkdown');
+    AppDataDir := ExpandConstant('{localappdata}\Markwell');
     if DirExists(AppDataDir) then
     begin
-      if MsgBox('Doc to Markdown found user data (settings, license, logs) in:' + #13#10 +
+      if MsgBox('Markwell found user data (settings, license, logs) in:' + #13#10 +
                 AppDataDir + #13#10#13#10 +
                 'Do you want to remove this data as well?',
                 mbConfirmation, MB_YESNO) = IDYES then

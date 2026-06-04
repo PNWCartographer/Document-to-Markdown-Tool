@@ -113,8 +113,8 @@ def write_confidence_report(result: ConfidenceResult) -> str:
     Append this file's confidence report to the dated log in
     <appdata_dir>/confidence_YYYY-MM-DD.log.
 
-    On Windows this is %APPDATA%/DocToMarkdown/, on Linux/macOS it
-    falls back to ~/DocToMarkdown/.  Returns the path written.
+    On Windows this is %APPDATA%/Markwell/, on Linux/macOS it
+    falls back to ~/Markwell/.  Returns the path written.
     """
     from .logger import appdata_dir
     import datetime

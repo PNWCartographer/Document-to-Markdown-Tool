@@ -7,7 +7,7 @@ The installer should make the tool easy for a non technical user to install on W
 The installer is an InnoSetup script compiled into a Windows `.exe` installer:
 
 ```text
-installer/doctomarkdown.iss
+installer/markwell.iss
 ```
 
 The build is automated via `installer/build_installer.bat`, which runs PyInstaller to create the frozen application and then InnoSetup to compile the final installer executable.
@@ -28,16 +28,16 @@ The installer should:
 Install location:
 
 ```text
-C:\Program Files\Doc to Markdown\
+C:\Program Files\Markwell\
 ```
 
-(InnoSetup `{autopf}\Doc to Markdown`)
+(InnoSetup `{autopf}\Markwell`)
 
 ## Installed Folder Structure
 Installed structure:
 
 ```text
-Doc to Markdown\
+Markwell\
   app\
   config\
   assets\

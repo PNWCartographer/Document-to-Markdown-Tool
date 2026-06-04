@@ -301,7 +301,7 @@ class App:
         from .widgets import set_dpi_scale
         set_dpi_scale(self._dpi)
 
-        self.root.title("Document to Markdown Converter")
+        self.root.title("Markwell")
         self.root.geometry(f"{int(960 * self._dpi)}x{int(640 * self._dpi)}")
         self.root.minsize(int(720 * self._dpi), int(500 * self._dpi))
 
@@ -468,7 +468,7 @@ class App:
 
         self._lbl_title = tk.Label(
             self._sidebar,
-            text="Doc → Markdown",
+            text="Markwell",
             font=_FONT_TITLE,
             anchor="w",
             padx=16,
@@ -5156,7 +5156,7 @@ class App:
         """Show the About / Help window with app info and quick-start guide."""
         t = self._t
         win = tk.Toplevel(self.root)
-        win.title("About — Doc to Markdown")
+        win.title("About — Markwell")
         _aw = int(560 * self._dpi)
         _ah = int(560 * self._dpi)
         _ax = self.root.winfo_x() + (self.root.winfo_width() - _aw) // 2
@@ -5197,7 +5197,7 @@ class App:
 
         # ── Title ──
         tk.Label(
-            frame, text="Doc to Markdown", font=(_FONT_FAMILY, 20, "bold"),
+            frame, text="Markwell", font=(_FONT_FAMILY, 20, "bold"),
             fg=t["accent"], bg=t["bg"],
         ).pack(anchor="w", padx=pad, pady=(24, 0))
         tk.Label(
@@ -5823,7 +5823,7 @@ class App:
             import json as _json
             req = urllib.request.Request(
                 self._UPDATE_URL,
-                headers={"User-Agent": f"DocToMarkdown/{self._APP_VERSION}"})
+                headers={"User-Agent": f"Markwell/{self._APP_VERSION}"})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = _json.loads(resp.read().decode("utf-8"))
             latest = data.get("latest_version", "")

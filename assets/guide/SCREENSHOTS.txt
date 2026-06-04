@@ -6,7 +6,7 @@ present. Until you add them, the guide displays clean styled placeholders, so
 it always looks finished.
 
 To add real screenshots:
-  1. Launch Doc to Markdown.
+  1. Launch Markwell.
   2. Use the Windows Snipping Tool (Win + Shift + S) to capture each screen.
   3. Save the PNGs into this folder (assets/guide/) with these EXACT names:
 

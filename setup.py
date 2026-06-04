@@ -1,5 +1,5 @@
 """
-Document to Markdown Converter — one-shot setup script.
+Markwell — one-shot setup script.
 
 Run once after cloning / downloading the project:
     python setup.py
@@ -203,7 +203,7 @@ def verify() -> None:
 
 
 if __name__ == "__main__":
-    print("Document to Markdown Converter — Setup")
+    print("Markwell — Setup")
     check_python()
     install_pip_packages()
     install_tesseract()

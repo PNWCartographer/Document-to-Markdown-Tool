@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 :: ============================================================
-:: Doc to Markdown - Windows Installer Build Script
+:: Markwell - Windows Installer Build Script
 :: by Darksquare  ^|  https://darksquare.dev
 ::
 :: Prerequisites:
@@ -13,7 +13,7 @@ setlocal enabledelayedexpansion
 ::   installer\build_installer.bat
 ::
 :: Output:
-::   installer\Output\DocToMarkdown_Setup_1.2.0.exe
+::   installer\Output\Markwell_Setup_1.2.0.exe
 :: ============================================================
 
 set "PROJECT_ROOT=%~dp0.."
@@ -21,7 +21,7 @@ cd /d "%PROJECT_ROOT%"
 
 echo.
 echo ============================================================
-echo   Doc to Markdown - Installer Build
+echo   Markwell - Installer Build
 echo   Darksquare
 echo ============================================================
 echo.
@@ -69,10 +69,10 @@ echo   This may take several minutes on first run.
 echo.
 
 :: Clean previous build artifacts
-if exist "dist\DocToMarkdown" rd /s /q "dist\DocToMarkdown"
-if exist "build\DocToMarkdown" rd /s /q "build\DocToMarkdown"
+if exist "dist\Markwell" rd /s /q "dist\Markwell"
+if exist "build\Markwell" rd /s /q "build\Markwell"
 
-python -m PyInstaller installer\doctomarkdown.spec --noconfirm
+python -m PyInstaller installer\markwell.spec --noconfirm
 if errorlevel 1 (
     echo.
     echo   ERROR: PyInstaller build failed.
@@ -82,11 +82,11 @@ if errorlevel 1 (
 )
 
 :: Verify the executable was created
-if not exist "dist\DocToMarkdown\DocToMarkdown.exe" (
-    echo   ERROR: Expected dist\DocToMarkdown\DocToMarkdown.exe not found.
+if not exist "dist\Markwell\Markwell.exe" (
+    echo   ERROR: Expected dist\Markwell\Markwell.exe not found.
     exit /b 1
 )
-echo   Build complete: dist\DocToMarkdown\DocToMarkdown.exe
+echo   Build complete: dist\Markwell\Markwell.exe
 
 :: Generate the styled HTML Quick Start Guide for the installer's post-install action
 echo.
@@ -110,14 +110,14 @@ if not defined ISCC where iscc >nul 2>&1 && set "ISCC=iscc"
 if not defined ISCC goto no_iscc
 
 echo   Using: !ISCC!
-"!ISCC!" installer\doctomarkdown.iss
+"!ISCC!" installer\markwell.iss
 if errorlevel 1 goto iscc_failed
 
 echo.
 echo ============================================================
 echo   BUILD COMPLETE
 echo.
-echo   Installer: installer\Output\DocToMarkdown_Setup_1.2.0.exe
+echo   Installer: installer\Output\Markwell_Setup_1.2.0.exe
 echo ============================================================
 echo.
 exit /b 0
@@ -128,11 +128,11 @@ echo   WARNING: Inno Setup compiler ISCC.exe was not found.
 echo   Install Inno Setup 6 from: https://jrsoftware.org/isinfo.php
 echo.
 echo   PyInstaller build succeeded. Compile the installer manually by
-echo   opening installer\doctomarkdown.iss in Inno Setup.
+echo   opening installer\markwell.iss in Inno Setup.
 exit /b 0
 
 :iscc_failed
 echo.
 echo   ERROR: Inno Setup compilation failed.
-echo   Open installer\doctomarkdown.iss in Inno Setup IDE to debug.
+echo   Open installer\markwell.iss in Inno Setup IDE to debug.
 exit /b 1

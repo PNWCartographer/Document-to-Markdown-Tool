@@ -74,7 +74,7 @@ footer { max-width:860px; margin:0 auto; padding:0 40px 48px; color:var(--muted)
 
 _BANNER = (
     '<div class="banner">'
-    '<h1>Doc to Markdown — Quick Start Guide</h1>'
+    '<h1>Markwell — Quick Start Guide</h1>'
     '<p>by Darksquare &middot; darksquare.dev</p>'
     '</div>'
 )
@@ -133,7 +133,7 @@ def main():
         "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n"
         "<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-        "<title>Doc to Markdown — Quick Start Guide</title>\n"
+        "<title>Markwell — Quick Start Guide</title>\n"
         "<style>" + _CSS + "</style>\n</head>\n<body>\n"
         + _BANNER + "\n<main>\n" + body + "\n</main>\n" + _FOOTER
         + "\n</body>\n</html>\n"

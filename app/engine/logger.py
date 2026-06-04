@@ -2,7 +2,7 @@
 Unified application logger.
 
 All logging — app-level events and per-file conversion detail — writes to a
-single file at %APPDATA%/DocToMarkdown/app.log so output folders stay clean.
+single file at %APPDATA%/Markwell/app.log so output folders stay clean.
 
 ConversionLogger collects entries during a single file conversion and feeds
 them to the GUI log panel live via gui_callback. It also appends each entry
@@ -23,15 +23,15 @@ _MAX_LOG_SIZE = 5 * 1024 * 1024  # 5 MB
 if sys.platform == "win32":
     _APPDATA_DIR = os.path.join(
         os.environ.get("APPDATA", os.path.expanduser("~")),
-        "DocToMarkdown",
+        "Markwell",
     )
 elif sys.platform == "darwin":
     _APPDATA_DIR = os.path.join(
-        os.path.expanduser("~"), "Library", "Application Support", "DocToMarkdown",
+        os.path.expanduser("~"), "Library", "Application Support", "Markwell",
     )
 else:
     _APPDATA_DIR = os.path.join(
-        os.path.expanduser("~"), ".local", "share", "DocToMarkdown",
+        os.path.expanduser("~"), ".local", "share", "Markwell",
     )
 APP_LOG_PATH = os.path.join(_APPDATA_DIR, "app.log")
 
@@ -51,7 +51,7 @@ def _ensure_appdata_dir() -> None:
 
 
 def appdata_dir() -> str:
-    """Return (and ensure) the %APPDATA%/DocToMarkdown directory."""
+    """Return (and ensure) the %APPDATA%/Markwell directory."""
     _ensure_appdata_dir()
     return _APPDATA_DIR
 
@@ -149,7 +149,7 @@ class ConversionLogger:
 # ---------------------------------------------------------------------------
 
 class AppLogger:
-    """Writes app-level events to the unified %APPDATA%/DocToMarkdown/app.log."""
+    """Writes app-level events to the unified %APPDATA%/Markwell/app.log."""
 
     def info(self, message: str) -> None:
         self._write("INFO", message)

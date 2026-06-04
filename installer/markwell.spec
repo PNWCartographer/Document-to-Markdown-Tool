@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for Doc to Markdown by Darksquare.
+PyInstaller spec for Markwell by Darksquare.
 
 Usage:
-    pyinstaller installer/doctomarkdown.spec
+    pyinstaller installer/markwell.spec
 
 Produces a one-folder distribution at:
-    dist/DocToMarkdown/DocToMarkdown.exe
+    dist/Markwell/Markwell.exe
 
-That folder is consumed by the InnoSetup script (doctomarkdown.iss)
+That folder is consumed by the InnoSetup script (markwell.iss)
 to produce the final installer.
 """
 
@@ -216,7 +216,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="DocToMarkdown",
+    name="Markwell",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -236,5 +236,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="DocToMarkdown",
+    name="Markwell",
 )

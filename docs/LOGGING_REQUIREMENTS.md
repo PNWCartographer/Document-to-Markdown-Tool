@@ -9,7 +9,7 @@ Logs should be useful for troubleshooting without exposing unnecessary document 
 The application log is stored in the user's application data directory:
 
 ```text
-%APPDATA%\DocToMarkdown\app.log
+%APPDATA%\Markwell\app.log
 ```
 
 This avoids permission issues with Program Files and ensures logs are accessible without administrator rights.

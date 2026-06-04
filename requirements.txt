@@ -1,4 +1,4 @@
-# Document to Markdown Converter Tool
+# Markwell
 # Full dependency list — install with: pip install -r requirements.txt
 #
 # First-run note: docling and RapidOCR download AI models on first use (~1-2 GB total).
