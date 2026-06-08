@@ -281,14 +281,30 @@ def _convert_docling(
 
     log_info("Using docling engine for PDF.")
     output.engine_used = "docling"
-    progress(0.1)
 
-    stage("Loading docling models…")
+    # First-run detection: docling downloads ~1-2 GB of AI models the first
+    # time it runs on this machine. A marker file lets us show the long
+    # "downloading" message only on the genuine first run; afterwards the
+    # models load quickly from the local cache.
+    try:
+        from .logger import appdata_dir as _appdata_dir
+        _marker = os.path.join(_appdata_dir(), ".ai_models_ready")
+    except Exception:
+        _marker = None
+    _first_run = bool(_marker) and not os.path.isfile(_marker)
+
+    if _first_run:
+        log_info("First run — downloading AI models (~1-2 GB, one-time setup).")
+        stage("First run: downloading AI models (~1–2 GB). One-time setup — "
+              "this may take several minutes…")
+    else:
+        stage("Loading AI models…")
+    progress(-1.0)  # indeterminate — model load/download exposes no progress hook
+
     converter = DocumentConverter()
-    progress(0.15)
 
-    stage("Converting PDF — this may take a while for large documents…")
-    progress(-1.0)
+    if not _first_run:
+        stage("Converting PDF — this may take a while for large documents…")
 
     # Run the blocking docling call in a sub-thread so we can poll cancel
     # and update the stage text with elapsed time so the user sees activity.
@@ -307,10 +323,23 @@ def _convert_docling(
                     tick += 1
                     elapsed = int(_time.monotonic() - t0)
                     m, s = divmod(elapsed, 60)
-                    stage(f"Converting PDF — {m}:{s:02d} elapsed…")
+                    if _first_run:
+                        stage(f"Downloading AI models — {m}:{s:02d} elapsed "
+                              f"(one-time setup, please wait)…")
+                    else:
+                        stage(f"Converting PDF — {m}:{s:02d} elapsed…")
             result = future.result()
     else:
         result = converter.convert(source_file)
+
+    # Models are present now — record the marker so future runs skip the
+    # first-run download messaging.
+    if _first_run and _marker:
+        try:
+            with open(_marker, "w", encoding="utf-8") as _mf:
+                _mf.write("ok")
+        except Exception:
+            pass
 
     doc = result.document
     progress(0.55)

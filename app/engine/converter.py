@@ -611,6 +611,7 @@ class ConversionJob:
                 detect_equations=cfg.get("detect_equations", True),
                 logger=logger,
                 progress_callback=progress,
+                stage_callback=stage,
             )
 
         elif ext in (".xlsx", ".xls"):

@@ -36,6 +36,7 @@ def convert(
     detect_equations: bool = True,
     logger: Optional[ConversionLogger] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
+    stage_callback: Optional[Callable[[str], None]] = None,
 ) -> ConversionOutput:
     output = ConversionOutput(source_file=source_file, alias=alias)
     confidence = ConfidenceResult(source_file=source_file)
@@ -48,6 +49,8 @@ def convert(
         confidence.add_warning(msg)
     def progress(p):
         if progress_callback: progress_callback(p)
+    def stage(s):
+        if stage_callback: stage_callback(s)
 
     log_info(f"DOCX converter started | file={os.path.basename(source_file)}")
     progress(0.05)
@@ -67,7 +70,7 @@ def convert(
             result = _convert_docling(
                 source_file, alias, output_root, preserve_images, rebuild_toc,
                 preserve_page_numbers, use_subfolder, output, confidence,
-                log_info, log_warn, progress, pp_settings=pp_settings,
+                log_info, log_warn, progress, stage, pp_settings=pp_settings,
             )
             if result:
                 return result
@@ -118,16 +121,45 @@ def _docling_available() -> bool:
 def _convert_docling(
     source_file, alias, output_root, preserve_images, rebuild_toc,
     preserve_page_numbers, use_subfolder, output, confidence, log_info, log_warn, progress,
+    stage=None,
     pp_settings: Optional[dict] = None,
 ) -> Optional[ConversionOutput]:
     from docling.document_converter import DocumentConverter
 
     log_info("Using docling engine for DOCX.")
-    progress(0.1)
+    _stage = stage if stage else (lambda s: None)
+
+    # First-run AI-model download messaging (shares the marker with the PDF
+    # path — docling models are downloaded once and reused across formats).
+    try:
+        from .logger import appdata_dir as _appdata_dir
+        _marker = os.path.join(_appdata_dir(), ".ai_models_ready")
+    except Exception:
+        _marker = None
+    _first_run = bool(_marker) and not os.path.isfile(_marker)
+
+    if _first_run:
+        log_info("First run — downloading AI models (~1-2 GB, one-time setup).")
+        _stage("First run: downloading AI models (~1–2 GB). One-time setup — "
+               "this may take several minutes…")
+    else:
+        _stage("Loading AI models…")
+    progress(-1.0)  # indeterminate — model load/download exposes no progress hook
 
     converter = DocumentConverter()
+    if not _first_run:
+        _stage("Converting document…")
     result = converter.convert(source_file)
     doc = result.document
+
+    # Models are present now — record the marker so future runs skip the
+    # first-run download messaging.
+    if _first_run and _marker:
+        try:
+            with open(_marker, "w", encoding="utf-8") as _mf:
+                _mf.write("ok")
+        except Exception:
+            pass
     progress(0.5)
 
     # Export to Markdown via docling's built-in exporter
