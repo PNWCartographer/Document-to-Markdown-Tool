@@ -1,6 +1,6 @@
 # Markwell
 
-**v1.2.0** | **by Darksquare**
+**v1.0.0** | **by Darksquare**
 
 A professional desktop tool that converts documents into clean, structured Markdown or Searchable PDF for human review, AI upload, memory systems, knowledgebase repositories, and scanned document archival.
 

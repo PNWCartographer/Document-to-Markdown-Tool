@@ -8,11 +8,11 @@
 ;   3. Compile this script:
 ;        iscc installer\markwell.iss
 ;
-; Output: installer\Output\Markwell_Setup_1.2.0.exe
+; Output: installer\Output\Markwell_Setup_1.0.0.exe
 ; ============================================================
 
 #define MyAppName       "Markwell"
-#define MyAppVersion    "1.2.0"
+#define MyAppVersion    "1.0.0"
 #define MyAppPublisher  "Darksquare"
 #define MyAppURL        "https://darksquare.dev"
 #define MyAppExeName    "Markwell.exe"

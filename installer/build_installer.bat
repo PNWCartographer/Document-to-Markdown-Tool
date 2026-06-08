@@ -13,7 +13,7 @@ setlocal enabledelayedexpansion
 ::   installer\build_installer.bat
 ::
 :: Output:
-::   installer\Output\Markwell_Setup_1.2.0.exe
+::   installer\Output\Markwell_Setup_1.0.0.exe
 :: ============================================================
 
 set "PROJECT_ROOT=%~dp0.."
@@ -117,7 +117,7 @@ echo.
 echo ============================================================
 echo   BUILD COMPLETE
 echo.
-echo   Installer: installer\Output\Markwell_Setup_1.2.0.exe
+echo   Installer: installer\Output\Markwell_Setup_1.0.0.exe
 echo ============================================================
 echo.
 exit /b 0

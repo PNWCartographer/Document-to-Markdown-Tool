@@ -5205,7 +5205,7 @@ class App:
             fg=t["text_secondary"], bg=t["bg"],
         ).pack(anchor="w", padx=pad)
         tk.Label(
-            frame, text="Version 1.2.0", font=(_FONT_FAMILY, 11),
+            frame, text="Version 1.0.0", font=(_FONT_FAMILY, 11),
             fg=t["text_secondary"], bg=t["bg"],
         ).pack(anchor="w", padx=pad, pady=(2, 12))
 
@@ -5807,7 +5807,7 @@ class App:
 
     # ── Startup checks ──────────────────────────────────────
 
-    _APP_VERSION = "1.2.0"
+    _APP_VERSION = "1.0.0"
     _UPDATE_URL = "https://darksquare.dev/version.json"
 
     def _startup_checks(self):

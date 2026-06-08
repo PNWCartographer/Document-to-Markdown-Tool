@@ -2,19 +2,28 @@
 
 All notable changes to Markwell are documented in this file.
 
-## [Unreleased]
+## [1.0.0] - 2026-06-08 (Markwell — Initial Public Release)
+
+First public release under the name **Markwell** (by Darksquare). Versions
+0.1.0–0.3.0 below are the pre-launch development history under the project's
+former working name.
 
 ### Added
+- Rebranded the product to **Markwell** across the app, installer, and documentation
 - Bundled Tesseract OCR engine (Apache 2.0) in the Windows installer — fallback and Ensemble OCR now work fully offline with no separate install
 - Runtime binary resolver (`app/engine/vendor.py`) — prefers bundled engines, falls back to system installs
 - Ghostscript guidance for the optional Searchable PDF feature: an install-time courtesy page and an in-app runtime gate, both linking to the official download page (Ghostscript is not bundled, per its AGPL license)
 - `installer/stage_vendor.py` — stages and trims Tesseract into the build for bundling
+- Themed, DPI-scaled, anti-aliased dialogs replacing native message boxes; crisp pill buttons app-wide
+- Clear first-run messaging for the one-time AI-model download, so it no longer looks frozen
+- Quick Start Guide (`Guide.html`) opened in the browser after install, with screenshots
 
 ### Changed
 - Free tier limit set to 10 conversions
+- Per-user data folder is now `%APPDATA%\Markwell`
 - `THIRD_PARTY_LICENSES` documents the bundled Tesseract runtime libraries and the not-bundled Ghostscript arrangement
 
-## [1.2.0] - 2026-05-27 (Searchable PDF & OCR Overhaul)
+## [0.3.0] - 2026-05-27 (Searchable PDF & OCR Overhaul)
 
 ### Added
 - Searchable PDF output format — adds invisible OCR text layer to scanned PDFs for full-text search
@@ -57,7 +66,7 @@ All notable changes to Markwell are documented in this file.
 - paddlepaddle
 - paddleocr
 
-## [1.1.0] - 2026-05-14 (Feature Expansion)
+## [0.2.0] - 2026-05-14 (Feature Expansion)
 
 ### Added
 - Header and footer removal: auto-detects and strips repeated page text across all pages
@@ -90,7 +99,7 @@ All notable changes to Markwell are documented in this file.
 - ebooklib >= 0.18
 - beautifulsoup4 >= 4.12.0
 
-## [1.0.0] - 2026-05-06 (Initial Release)
+## [0.1.0] - 2026-05-06 (Initial Development Release)
 
 ### Added
 - PDF conversion with multi-engine fallback chain (docling, pymupdf4llm, pymupdf+OCR)
